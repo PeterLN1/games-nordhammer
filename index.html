@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b1020">
+<title>Nordhammer Spel</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100%;
+    background: radial-gradient(1200px 800px at 50% -10%, #16224a 0%, #0b1020 55%, #070a15 100%);
+    color: #eef2ff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap {
+    max-width: 880px; margin: 0 auto;
+    padding: max(28px, env(safe-area-inset-top)) 20px 60px;
+  }
+  header { text-align: center; margin-bottom: 34px; }
+  .logo { font-size: 30px; font-weight: 800; letter-spacing: .5px; margin: 0; }
+  .logo .dot { color: #ffd200; }
+  .tagline { margin: 8px 0 0; opacity: .65; font-size: 14px; font-weight: 500; }
+
+  .grid {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+  .card {
+    display: block; text-decoration: none; color: inherit;
+    background: linear-gradient(160deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 18px; padding: 20px;
+    position: relative; overflow: hidden;
+    transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+  .card.playable:active { transform: scale(.98); }
+  @media (hover:hover){ .card.playable:hover { transform: translateY(-3px); border-color: rgba(255,210,0,.5); box-shadow: 0 10px 30px rgba(0,0,0,.35); } }
+  .art {
+    height: 120px; border-radius: 12px; margin-bottom: 16px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 52px; position: relative; overflow: hidden;
+  }
+  .art.spider { background: linear-gradient(135deg, #0a5024, #0b6b2e); }
+  .art.soon { background: linear-gradient(135deg, #2a3352, #1c2440); filter: grayscale(.3); }
+  .card h2 { margin: 0 0 6px; font-size: 19px; }
+  .card p { margin: 0; font-size: 13.5px; line-height: 1.45; opacity: .7; }
+  .badge {
+    position: absolute; top: 14px; right: 14px;
+    font-size: 11px; font-weight: 700; letter-spacing: .4px;
+    padding: 4px 9px; border-radius: 999px;
+  }
+  .badge.play { background: #ffd200; color: #111; }
+  .badge.soon { background: rgba(255,255,255,.14); color: #cdd6f4; }
+  .card.soon { opacity: .62; cursor: default; }
+
+  footer { text-align: center; margin-top: 46px; font-size: 12px; opacity: .4; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1 class="logo">Nordhammer&nbsp;Spel<span class="dot">.</span></h1>
+      <p class="tagline">Enkla spel att spela i webbläsaren — på mobil eller dator</p>
+    </header>
+
+    <div class="grid">
+      <a class="card playable" href="/spider/">
+        <span class="badge play">SPELA</span>
+        <div class="art spider">🕷️</div>
+        <h2>Spindelpatiens</h2>
+        <p>Klassisk Spider Solitaire. Välj 1, 2 eller 4 färger. Tryck eller dra korten.</p>
+      </a>
+
+      <div class="card soon" aria-disabled="true">
+        <span class="badge soon">KOMMER</span>
+        <div class="art soon">🂡</div>
+        <h2>FreeCell</h2>
+        <p>Alla kort synliga från start, fyra fria celler. Ren strategi.</p>
+      </div>
+
+      <div class="card soon" aria-disabled="true">
+        <span class="badge soon">KOMMER</span>
+        <div class="art soon">♠️</div>
+        <h2>Klondike</h2>
+        <p>Den klassiska patiensen — bygg upp fyra svit-högar från ess till kung.</p>
+      </div>
+    </div>
+
+    <footer>
+      games.nordhammer.se
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b6b2e">
+<title>Spindelpatiens</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    overflow: hidden;
+    background: #0a5024;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #fff;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100dvh; }
+  header {
+    display: flex; align-items: center; gap: 8px;
+    padding: max(6px, env(safe-area-inset-top)) 10px 6px;
+    background: rgba(0,0,0,0.28);
+    flex: 0 0 auto;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
+  header .spacer { flex: 1; }
+  .stat { font-size: 12px; opacity: .9; white-space: nowrap; }
+  .stat b { font-weight: 700; }
+  select, button {
+    font-family: inherit; font-size: 13px;
+    background: rgba(255,255,255,.15); color: #fff; border: none;
+    border-radius: 8px; padding: 7px 10px; -webkit-appearance: none; appearance: none;
+  }
+  button:active { background: rgba(255,255,255,.3); }
+  select { padding-right: 22px; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='white'><path d='M0 0l5 6 5-6z'/></svg>"); background-repeat: no-repeat; background-position: right 7px center; }
+
+  #board {
+    position: relative; flex: 1 1 auto;
+    display: flex; gap: 0.6vw;
+    padding: 8px 0.6vw 4px;
+    justify-content: center;
+  }
+  .col { position: relative; flex: 1 1 0; min-width: 0; }
+  .card {
+    position: absolute; left: 0; width: 100%;
+    border-radius: 6px;
+    background: #fff; color: #111;
+    box-shadow: 0 1px 2px rgba(0,0,0,.35);
+    border: 1px solid rgba(0,0,0,.25);
+    overflow: hidden;
+    will-change: transform;
+  }
+  .card .rank { position: absolute; top: 2px; left: 4px; font-weight: 800; line-height: 1; }
+  .card .suit-tl { position: absolute; top: 2px; right: 4px; line-height: 1; }
+  .card .pip { position: absolute; bottom: 2px; right: 4px; line-height: 1; opacity: .9; }
+  .card.red { color: #c0261e; }
+  .card.black { color: #111; }
+  .card.down {
+    background: repeating-linear-gradient(45deg, #1d4ed8, #1d4ed8 6px, #2563eb 6px, #2563eb 12px);
+    border-color: #1e3a8a;
+  }
+  .card.down .rank, .card.down .suit-tl, .card.down .pip { display: none; }
+  .card.selected { outline: 3px solid #ffd200; outline-offset: -1px; }
+  .card.hintable { box-shadow: 0 0 0 3px #ffd200, 0 1px 2px rgba(0,0,0,.35); }
+  .card.dragging { z-index: 9999; box-shadow: 0 6px 14px rgba(0,0,0,.5); }
+  .slot-empty {
+    position: absolute; left: 0; top: 0; width: 100%;
+    border: 1.5px dashed rgba(255,255,255,.35); border-radius: 6px;
+  }
+  #foundations { display: flex; gap: 4px; }
+  .found-pip { width: 14px; height: 20px; border-radius: 3px; background: rgba(255,255,255,.12); }
+  .found-pip.done { background: #ffd200; }
+
+  #toast {
+    position: fixed; left: 50%; top: 40%; transform: translate(-50%,-50%) scale(.9);
+    background: rgba(0,0,0,.85); padding: 18px 26px; border-radius: 14px;
+    font-size: 18px; font-weight: 700; text-align: center; opacity: 0; pointer-events: none;
+    transition: opacity .25s, transform .25s; z-index: 10000; max-width: 80vw;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  #toast small { display:block; font-weight: 400; font-size: 13px; opacity:.85; margin-top:6px; }
+  .btn-primary { background: #ffd200; color: #111; font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1><a href="/" style="color:inherit;text-decoration:none" title="Till spelmenyn">🕷️ Spindelpatiens</a></h1>
+    <div id="foundations"></div>
+    <div class="spacer"></div>
+    <span class="stat">Drag <b id="moves">0</b></span>
+    <select id="difficulty" title="Svårighet">
+      <option value="1">1 färg (lätt)</option>
+      <option value="2">2 färger</option>
+      <option value="4">4 färger (svår)</option>
+    </select>
+    <button id="undo" title="Ångra">↶</button>
+    <button id="deal" class="btn-primary" title="Dela ut">Dela</button>
+    <button id="newgame">Nytt</button>
+  </header>
+  <div id="board"></div>
+</div>
+<div id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  const SUITS = ["♠","♥","♦","♣"];
+  const RED = new Set(["♥","♦"]);
+  const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"]; // index+1 = value
+
+  const board = document.getElementById("board");
+  const toastEl = document.getElementById("toast");
+  const movesEl = document.getElementById("moves");
+  const foundationsEl = document.getElementById("foundations");
+  const difficultySel = document.getElementById("difficulty");
+
+  let state = null; // {columns:[[card]], stock:[[card]], foundations:int, moves:int}
+  let history = [];
+  let selection = null; // {col, idx}
+  let layout = { cardW:0, cardH:0, downStep:0, upStep:0 };
+
+  function makeCard(suit, rank){ return { suit, rank, value: RANKS.indexOf(rank)+1, up:false, id: Math.random().toString(36).slice(2), el:null }; }
+
+  function buildDeck(numSuits){
+    const suitsUsed = SUITS.slice(0, numSuits);
+    const copies = 104 / (13 * numSuits); // 1suit->8, 2->4, 4->2
+    const deck = [];
+    for(let c=0;c<copies;c++)
+      for(const s of suitsUsed)
+        for(const r of RANKS)
+          deck.push(makeCard(s, r));
+    // shuffle
+    for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; }
+    return deck;
+  }
+
+  function newGame(){
+    const numSuits = parseInt(difficultySel.value,10);
+    const deck = buildDeck(numSuits);
+    const columns = Array.from({length:10}, ()=>[]);
+    // 54 cards: first 4 cols get 6, rest get 5
+    let di = 0;
+    for(let col=0; col<10; col++){
+      const count = col < 4 ? 6 : 5;
+      for(let k=0;k<count;k++){ columns[col].push(deck[di++]); }
+      columns[col][columns[col].length-1].up = true;
+    }
+    // remaining 50 -> 5 stock deals of 10
+    const stock = [];
+    for(let d=0; d<5; d++){ stock.push(deck.slice(di, di+10)); di+=10; }
+    state = { columns, stock, foundations:0, moves:0, suits:numSuits };
+    history = [];
+    selection = null;
+    renderAll();
+    updateStats();
+  }
+
+  // ---- serialization for undo ----
+  function snapshot(){
+    return JSON.stringify({
+      columns: state.columns.map(c=>c.map(k=>({suit:k.suit,rank:k.rank,value:k.value,up:k.up,id:k.id}))),
+      stock: state.stock.map(s=>s.map(k=>({suit:k.suit,rank:k.rank,value:k.value,up:k.up,id:k.id}))),
+      foundations: state.foundations, moves: state.moves, suits: state.suits
+    });
+  }
+  function pushHistory(){ history.push(snapshot()); if(history.length>200) history.shift(); }
+  function restore(str){
+    const o = JSON.parse(str);
+    state.columns = o.columns.map(c=>c.map(k=>({...k, el:null})));
+    state.stock = o.stock.map(s=>s.map(k=>({...k, el:null})));
+    state.foundations = o.foundations; state.moves = o.moves; state.suits = o.suits;
+    selection = null;
+    renderAll(); updateStats();
+  }
+  function undo(){ if(!history.length) return; restore(history.pop()); }
+
+  // ---- rules ----
+  // A movable run: from idx to end must be all face up, same suit, strictly descending by 1
+  function movableFrom(col, idx){
+    const c = state.columns[col];
+    if(idx<0 || idx>=c.length) return false;
+    if(!c[idx].up) return false;
+    for(let i=idx;i<c.length-1;i++){
+      if(c[i].suit !== c[i+1].suit) return false;
+      if(c[i].value !== c[i+1].value+1) return false;
+    }
+    return true;
+  }
+  function canDrop(fromCol, fromIdx, toCol){
+    if(fromCol===toCol) return false;
+    const dst = state.columns[toCol];
+    const moving = state.columns[fromCol][fromIdx];
+    if(dst.length===0) return true; // any card/run onto empty
+    const top = dst[dst.length-1];
+    return top.up && top.value === moving.value + 1;
+  }
+  function doMove(fromCol, fromIdx, toCol){
+    pushHistory();
+    const src = state.columns[fromCol];
+    const run = src.splice(fromIdx);
+    state.columns[toCol].push(...run);
+    // flip newly exposed card
+    if(src.length && !src[src.length-1].up) src[src.length-1].up = true;
+    state.moves++;
+    checkCompleted(toCol);
+    selection = null;
+    renderAll(); updateStats();
+    checkWin();
+  }
+  // Remove a completed K..A same-suit run from a column
+  function checkCompleted(col){
+    const c = state.columns[col];
+    if(c.length<13) return;
+    const start = c.length-13;
+    for(let i=start;i<c.length;i++){
+      if(!c[i].up) return;
+      if(c[i].value !== 13-(i-start)) return;
+      if(c[i].suit !== c[start].suit) return;
+    }
+    c.splice(start,13);
+    state.foundations++;
+    if(c.length && !c[c.length-1].up) c[c.length-1].up = true;
+  }
+  function dealStock(){
+    if(!state.stock.length){ toast("Inga fler kort att dela"); return; }
+    if(state.columns.some(c=>c.length===0)){ toast("Fyll alla tomma kolumner först"); return; }
+    pushHistory();
+    const row = state.stock.pop();
+    for(let col=0; col<10; col++){ const card=row[col]; card.up=true; state.columns[col].push(card); }
+    for(let col=0; col<10; col++) checkCompleted(col);
+    state.moves++;
+    renderAll(); updateStats(); checkWin();
+  }
+  function checkWin(){
+    if(state.foundations>=8){
+      toast("🎉 Du vann!", "Klarat på "+state.moves+" drag");
+    }
+  }
+
+  // Auto-move to best target on tap
+  function autoMove(fromCol, fromIdx){
+    // Prefer a non-empty column whose top matches; among those prefer same suit
+    let best=-1, bestScore=-1;
+    for(let t=0;t<10;t++){
+      if(!canDrop(fromCol,fromIdx,t)) continue;
+      const dst=state.columns[t];
+      let score;
+      if(dst.length===0){ score=0; }
+      else {
+        const top=dst[dst.length-1];
+        const moving=state.columns[fromCol][fromIdx];
+        score = top.suit===moving.suit ? 3 : 1;
+      }
+      if(score>bestScore){ bestScore=score; best=t; }
+    }
+    if(best>=0){ doMove(fromCol,fromIdx,best); return true; }
+    return false;
+  }
+
+  // ---- rendering ----
+  function computeLayout(){
+    const bw = board.clientWidth;
+    const bh = board.clientHeight;
+    const gap = 0.006*window.innerWidth;
+    const pad = 0.006*window.innerWidth;
+    const colW = (bw - pad*2 - gap*9)/10;
+    const cardW = colW;
+    const cardH = cardW*1.4;
+    // vertical steps: down cards small step, up cards bigger; adapt to height
+    const maxCards = Math.max(...state.columns.map(c=>c.length), 12);
+    let downStep = Math.max(cardH*0.16, 7);
+    let upStep = Math.max(cardH*0.30, 13);
+    // ensure tallest column fits
+    function totalH(){ // rough worst case using up-steps
+      return cardH + (maxCards-1)*upStep;
+    }
+    const avail = bh - 6;
+    if(totalH() > avail){
+      upStep = Math.max((avail - cardH)/(maxCards-1), downStep);
+    }
+    layout = { cardW, cardH, downStep, upStep };
+    return layout;
+  }
+
+  function fontFor(cardW){ return Math.max(9, Math.round(cardW*0.30)); }
+
+  function renderAll(){
+    board.innerHTML = "";
+    computeLayout();
+    const cols = [];
+    for(let ci=0; ci<10; ci++){
+      const colEl = document.createElement("div");
+      colEl.className = "col";
+      colEl.dataset.col = ci;
+      // empty slot marker
+      const slot = document.createElement("div");
+      slot.className = "slot-empty";
+      slot.style.height = layout.cardH+"px";
+      colEl.appendChild(slot);
+      board.appendChild(colEl);
+      cols.push(colEl);
+    }
+    for(let ci=0; ci<10; ci++){
+      const c = state.columns[ci];
+      let y = 0;
+      for(let i=0;i<c.length;i++){
+        const card = c[i];
+        const el = renderCard(card, layout.cardW, layout.cardH);
+        el.style.transform = "translateY("+y+"px)";
+        el.dataset.col = ci; el.dataset.idx = i;
+        cols[ci].appendChild(el);
+        card.el = el;
+        const next = c[i+1];
+        y += (card.up ? layout.upStep : layout.downStep);
+      }
+    }
+    renderFoundations();
+  }
+  function renderCard(card, w, h){
+    const el = document.createElement("div");
+    el.className = "card " + (card.up ? (RED.has(card.suit)?"red":"black") : "down");
+    el.style.width = w+"px"; el.style.height = h+"px";
+    if(card.up){
+      const fs = fontFor(w);
+      el.innerHTML =
+        '<span class="rank" style="font-size:'+fs+'px">'+card.rank+'</span>'+
+        '<span class="suit-tl" style="font-size:'+Math.round(fs*0.85)+'px">'+card.suit+'</span>'+
+        '<span class="pip" style="font-size:'+Math.round(fs*1.1)+'px">'+card.suit+'</span>';
+    }
+    return el;
+  }
+  function renderFoundations(){
+    foundationsEl.innerHTML="";
+    for(let i=0;i<8;i++){
+      const p=document.createElement("div");
+      p.className="found-pip"+(i<state.foundations?" done":"");
+      foundationsEl.appendChild(p);
+    }
+  }
+  function updateStats(){ movesEl.textContent = state.moves; }
+
+  function clearSelection(){
+    if(selection){
+      const c=state.columns[selection.col];
+      for(let i=selection.idx;i<c.length;i++) if(c[i].el) c[i].el.classList.remove("selected");
+    }
+    selection=null;
+  }
+  function selectRun(col, idx){
+    clearSelection();
+    selection={col,idx};
+    const c=state.columns[col];
+    for(let i=idx;i<c.length;i++) if(c[i].el) c[i].el.classList.add("selected");
+  }
+
+  // ---- input: tap + drag unified via pointer events ----
+  let drag = null;
+  const DRAG_THRESHOLD = 8;
+
+  function cardAt(el){
+    while(el && !el.classList?.contains("card")) el = el.parentElement;
+    return el;
+  }
+  function colFromPoint(x,y){
+    const el = document.elementFromPoint(x,y);
+    let n = el;
+    while(n && !(n.classList && n.classList.contains("col"))) n = n.parentElement;
+    if(n) return parseInt(n.dataset.col,10);
+    return -1;
+  }
+
+  board.addEventListener("pointerdown", (e)=>{
+    const cardEl = cardAt(e.target);
+    if(!cardEl) return;
+    const col = parseInt(cardEl.dataset.col,10);
+    const idx = parseInt(cardEl.dataset.idx,10);
+    const card = state.columns[col][idx];
+    if(!card.up) return; // can't grab face-down
+    if(!movableFrom(col, idx)) {
+      // tap on non-movable up card: ignore for drag, but allow tap select of deeper? no.
+      return;
+    }
+    const rect = cardEl.getBoundingClientRect();
+    drag = {
+      col, idx, moved:false,
+      startX:e.clientX, startY:e.clientY,
+      offX: e.clientX-rect.left, offY: e.clientY-rect.top,
+      els: [],
+      baseTransforms: []
+    };
+    const c = state.columns[col];
+    for(let i=idx;i<c.length;i++){ if(c[i].el){ drag.els.push(c[i].el); drag.baseTransforms.push(c[i].el.style.transform); } }
+    board.setPointerCapture(e.pointerId);
+  });
+
+  board.addEventListener("pointermove",(e)=>{
+    if(!drag) return;
+    const dx=e.clientX-drag.startX, dy=e.clientY-drag.startY;
+    if(!drag.moved && Math.hypot(dx,dy)>DRAG_THRESHOLD){
+      drag.moved=true;
+      drag.els.forEach((el,i)=>{ el.classList.add("dragging"); el.style.zIndex = 9000+i; });
+    }
+    if(drag.moved){
+      drag.els.forEach((el,i)=>{
+        el.style.transform = drag.baseTransforms[i] + " translate("+dx+"px,"+dy+"px)";
+      });
+    }
+  });
+
+  board.addEventListener("pointerup",(e)=>{
+    if(!drag){ return; }
+    const d = drag; drag=null;
+    if(d.moved){
+      // drop
+      d.els.forEach((el,i)=>{ el.classList.remove("dragging"); el.style.zIndex=""; });
+      const toCol = colFromPoint(e.clientX, e.clientY);
+      if(toCol>=0 && canDrop(d.col, d.idx, toCol)){
+        clearSelection();
+        doMove(d.col, d.idx, toCol);
+      } else {
+        renderAll(); // snap back
+      }
+    } else {
+      // treat as tap
+      handleTap(d.col, d.idx);
+    }
+  });
+  board.addEventListener("pointercancel",()=>{ if(drag){ drag=null; renderAll(); } });
+
+  function handleTap(col, idx){
+    // If something selected and this is a valid destination column -> move
+    if(selection){
+      // tapping any card in a column = target that column
+      if(canDrop(selection.col, selection.idx, col)){
+        const s=selection; clearSelection(); doMove(s.col, s.idx, col); return;
+      }
+      // tapping same run start again -> try auto-move, else deselect
+      if(selection.col===col && selection.idx===idx){
+        const s=selection; clearSelection();
+        if(!autoMove(s.col,s.idx)) { /* nothing */ }
+        return;
+      }
+      clearSelection();
+    }
+    // no selection: select this run (must be movable)
+    if(movableFrom(col, idx)) selectRun(col, idx);
+  }
+
+  // tapping empty column area as destination
+  board.addEventListener("click",(e)=>{
+    if(!selection) return;
+    let n=e.target;
+    while(n && !(n.classList&&n.classList.contains("col"))) n=n.parentElement;
+    if(!n) return;
+    const col=parseInt(n.dataset.col,10);
+    if(state.columns[col].length===0 && canDrop(selection.col,selection.idx,col)){
+      const s=selection; clearSelection(); doMove(s.col,s.idx,col);
+    }
+  });
+
+  // ---- toast ----
+  let toastTimer=null;
+  function toast(msg, sub){
+    toastEl.innerHTML = msg + (sub?('<small>'+sub+'</small>'):'');
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>toastEl.classList.remove("show"), sub?3500:1500);
+  }
+
+  // ---- buttons ----
+  document.getElementById("deal").addEventListener("click", dealStock);
+  document.getElementById("undo").addEventListener("click", undo);
+  document.getElementById("newgame").addEventListener("click", ()=>{
+    if(state && state.moves>0 && state.foundations<8){
+      if(!confirm("Starta nytt spel?")) return;
+    }
+    newGame();
+  });
+  difficultySel.addEventListener("change", ()=>{ newGame(); });
+
+  window.addEventListener("resize", ()=>{ if(state) renderAll(); });
+  window.addEventListener("orientationchange", ()=>{ setTimeout(()=>{ if(state) renderAll(); },200); });
+  // prevent double-tap zoom / pull to refresh
+  document.addEventListener("gesturestart", e=>e.preventDefault());
+  document.addEventListener("touchmove", e=>{ if(e.scale && e.scale!==1) e.preventDefault(); }, {passive:false});
+
+  newGame();
+})();
+</script>
+</body>
+</html>
