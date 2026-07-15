@@ -111,6 +111,7 @@
   const SUITS = ["♠","♥","♦","♣"];
   const RED = new Set(["♥","♦"]);
   const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"]; // index+1 = value
+  const SAVE_VERSION = 1; // höj om det sparade formatet ändras -> gamla sparningar ignoreras
 
   const board = document.getElementById("board");
   const toastEl = document.getElementById("toast");
@@ -157,11 +158,13 @@
     selection = null;
     renderAll();
     updateStats();
+    saveGame();
   }
 
   // ---- serialization for undo ----
   function snapshot(){
     return JSON.stringify({
+      v: SAVE_VERSION,
       columns: state.columns.map(c=>c.map(k=>({suit:k.suit,rank:k.rank,value:k.value,up:k.up,id:k.id}))),
       stock: state.stock.map(s=>s.map(k=>({suit:k.suit,rank:k.rank,value:k.value,up:k.up,id:k.id}))),
       foundations: state.foundations, moves: state.moves, suits: state.suits
@@ -170,13 +173,51 @@
   function pushHistory(){ history.push(snapshot()); if(history.length>200) history.shift(); }
   function restore(str){
     const o = JSON.parse(str);
-    state.columns = o.columns.map(c=>c.map(k=>({...k, el:null})));
-    state.stock = o.stock.map(s=>s.map(k=>({...k, el:null})));
-    state.foundations = o.foundations; state.moves = o.moves; state.suits = o.suits;
+    if(o.v !== SAVE_VERSION) throw new Error("inkompatibelt sparat läge");
+    state = {
+      columns: o.columns.map(c=>c.map(k=>({...k, el:null}))),
+      stock: o.stock.map(s=>s.map(k=>({...k, el:null}))),
+      foundations: o.foundations, moves: o.moves, suits: o.suits
+    };
     selection = null;
+    difficultySel.value = String(state.suits); // spegla det sparade spelets svårighet i menyn
     renderAll(); updateStats();
+    saveGame(); // persistar även den nu reducerade historiken (används av ångra)
   }
   function undo(){ if(!history.length) return; restore(history.pop()); }
+
+  // ---- persistens: pågående spel + ångra-historik i localStorage ----
+  const STORE_GAME = "spider:game";
+  const canStore = (function(){
+    try { const k="__spider_t"; localStorage.setItem(k,k); localStorage.removeItem(k); return true; }
+    catch(e){ return false; } // privat läge / blockerat -> spelet funkar ändå, bara utan sparning
+  })();
+  // history är en array av snapshot()-strängar; game är nuvarande snapshot()
+  function serializeSave(hist){
+    return JSON.stringify({ v: SAVE_VERSION, game: snapshot(), history: hist });
+  }
+  function saveGame(){
+    if(!canStore || !state) return;
+    try { localStorage.setItem(STORE_GAME, serializeSave(history)); }
+    catch(e){
+      // trolig kvot-överskridning: spara hellre spelet utan historik än inget alls
+      try { localStorage.setItem(STORE_GAME, serializeSave([])); } catch(e2){}
+    }
+  }
+  function loadGame(){
+    if(!canStore) return null;
+    try {
+      const raw = localStorage.getItem(STORE_GAME);
+      if(!raw) return null;
+      const o = JSON.parse(raw);
+      if(o.v !== SAVE_VERSION || !o.game) return null; // okänt/ogiltigt format -> ignorera
+      return o;
+    } catch(e){ return null; }
+  }
+  function clearGame(){
+    if(!canStore) return;
+    try { localStorage.removeItem(STORE_GAME); } catch(e){}
+  }
 
   // ---- rules ----
   // A movable run: from idx to end must be all face up, same suit, strictly descending by 1
@@ -209,6 +250,7 @@
     checkCompleted(toCol);
     selection = null;
     renderAll(); updateStats();
+    saveGame();  // före checkWin: en vinst rensar sparningen istället
     checkWin();
   }
   // Remove a completed K..A same-suit run from a column
@@ -233,10 +275,13 @@
     for(let col=0; col<10; col++){ const card=row[col]; card.up=true; state.columns[col].push(card); }
     for(let col=0; col<10; col++) checkCompleted(col);
     state.moves++;
-    renderAll(); updateStats(); checkWin();
+    renderAll(); updateStats();
+    saveGame();  // före checkWin: en vinst rensar sparningen istället
+    checkWin();
   }
   function checkWin(){
     if(state.foundations>=8){
+      clearGame(); // spelet är slut -> ingen pågående sparning kvar
       toast("🎉 Du vann!", "Klarat på "+state.moves+" drag");
     }
   }
@@ -497,7 +542,17 @@
   document.addEventListener("gesturestart", e=>e.preventDefault());
   document.addEventListener("touchmove", e=>{ if(e.scale && e.scale!==1) e.preventDefault(); }, {passive:false});
 
-  newGame();
+  // återställ ett pågående spel (inkl. ångra-historik) om det finns, annars dela ut nytt
+  const saved = loadGame();
+  if(saved){
+    try {
+      history = Array.isArray(saved.history) ? saved.history.slice() : [];
+      restore(saved.game); // sätt history först -> restore()s saveGame() persistar rätt historik
+    }
+    catch(e){ history = []; clearGame(); newGame(); }
+  } else {
+    newGame();
+  }
 })();
 </script>
 </body>
