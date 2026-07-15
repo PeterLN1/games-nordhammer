@@ -25,7 +25,7 @@
     background: rgba(0,0,0,0.28);
     flex: 0 0 auto;
   }
-  header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
   header .spacer { flex: 1; }
   .stat { font-size: 12px; opacity: .9; white-space: nowrap; }
   .stat b { font-weight: 700; }
@@ -70,9 +70,22 @@
     position: absolute; left: 0; top: 0; width: 100%;
     border: 1.5px dashed rgba(255,255,255,.35); border-radius: 6px;
   }
-  #foundations { display: flex; gap: 4px; }
-  .found-pip { width: 14px; height: 20px; border-radius: 3px; background: rgba(255,255,255,.12); }
+  #foundations { display: flex; gap: 3px; flex: 0 0 auto; }
+  .found-pip { width: 11px; height: 16px; border-radius: 3px; background: rgba(255,255,255,.12); }
   .found-pip.done { background: #ffd200; }
+
+  footer#controls {
+    flex: 0 0 auto;
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
+    gap: 8px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    background: rgba(0,0,0,0.28);
+  }
+  footer#controls button, footer#controls select {
+    font-size: 15px; min-height: 44px; padding: 11px 16px; border-radius: 10px;
+  }
+  footer#controls select { padding-right: 30px; background-position: right 10px center; }
+  footer#controls button:disabled { opacity: .4; }
 
   #toast {
     position: fixed; left: 50%; top: 40%; transform: translate(-50%,-50%) scale(.9);
@@ -92,16 +105,19 @@
     <div id="foundations"></div>
     <div class="spacer"></div>
     <span class="stat">Drag <b id="moves">0</b></span>
-    <select id="difficulty" title="Svårighet">
-      <option value="1">1 färg (lätt)</option>
-      <option value="2">2 färger</option>
-      <option value="4">4 färger (svår)</option>
-    </select>
-    <button id="undo" title="Ångra">↶</button>
-    <button id="deal" class="btn-primary" title="Dela ut">Dela</button>
-    <button id="newgame">Nytt</button>
   </header>
   <div id="board"></div>
+  <footer id="controls">
+    <button id="undo">Ångra</button>
+    <button id="redo">Upprepa</button>
+    <button id="deal" class="btn-primary" title="Dela ut">Dela</button>
+    <button id="newgame">Nytt</button>
+    <select id="difficulty" title="Antal färger">
+      <option value="1">1 färg</option>
+      <option value="2">2 färger</option>
+      <option value="4">4 färger</option>
+    </select>
+  </footer>
 </div>
 <div id="toast"></div>
 
@@ -118,9 +134,12 @@
   const movesEl = document.getElementById("moves");
   const foundationsEl = document.getElementById("foundations");
   const difficultySel = document.getElementById("difficulty");
+  const undoBtn = document.getElementById("undo");
+  const redoBtn = document.getElementById("redo");
 
   let state = null; // {columns:[[card]], stock:[[card]], foundations:int, moves:int}
-  let history = [];
+  let history = []; // ångra-stack (snapshot()-strängar)
+  let future = [];  // upprepa-stack (rensas vid nytt drag)
   let selection = null; // {col, idx}
   let layout = { cardW:0, cardH:0, downStep:0, upStep:0 };
 
@@ -155,6 +174,7 @@
     for(let d=0; d<5; d++){ stock.push(deck.slice(di, di+10)); di+=10; }
     state = { columns, stock, foundations:0, moves:0, suits:numSuits };
     history = [];
+    future = [];
     selection = null;
     renderAll();
     updateStats();
@@ -170,7 +190,7 @@
       foundations: state.foundations, moves: state.moves, suits: state.suits
     });
   }
-  function pushHistory(){ history.push(snapshot()); if(history.length>200) history.shift(); }
+  function pushHistory(){ history.push(snapshot()); if(history.length>200) history.shift(); future = []; } // nytt drag -> upprepa ogiltigt
   function restore(str){
     const o = JSON.parse(str);
     if(o.v !== SAVE_VERSION) throw new Error("inkompatibelt sparat läge");
@@ -184,7 +204,8 @@
     renderAll(); updateStats();
     saveGame(); // persistar även den nu reducerade historiken (används av ångra)
   }
-  function undo(){ if(!history.length) return; restore(history.pop()); }
+  function undo(){ if(!history.length) return; future.push(snapshot()); restore(history.pop()); }
+  function redo(){ if(!future.length) return; history.push(snapshot()); restore(future.pop()); }
 
   // ---- persistens: pågående spel + ångra-historik i localStorage ----
   const STORE_GAME = "spider:game";
@@ -192,16 +213,16 @@
     try { const k="__spider_t"; localStorage.setItem(k,k); localStorage.removeItem(k); return true; }
     catch(e){ return false; } // privat läge / blockerat -> spelet funkar ändå, bara utan sparning
   })();
-  // history är en array av snapshot()-strängar; game är nuvarande snapshot()
-  function serializeSave(hist){
-    return JSON.stringify({ v: SAVE_VERSION, game: snapshot(), history: hist });
+  // history/future är arrayer av snapshot()-strängar; game är nuvarande snapshot()
+  function serializeSave(hist, fut){
+    return JSON.stringify({ v: SAVE_VERSION, game: snapshot(), history: hist, future: fut });
   }
   function saveGame(){
     if(!canStore || !state) return;
-    try { localStorage.setItem(STORE_GAME, serializeSave(history)); }
+    try { localStorage.setItem(STORE_GAME, serializeSave(history, future)); }
     catch(e){
       // trolig kvot-överskridning: spara hellre spelet utan historik än inget alls
-      try { localStorage.setItem(STORE_GAME, serializeSave([])); } catch(e2){}
+      try { localStorage.setItem(STORE_GAME, serializeSave([], [])); } catch(e2){}
     }
   }
   function loadGame(){
@@ -386,7 +407,11 @@
       foundationsEl.appendChild(p);
     }
   }
-  function updateStats(){ movesEl.textContent = state.moves; }
+  function updateStats(){ movesEl.textContent = state.moves; updateButtons(); }
+  function updateButtons(){
+    undoBtn.disabled = history.length === 0;
+    redoBtn.disabled = future.length === 0;
+  }
 
   function clearSelection(){
     if(selection){
@@ -527,7 +552,8 @@
 
   // ---- buttons ----
   document.getElementById("deal").addEventListener("click", dealStock);
-  document.getElementById("undo").addEventListener("click", undo);
+  undoBtn.addEventListener("click", undo);
+  redoBtn.addEventListener("click", redo);
   document.getElementById("newgame").addEventListener("click", ()=>{
     if(state && state.moves>0 && state.foundations<8){
       if(!confirm("Starta nytt spel?")) return;
@@ -547,9 +573,10 @@
   if(saved){
     try {
       history = Array.isArray(saved.history) ? saved.history.slice() : [];
-      restore(saved.game); // sätt history först -> restore()s saveGame() persistar rätt historik
+      future  = Array.isArray(saved.future)  ? saved.future.slice()  : [];
+      restore(saved.game); // sätt history/future först -> restore()s saveGame() persistar rätt
     }
-    catch(e){ history = []; clearGame(); newGame(); }
+    catch(e){ history = []; future = []; clearGame(); newGame(); }
   } else {
     newGame();
   }
