@@ -365,12 +365,21 @@
     while(el && !el.classList?.contains("card")) el = el.parentElement;
     return el;
   }
-  function colFromPoint(x,y){
-    const el = document.elementFromPoint(x,y);
-    let n = el;
-    while(n && !(n.classList && n.classList.contains("col"))) n = n.parentElement;
-    if(n) return parseInt(n.dataset.col,10);
-    return -1;
+  // Which column is under this X coordinate. Uses column geometry rather than
+  // elementFromPoint so it works regardless of drag direction (the dragged
+  // cards would otherwise sit on top and hide the destination column).
+  function colFromX(x){
+    const br = board.getBoundingClientRect();
+    if(x < br.left || x > br.right) return -1;
+    let best = -1, bestDist = Infinity;
+    for(const colEl of board.children){
+      if(!colEl.classList || !colEl.classList.contains("col")) continue;
+      const r = colEl.getBoundingClientRect();
+      if(x >= r.left && x <= r.right) return parseInt(colEl.dataset.col,10);
+      const d = Math.min(Math.abs(x-r.left), Math.abs(x-r.right)); // nearest col across gaps
+      if(d < bestDist){ bestDist = d; best = parseInt(colEl.dataset.col,10); }
+    }
+    return best;
   }
 
   board.addEventListener("pointerdown", (e)=>{
@@ -417,7 +426,7 @@
     if(d.moved){
       // drop
       d.els.forEach((el,i)=>{ el.classList.remove("dragging"); el.style.zIndex=""; });
-      const toCol = colFromPoint(e.clientX, e.clientY);
+      const toCol = colFromX(e.clientX);
       if(toCol>=0 && canDrop(d.col, d.idx, toCol)){
         clearSelection();
         doMove(d.col, d.idx, toCol);
