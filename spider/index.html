@@ -7,14 +7,20 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0b6b2e">
 <title>Spindelpatiens</title>
+<script>try{var m=localStorage.getItem("spider:theme");if(m==="light"||m==="dark")document.documentElement.setAttribute("data-theme",m);}catch(e){}</script>
 <style>
+  :root { --felt: #0a5024; --chrome: rgba(0,0,0,0.28); --ink: #ffffff; --slot: rgba(255,255,255,.35); }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){ --felt: #0b1512; --chrome: rgba(0,0,0,0.55); --ink: #eaeaea; --slot: rgba(255,255,255,.20); }
+  }
+  :root[data-theme="dark"]{ --felt: #0b1512; --chrome: rgba(0,0,0,0.55); --ink: #eaeaea; --slot: rgba(255,255,255,.20); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
   html, body {
     margin: 0; padding: 0; height: 100%;
     overflow: hidden;
-    background: #0a5024;
+    background: var(--felt);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    color: #fff;
+    color: var(--ink);
     touch-action: manipulation;
     overscroll-behavior: none;
   }
@@ -22,7 +28,7 @@
   header {
     display: flex; align-items: center; gap: 8px;
     padding: max(6px, env(safe-area-inset-top)) 10px 6px;
-    background: rgba(0,0,0,0.28);
+    background: var(--chrome);
     flex: 0 0 auto;
   }
   header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
@@ -74,7 +80,7 @@
   .card.dragging { z-index: 9999; box-shadow: 0 6px 14px rgba(0,0,0,.5); }
   .slot-empty {
     position: absolute; left: 0; top: 0; width: 100%;
-    border: 1.5px dashed rgba(255,255,255,.35); border-radius: 6px;
+    border: 1.5px dashed var(--slot); border-radius: 6px;
   }
   #foundations { display: flex; gap: 3px; flex: 0 0 auto; }
   .found-pip { width: 11px; height: 16px; border-radius: 3px; background: rgba(255,255,255,.12); }
@@ -85,7 +91,7 @@
     display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
     gap: 8px;
     padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-    background: rgba(0,0,0,0.28);
+    background: var(--chrome);
   }
   footer#controls button, footer#controls select {
     font-size: 15px; min-height: 44px; padding: 11px 16px; border-radius: 10px;
@@ -123,6 +129,11 @@
       <option value="2">2 färger</option>
       <option value="4">4 färger</option>
     </select>
+    <select id="theme" title="Tema">
+      <option value="auto">Auto</option>
+      <option value="light">Ljust</option>
+      <option value="dark">Mörkt</option>
+    </select>
   </footer>
 </div>
 <div id="toast"></div>
@@ -142,6 +153,7 @@
   const difficultySel = document.getElementById("difficulty");
   const undoBtn = document.getElementById("undo");
   const redoBtn = document.getElementById("redo");
+  const themeSel = document.getElementById("theme");
 
   let state = null; // {columns:[[card]], stock:[[card]], foundations:int, moves:int}
   let history = []; // ångra-stack (snapshot()-strängar)
@@ -579,6 +591,34 @@
     clearTimeout(toastTimer);
     toastTimer=setTimeout(()=>toastEl.classList.remove("show"), sub?3500:1500);
   }
+
+  // ---- tema (ljus/mörk, följer systemet i auto-läge) ----
+  const THEME_KEY = "spider:theme";
+  const themeMq = window.matchMedia("(prefers-color-scheme: dark)");
+  function applyTheme(mode){
+    const root = document.documentElement;
+    if(mode === "light" || mode === "dark") root.setAttribute("data-theme", mode);
+    else root.removeAttribute("data-theme"); // auto -> CSS media query bestämmer
+    const dark = mode === "dark" || (mode === "auto" && themeMq.matches);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if(meta) meta.setAttribute("content", dark ? "#0b1512" : "#0b6b2e"); // mobilens webbläsarfärg
+  }
+  function setTheme(mode){
+    if(!["auto","light","dark"].includes(mode)) mode = "auto";
+    try { localStorage.setItem(THEME_KEY, mode); } catch(e){}
+    applyTheme(mode);
+  }
+  (function initTheme(){
+    let mode = "auto";
+    try { mode = localStorage.getItem(THEME_KEY) || "auto"; } catch(e){}
+    if(!["auto","light","dark"].includes(mode)) mode = "auto";
+    themeSel.value = mode;
+    applyTheme(mode);
+    const onSys = ()=>{ if(themeSel.value === "auto") applyTheme("auto"); };
+    if(themeMq.addEventListener) themeMq.addEventListener("change", onSys);
+    else if(themeMq.addListener) themeMq.addListener(onSys);
+  })();
+  themeSel.addEventListener("change", ()=>{ setTheme(themeSel.value); });
 
   // ---- buttons ----
   document.getElementById("deal").addEventListener("click", dealStock);
