@@ -60,10 +60,10 @@
     will-change: transform;
   }
   .card.red, .card.black { box-shadow: inset 0 0 0 1px rgba(201,161,60,.35), 0 1px 2px rgba(0,0,0,.35); }
-  .card .rank { position: absolute; top: 1px; left: 4px; font-weight: 800; line-height: 1; }
-  .card .suit-tl { position: absolute; top: 1px; right: 4px; line-height: 1; }
-  .card .center { position: absolute; left: 50%; top: 54%; transform: translate(-50%,-50%); line-height: 1; }
-  .card .court { position: absolute; left: 50%; top: 56%; transform: translate(-50%,-50%); width: 60%; }
+  .card .idx { position: absolute; top: 1px; left: 3px; display: flex; align-items: center; gap: 1px; line-height: 1; }
+  .card .idx .rank { font-weight: 800; }
+  .card .center { position: absolute; left: 50%; top: 52%; transform: translate(-50%,-50%); line-height: 1; }
+  .card .court { position: absolute; left: 50%; top: 63%; transform: translate(-50%,-50%); width: 60%; }
   .card .court svg, .card .back-emblem svg { display: block; width: 100%; height: auto; }
   .card .back-emblem { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 46%; }
   .card.red { color: #c0261e; }
@@ -426,9 +426,10 @@
       const center = isCourt
         ? courtEmblem(card)
         : '<span class="center" style="font-size:'+Math.round(w*0.60)+'px">'+card.suit+'</span>';
+      const suitFs = Math.round(fs*0.82);
       el.innerHTML =
-        '<span class="rank" style="font-size:'+fs+'px">'+card.rank+'</span>'+
-        '<span class="suit-tl" style="font-size:'+fs+'px">'+card.suit+'</span>'+
+        '<span class="idx"><span class="rank" style="font-size:'+fs+'px">'+card.rank+'</span>'+
+        '<span class="suit" style="font-size:'+suitFs+'px">'+card.suit+'</span></span>'+
         center;
     } else {
       el.innerHTML = backEmblem();
