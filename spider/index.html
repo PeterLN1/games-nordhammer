@@ -33,8 +33,6 @@
   }
   header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
   header .spacer { flex: 1; }
-  .stat { font-size: 12px; opacity: .9; white-space: nowrap; }
-  .stat b { font-weight: 700; }
   select, button {
     font-family: inherit; font-size: 13px;
     background: rgba(255,255,255,.15); color: #fff; border: none;
@@ -89,15 +87,30 @@
   footer#controls {
     flex: 0 0 auto;
     display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
-    gap: 8px;
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    gap: 10px;
+    padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
     background: var(--chrome);
   }
   footer#controls button, footer#controls select {
-    font-size: 15px; min-height: 44px; padding: 11px 16px; border-radius: 10px;
+    font-size: 15px; font-weight: 600; min-height: 46px; padding: 0 18px; border-radius: 12px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.14);
+    transition: background .12s ease, transform .06s ease, box-shadow .12s ease;
   }
-  footer#controls select { padding-right: 30px; background-position: right 10px center; }
-  footer#controls button:disabled { opacity: .4; }
+  footer#controls select { padding: 0 32px 0 16px; background-position: right 12px center; }
+  footer#controls button:active { background: rgba(255,255,255,.24); transform: scale(.97); }
+  footer#controls button:disabled { opacity: .32; }
+  footer#controls .btn-primary {
+    background: #ffd200; color: #1a1200; border-color: #e7bf00; font-weight: 700;
+    box-shadow: 0 2px 10px rgba(255,210,0,.28);
+  }
+  footer#controls .btn-primary:active { background: #ffdb3a; }
+  footer#controls .btn-primary:disabled { box-shadow: none; }
+  .dealcount {
+    min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+    background: rgba(0,0,0,.22); color: inherit; font-size: 12px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
 
   #toast {
     position: fixed; left: 50%; top: 40%; transform: translate(-50%,-50%) scale(.9);
@@ -107,22 +120,20 @@
   }
   #toast.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
   #toast small { display:block; font-weight: 400; font-size: 13px; opacity:.85; margin-top:6px; }
-  .btn-primary { background: #ffd200; color: #111; font-weight: 700; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <h1><a href="/" style="color:inherit;text-decoration:none" title="Till spelmenyn">🕷️ Spindelpatiens</a></h1>
-    <div id="foundations"></div>
     <div class="spacer"></div>
-    <span class="stat">Drag <b id="moves">0</b></span>
+    <div id="foundations"></div>
   </header>
   <div id="board"></div>
   <footer id="controls">
     <button id="undo">Ångra</button>
     <button id="redo">Upprepa</button>
-    <button id="deal" class="btn-primary" title="Dela ut">Dela</button>
+    <button id="deal" class="btn-primary" title="Dela ut">Dela<span id="dealsLeft" class="dealcount">5</span></button>
     <button id="newgame">Nytt</button>
     <select id="difficulty" title="Antal färger">
       <option value="1">1 färg</option>
@@ -143,11 +154,12 @@
 
   const board = document.getElementById("board");
   const toastEl = document.getElementById("toast");
-  const movesEl = document.getElementById("moves");
   const foundationsEl = document.getElementById("foundations");
   const difficultySel = document.getElementById("difficulty");
   const undoBtn = document.getElementById("undo");
   const redoBtn = document.getElementById("redo");
+  const dealBtn = document.getElementById("deal");
+  const dealsLeftEl = document.getElementById("dealsLeft");
 
   let state = null; // {columns:[[card]], stock:[[card]], foundations:int, moves:int}
   let history = []; // ångra-stack (snapshot()-strängar)
@@ -350,8 +362,8 @@
     const cardH = cardW*1.4;
     // vertical steps: down cards small step, up cards bigger; adapt to height
     const maxCards = Math.max(...state.columns.map(c=>c.length), 12);
-    let downStep = Math.max(cardH*0.16, 7);
-    let upStep = Math.max(cardH*0.30, 13);
+    let downStep = Math.max(cardH*0.17, 8);
+    let upStep = Math.max(cardH*0.38, 15); // mindre överlapp -> tydligare kort
     // ensure tallest column fits
     function totalH(){ // rough worst case using up-steps
       return cardH + (maxCards-1)*upStep;
@@ -428,7 +440,7 @@
         : '<span class="center" style="font-size:'+Math.round(w*0.60)+'px">'+card.suit+'</span>';
       const suitFs = Math.round(fs*0.82); // symbolen något mindre för balans mot siffran
       // tvåsiffriga "10" komprimeras med negativt teckenavstånd så symbolen får plats i högerkanten
-      const rankLS = card.rank.length > 1 ? ';letter-spacing:-'+Math.max(1, Math.round(fs*0.13))+'px' : '';
+      const rankLS = card.rank.length > 1 ? ';letter-spacing:-'+Math.max(1, Math.round(fs*0.08))+'px' : '';
       el.innerHTML =
         '<span class="rank" style="font-size:'+fs+'px'+rankLS+'">'+card.rank+'</span>'+
         '<span class="suit-tl" style="font-size:'+suitFs+'px">'+card.suit+'</span>'+
@@ -446,10 +458,13 @@
       foundationsEl.appendChild(p);
     }
   }
-  function updateStats(){ movesEl.textContent = state.moves; updateButtons(); }
+  function updateStats(){ updateButtons(); }
   function updateButtons(){
     undoBtn.disabled = history.length === 0;
     redoBtn.disabled = future.length === 0;
+    const deals = state ? state.stock.length : 0; // återstående utdelningar
+    dealsLeftEl.textContent = deals;
+    dealBtn.disabled = deals === 0;
   }
 
   function clearSelection(){
