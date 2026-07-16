@@ -5,20 +5,72 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#0b1020">
+<meta name="theme-color" content="#e7ebf6" data-light="#e7ebf6" data-dark="#0b1020">
 <title>Nordhammer Spel</title>
+<script src="/shared/theme.js"></script>
 <style>
+  :root {
+    --bg: radial-gradient(1200px 800px at 50% -10%, #ffffff 0%, #eef1f9 55%, #e3e8f4 100%);
+    --ink: #1b2138;
+    --card-face: linear-gradient(160deg, #ffffff, #f4f7fe);
+    --card-border: rgba(0,0,0,.12);
+    --card-hover-border: rgba(190,145,0,.65);
+    --card-shadow: rgba(20,30,70,.18);
+    --soon-face: linear-gradient(135deg, #ccd4ec, #bcc6e2);
+    --badge-soon-bg: rgba(0,0,0,.10);
+    --badge-soon-ink: #3a4266;
+    --ctl-bg: rgba(0,0,0,.06);
+    --ctl-border: rgba(0,0,0,.16);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --bg: radial-gradient(1200px 800px at 50% -10%, #16224a 0%, #0b1020 55%, #070a15 100%);
+      --ink: #eef2ff;
+      --card-face: linear-gradient(160deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+      --card-border: rgba(255,255,255,.10);
+      --card-hover-border: rgba(255,210,0,.5);
+      --card-shadow: rgba(0,0,0,.35);
+      --soon-face: linear-gradient(135deg, #2a3352, #1c2440);
+      --badge-soon-bg: rgba(255,255,255,.14);
+      --badge-soon-ink: #cdd6f4;
+      --ctl-bg: rgba(255,255,255,.10);
+      --ctl-border: rgba(255,255,255,.18);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: radial-gradient(1200px 800px at 50% -10%, #16224a 0%, #0b1020 55%, #070a15 100%);
+    --ink: #eef2ff;
+    --card-face: linear-gradient(160deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+    --card-border: rgba(255,255,255,.10);
+    --card-hover-border: rgba(255,210,0,.5);
+    --card-shadow: rgba(0,0,0,.35);
+    --soon-face: linear-gradient(135deg, #2a3352, #1c2440);
+    --badge-soon-bg: rgba(255,255,255,.14);
+    --badge-soon-ink: #cdd6f4;
+    --ctl-bg: rgba(255,255,255,.10);
+    --ctl-border: rgba(255,255,255,.18);
+  }
+
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
     margin: 0; padding: 0; min-height: 100%;
-    background: radial-gradient(1200px 800px at 50% -10%, #16224a 0%, #0b1020 55%, #070a15 100%);
-    color: #eef2ff;
+    background: var(--bg);
+    color: var(--ink);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     -webkit-text-size-adjust: 100%;
   }
   .wrap {
     max-width: 880px; margin: 0 auto;
     padding: max(28px, env(safe-area-inset-top)) 20px 60px;
+  }
+  .topbar { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+  .theme-ctl { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; opacity: .8; }
+  .theme-ctl select {
+    font-family: inherit; font-size: 13px; color: var(--ink);
+    background: var(--ctl-bg); border: 1px solid var(--ctl-border);
+    border-radius: 8px; padding: 6px 26px 6px 10px; -webkit-appearance: none; appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='%23888'><path d='M0 0l5 6 5-6z'/></svg>");
+    background-repeat: no-repeat; background-position: right 9px center;
   }
   header { text-align: center; margin-bottom: 34px; }
   .logo { font-size: 30px; font-weight: 800; letter-spacing: .5px; margin: 0; }
@@ -31,21 +83,21 @@
   }
   .card {
     display: block; text-decoration: none; color: inherit;
-    background: linear-gradient(160deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
-    border: 1px solid rgba(255,255,255,.10);
+    background: var(--card-face);
+    border: 1px solid var(--card-border);
     border-radius: 18px; padding: 20px;
     position: relative; overflow: hidden;
     transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
   }
   .card.playable:active { transform: scale(.98); }
-  @media (hover:hover){ .card.playable:hover { transform: translateY(-3px); border-color: rgba(255,210,0,.5); box-shadow: 0 10px 30px rgba(0,0,0,.35); } }
+  @media (hover:hover){ .card.playable:hover { transform: translateY(-3px); border-color: var(--card-hover-border); box-shadow: 0 10px 30px var(--card-shadow); } }
   .art {
     height: 120px; border-radius: 12px; margin-bottom: 16px;
     display: flex; align-items: center; justify-content: center;
     font-size: 52px; position: relative; overflow: hidden;
   }
   .art.spider { background: linear-gradient(135deg, #0a5024, #0b6b2e); }
-  .art.soon { background: linear-gradient(135deg, #2a3352, #1c2440); filter: grayscale(.3); }
+  .art.soon { background: var(--soon-face); filter: grayscale(.3); }
   .card h2 { margin: 0 0 6px; font-size: 19px; }
   .card p { margin: 0; font-size: 13.5px; line-height: 1.45; opacity: .7; }
   .badge {
@@ -54,7 +106,7 @@
     padding: 4px 9px; border-radius: 999px;
   }
   .badge.play { background: #ffd200; color: #111; }
-  .badge.soon { background: rgba(255,255,255,.14); color: #cdd6f4; }
+  .badge.soon { background: var(--badge-soon-bg); color: var(--badge-soon-ink); }
   .card.soon { opacity: .62; cursor: default; }
 
   footer { text-align: center; margin-top: 46px; font-size: 12px; opacity: .4; }
@@ -63,6 +115,15 @@
 </head>
 <body>
   <div class="wrap">
+    <div class="topbar">
+      <label class="theme-ctl">Tema
+        <select data-theme-control aria-label="Tema">
+          <option value="auto">Auto</option>
+          <option value="light">Ljust</option>
+          <option value="dark">Mörkt</option>
+        </select>
+      </label>
+    </div>
     <header>
       <h1 class="logo">Nordhammer&nbsp;Spel<span class="dot">.</span></h1>
       <p class="tagline">Enkla spel att spela i webbläsaren — på mobil eller dator</p>
