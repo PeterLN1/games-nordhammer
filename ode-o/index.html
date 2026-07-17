@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1c7fb8" data-light="#1c7fb8" data-dark="#0a1622">
+<title>Öde ö</title>
+<script src="/shared/theme.js"></script>
+<style>
+  :root {
+    --sea: #1c7fb8; --sky: #cfe8f7;
+    --bg: linear-gradient(180deg, #cfe8f7 0%, #a9d6ee 40%, #f3e2b3 100%);
+    --panel: rgba(255,255,255,.72);
+    --panel-brd: rgba(0,0,0,.10);
+    --ink: #16283a; --ink-soft: #4b5f72;
+    --btn: rgba(255,255,255,.85); --btn-brd: rgba(0,0,0,.14);
+    --btn-ink: #16283a;
+    --log-bg: rgba(255,255,255,.6);
+    --shadow: rgba(20,50,80,.18);
+    --hp: #e05c5c; --food: #d99a2b; --water: #2f9fd6; --energy: #6bbf59;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --bg: linear-gradient(180deg, #0a1622 0%, #0d2033 45%, #16324a 100%);
+      --panel: rgba(255,255,255,.07);
+      --panel-brd: rgba(255,255,255,.12);
+      --ink: #eaf2fa; --ink-soft: #9db3c7;
+      --btn: rgba(255,255,255,.10); --btn-brd: rgba(255,255,255,.16);
+      --btn-ink: #eaf2fa;
+      --log-bg: rgba(0,0,0,.22);
+      --shadow: rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: linear-gradient(180deg, #0a1622 0%, #0d2033 45%, #16324a 100%);
+    --panel: rgba(255,255,255,.07);
+    --panel-brd: rgba(255,255,255,.12);
+    --ink: #eaf2fa; --ink-soft: #9db3c7;
+    --btn: rgba(255,255,255,.10); --btn-brd: rgba(255,255,255,.16);
+    --btn-ink: #eaf2fa;
+    --log-bg: rgba(0,0,0,.22);
+    --shadow: rgba(0,0,0,.4);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); background-attachment: fixed;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    touch-action: manipulation; overscroll-behavior: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100dvh; max-width: 560px; margin: 0 auto; }
+
+  header {
+    display: flex; align-items: center; gap: 8px;
+    padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  }
+  .home {
+    text-decoration: none; color: var(--ink); font-size: 20px;
+    width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+    border-radius: 10px; background: var(--panel); border: 1px solid var(--panel-brd);
+  }
+  .title { font-weight: 800; font-size: 18px; letter-spacing: .3px; }
+  .day-chip {
+    margin-left: auto; font-size: 13px; font-weight: 700;
+    background: var(--panel); border: 1px solid var(--panel-brd);
+    padding: 5px 10px; border-radius: 999px;
+  }
+  .theme-ctl select {
+    font: inherit; font-size: 12px; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--panel-brd);
+    border-radius: 10px; padding: 5px 6px;
+  }
+
+  .stats { padding: 4px 12px 8px; display: grid; gap: 7px; }
+  .stat { display: grid; grid-template-columns: 22px 1fr 38px; align-items: center; gap: 8px; }
+  .stat .ic { font-size: 16px; text-align: center; }
+  .bar { height: 12px; border-radius: 999px; background: rgba(128,128,128,.22); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 999px; transition: width .35s ease, background .35s ease; }
+  .stat .val { font-size: 12px; font-weight: 700; text-align: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+  .resbar {
+    display: flex; gap: 8px; padding: 2px 12px 8px; flex-wrap: wrap;
+    font-size: 12.5px; font-weight: 700; color: var(--ink-soft);
+  }
+  .res {
+    background: var(--panel); border: 1px solid var(--panel-brd);
+    padding: 5px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .res.actions { color: var(--ink); }
+
+  .log {
+    flex: 1; overflow-y: auto; margin: 0 12px; padding: 10px 12px;
+    background: var(--log-bg); border: 1px solid var(--panel-brd);
+    border-radius: 14px; -webkit-overflow-scrolling: touch;
+  }
+  .log .line { font-size: 13.5px; line-height: 1.5; padding: 3px 0; color: var(--ink); }
+  .log .line small { color: var(--ink-soft); font-weight: 700; }
+  .log .day-sep {
+    text-align: center; font-size: 12px; font-weight: 800; letter-spacing: .5px;
+    color: var(--ink-soft); margin: 8px 0 4px; text-transform: uppercase;
+  }
+  .log .good { color: var(--energy); font-weight: 700; }
+  .log .bad { color: var(--hp); font-weight: 700; }
+
+  .actions {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  }
+  button.act {
+    font: inherit; font-weight: 700; font-size: 14px; color: var(--btn-ink);
+    background: var(--btn); border: 1px solid var(--btn-brd);
+    border-radius: 14px; padding: 12px 10px; text-align: left;
+    display: flex; align-items: center; gap: 9px; cursor: pointer;
+    transition: transform .1s ease, opacity .2s ease, box-shadow .15s ease;
+    box-shadow: 0 2px 8px var(--shadow);
+  }
+  button.act .em { font-size: 20px; line-height: 1; }
+  button.act .lbl { display: flex; flex-direction: column; gap: 1px; }
+  button.act .lbl small { font-weight: 600; font-size: 11px; color: var(--ink-soft); }
+  button.act:active { transform: scale(.96); }
+  button.act:disabled { opacity: .4; box-shadow: none; cursor: default; }
+
+  /* Overlay (start / game over) */
+  .overlay {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+    background: rgba(6,18,30,.55); backdrop-filter: blur(3px);
+  }
+  .overlay.hidden { display: none; }
+  .modal {
+    background: var(--bg); background-attachment: fixed;
+    border: 1px solid var(--panel-brd); border-radius: 22px;
+    padding: 26px 22px; max-width: 400px; width: 100%; text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  }
+  .modal .big { font-size: 46px; margin-bottom: 6px; }
+  .modal h2 { margin: 0 0 8px; font-size: 22px; color: var(--ink); }
+  .modal p { margin: 0 0 6px; font-size: 14px; line-height: 1.5; color: var(--ink-soft); }
+  .modal .rec { font-size: 13px; font-weight: 700; color: var(--ink); margin: 10px 0 4px; }
+  button.primary {
+    font: inherit; font-weight: 800; font-size: 16px; color: #fff;
+    background: var(--sea); border: none; border-radius: 14px;
+    padding: 14px 22px; margin-top: 16px; cursor: pointer; width: 100%;
+    box-shadow: 0 6px 18px rgba(28,127,184,.4);
+  }
+  button.primary:active { transform: scale(.97); }
+  .modal ul { text-align: left; font-size: 13px; line-height: 1.6; color: var(--ink-soft); margin: 12px 0 0; padding-left: 20px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <a class="home" href="/" aria-label="Till startsidan">‹</a>
+    <span class="title">🏝️ Öde ö</span>
+    <span class="day-chip" id="dayChip">Dag 1 / 10</span>
+    <label class="theme-ctl" style="margin-left:8px">
+      <select data-theme-control aria-label="Tema">
+        <option value="auto">Auto</option>
+        <option value="light">Ljust</option>
+        <option value="dark">Mörkt</option>
+      </select>
+    </label>
+  </header>
+
+  <div class="stats" id="stats">
+    <div class="stat"><span class="ic">🩹</span><div class="bar"><i id="bar-health"></i></div><span class="val" id="val-health">100</span></div>
+    <div class="stat"><span class="ic">🍖</span><div class="bar"><i id="bar-food"></i></div><span class="val" id="val-food">100</span></div>
+    <div class="stat"><span class="ic">💧</span><div class="bar"><i id="bar-water"></i></div><span class="val" id="val-water">100</span></div>
+    <div class="stat"><span class="ic">⚡</span><div class="bar"><i id="bar-energy"></i></div><span class="val" id="val-energy">100</span></div>
+  </div>
+
+  <div class="resbar">
+    <span class="res actions" id="resActions">Handlingar: 4</span>
+    <span class="res" id="resWood">🪵 Ved 0</span>
+    <span class="res" id="resCamp">⛺ Läger 0</span>
+    <span class="res" id="resGear">🎒 —</span>
+  </div>
+
+  <div class="log" id="log"></div>
+
+  <div class="actions" id="actions">
+    <button class="act" data-act="fish"><span class="em">🎣</span><span class="lbl">Fiska<small>Mat · −energi</small></span></button>
+    <button class="act" data-act="water"><span class="em">💧</span><span class="lbl">Hämta vatten<small>Vatten</small></span></button>
+    <button class="act" data-act="forest"><span class="em">🌴</span><span class="lbl">Skogen<small>Ved · frukt</small></span></button>
+    <button class="act" data-act="explore"><span class="em">🔍</span><span class="lbl">Utforska<small>Slump</small></span></button>
+    <button class="act" data-act="build"><span class="em">🔥</span><span class="lbl">Bygg läger<small>−ved</small></span></button>
+    <button class="act" data-act="rest"><span class="em">😴</span><span class="lbl">Vila<small>+energi</small></span></button>
+  </div>
+</div>
+
+<!-- Start / spelslut -->
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal"></div>
+</div>
+
+<script>
+"use strict";
+(function(){
+  var REC_KEY = "nordhammer:ode-o:record";
+  var WIN_DAY = 10;         // överlev så här många dagar
+  var ACTIONS_PER_DAY = 4;  // handlingar per dag
+
+  var S = null; // spelläge
+
+  function rint(a, b){ return a + Math.floor(Math.random() * (b - a + 1)); } // inkl. b
+  function chance(p){ return Math.random() < p; }
+  function clamp(v){ return Math.max(0, Math.min(100, v)); }
+
+  function newGame(){
+    S = {
+      day: 1,
+      actionsLeft: ACTIONS_PER_DAY,
+      health: 100, food: 80, water: 80, energy: 90,
+      wood: 0, camp: 0,
+      gear: { spjut: false, flaska: false, kniv: false },
+      waterFound: false,   // hittad färskvattenkälla → effektivare vatten
+      weather: "sol",
+      over: false, log: []
+    };
+    logDay(1);
+    add("Du vaknar på en öde strand. Vraket sjönk. Håll dig vid liv i " + WIN_DAY + " dagar tills hjälp kommer.");
+    render();
+  }
+
+  // ---- Dagbok ----
+  function add(text, cls){ S.log.push({ t: "line", text: text, cls: cls || "" }); }
+  function logDay(n){ S.log.push({ t: "day", text: "Dag " + n }); }
+
+  // ---- Handlingar ----
+  var ACT = {
+    fish: function(){
+      S.energy = clamp(S.energy - 12);
+      var p = 0.55 + (S.gear.spjut ? 0.25 : 0);
+      if(chance(p)){
+        var g = rint(14, 24) + (S.camp >= 1 ? 10 : 0); // eld = tillagning
+        S.food = clamp(S.food + g);
+        add("🎣 Du fångade en fisk" + (S.camp >= 1 ? " och grillade den över elden" : "") +
+            ". <small>Mat +" + g + "</small>", "good");
+      } else {
+        add("🎣 Fisken nappade inte. Tom hand denna gång.");
+      }
+    },
+    water: function(){
+      S.energy = clamp(S.energy - 6);
+      var base = S.waterFound ? rint(30, 40) : rint(18, 26);
+      if(S.weather === "regn") base += 10;
+      if(S.gear.flaska) base += 8; // kan bära hem mer
+      S.water = clamp(S.water + base);
+      add("💧 Du drack och fyllde på vatten" + (S.waterFound ? " vid källan" : "") +
+          ". <small>Vatten +" + base + "</small>", "good");
+    },
+    forest: function(){
+      S.energy = clamp(S.energy - 12);
+      var w = rint(2, 3) + (S.gear.kniv ? 1 : 0);
+      S.wood += w;
+      var msg = "🌴 Du samlade ved. <small>Ved +" + w + "</small>";
+      if(chance(0.5)){
+        var f = rint(12, 20);
+        S.food = clamp(S.food + f);
+        msg += " Du hittade också frukt. <small>Mat +" + f + "</small>";
+      }
+      add(msg, "good");
+    },
+    explore: function(){
+      S.energy = clamp(S.energy - 15);
+      var roll = Math.random();
+      // Hitta föremål (om något återstår) — annars resurser eller otur
+      var missing = [];
+      if(!S.gear.spjut) missing.push("spjut");
+      if(!S.gear.flaska) missing.push("flaska");
+      if(!S.gear.kniv) missing.push("kniv");
+
+      if(!S.waterFound && roll < 0.20){
+        S.waterFound = true;
+        add("🔍 Du upptäckte en <b>färskvattenkälla</b> inne på ön! Vatten blir lättare härefter.", "good");
+      } else if(missing.length && roll < 0.48){
+        var item = missing[rint(0, missing.length - 1)];
+        S.gear[item] = true;
+        var names = { spjut: "ett fiskespjut 🔱 (bättre fiske)", flaska: "en flaska 🧴 (bär mer vatten)", kniv: "en kniv 🔪 (mer ved)" };
+        add("🔍 Bland vrakspillrorna hittade du " + names[item] + ".", "good");
+      } else if(roll < 0.72){
+        var w = rint(2, 4);
+        S.wood += w;
+        add("🔍 Du hittade uppspolat drivved. <small>Ved +" + w + "</small>", "good");
+      } else if(roll < 0.88){
+        var b = rint(14, 22);
+        S.food = clamp(S.food + b);
+        add("🔍 Du fann ett bärsnår. <small>Mat +" + b + "</small>", "good");
+      } else {
+        var d = rint(6, 12);
+        S.health = clamp(S.health - d);
+        add("🔍 Du snubblade på klipporna och skadade dig. <small>Hälsa −" + d + "</small>", "bad");
+      }
+    },
+    build: function(){
+      if(S.camp >= 3){ add("⛺ Ditt läger är redan i toppskick."); return false; }
+      var cost = 3 + S.camp; // dyrare för varje nivå
+      if(S.wood < cost){ add("⛺ Du behöver " + cost + " ved för att bygga vidare (har " + S.wood + ")."); return false; }
+      S.wood -= cost;
+      S.energy = clamp(S.energy - 10);
+      S.camp += 1;
+      var lvl = ["", "enkelt vindskydd med lägereld", "stabil hydda", "rejält läger med förråd"][S.camp];
+      add("🔥 Du byggde ett " + lvl + ". <small>Läger nivå " + S.camp + "</small>", "good");
+    },
+    rest: function(){
+      var g = 24 + S.camp * 10;
+      S.energy = clamp(S.energy + g);
+      add("😴 Du vilade" + (S.camp >= 1 ? " i skydd" : " på stranden") + ". <small>Energi +" + g + "</small>", "good");
+    }
+  };
+
+  function doAct(name){
+    if(S.over || S.actionsLeft <= 0) return;
+    var res = ACT[name]();
+    if(res === false) { render(); return; } // ogiltig handling, ingen tid förbrukas
+    S.actionsLeft -= 1;
+    if(S.actionsLeft <= 0) nightfall();
+    checkEnd();
+    render();
+  }
+
+  // ---- Natten ----
+  function nightfall(){
+    if(S.over) return;
+    S.log.push({ t: "line", text: "🌙 <b>Natten faller…</b>", cls: "" });
+
+    // Dagens förbrukning
+    var foodUse = 18, waterUse = 22;
+    if(S.weather === "hetta") waterUse += 8;
+    S.food = clamp(S.food - foodUse);
+    S.water = clamp(S.water - waterUse);
+
+    // Skydd mot kylan
+    if(S.camp === 0){
+      S.energy = clamp(S.energy - 12);
+      add("Utan skydd frös du genom natten. <small>Energi −12</small>", "bad");
+    } else {
+      add("Lägret höll dig varm genom natten.");
+    }
+
+    // Skador av brist
+    if(S.food === 0){ S.health = clamp(S.health - 15); add("Du svälter. <small>Hälsa −15</small>", "bad"); }
+    if(S.water === 0){ S.health = clamp(S.health - 20); add("Du är uttorkad. <small>Hälsa −20</small>", "bad"); }
+    if(S.energy === 0){ S.health = clamp(S.health - 10); add("Total utmattning. <small>Hälsa −10</small>", "bad"); }
+
+    // God natt → återhämtning
+    if(S.food > 40 && S.water > 40 && S.energy > 40 && S.health < 100){
+      var h = 8 + S.camp * 2;
+      S.health = clamp(S.health + h);
+      add("Välmätt och utvilad läkte du. <small>Hälsa +" + h + "</small>", "good");
+    }
+
+    checkEnd();
+    if(S.over) return;
+
+    // Ny dag
+    S.day += 1;
+    if(S.day > WIN_DAY){ endGame(true); return; }
+
+    S.actionsLeft = ACTIONS_PER_DAY;
+    rollWeather();
+    logDay(S.day);
+    add(weatherText());
+  }
+
+  function rollWeather(){
+    var r = Math.random();
+    S.weather = r < 0.5 ? "sol" : r < 0.75 ? "moln" : r < 0.9 ? "regn" : "hetta";
+    // Storm kan skada lägret
+    if(chance(0.12) && S.camp > 0){
+      S.camp -= 1;
+      S.weather = "storm";
+    }
+  }
+  function weatherText(){
+    switch(S.weather){
+      case "regn": return "☔ Det regnar — lättare att samla vatten idag.";
+      case "hetta": return "🥵 Stekhett — du blir törstig snabbare.";
+      case "storm": return "🌩️ En storm rev delar av ditt läger i natt!";
+      case "moln": return "☁️ Mulet och svalt.";
+      default: return "☀️ En klar dag på ön.";
+    }
+  }
+
+  // ---- Slut ----
+  function checkEnd(){ if(!S.over && S.health <= 0) endGame(false); }
+
+  function endGame(won){
+    S.over = true;
+    var survived = won ? WIN_DAY : S.day;
+    var rec = getRecord();
+    if(survived > rec){ setRecord(survived); rec = survived; }
+    render();
+    showEnd(won, survived, rec);
+  }
+
+  // ---- Rekord ----
+  function getRecord(){ try { return parseInt(localStorage.getItem(REC_KEY) || "0", 10) || 0; } catch(e){ return 0; } }
+  function setRecord(v){ try { localStorage.setItem(REC_KEY, String(v)); } catch(e){} }
+
+  // ---- Rendering ----
+  function setBar(id, v, color){
+    var el = document.getElementById("bar-" + id);
+    el.style.width = v + "%";
+    el.style.background = v <= 20 ? "var(--hp)" : color;
+    document.getElementById("val-" + id).textContent = v;
+  }
+  function render(){
+    setBar("health", S.health, "var(--hp)");
+    setBar("food", S.food, "var(--food)");
+    setBar("water", S.water, "var(--water)");
+    setBar("energy", S.energy, "var(--energy)");
+
+    document.getElementById("dayChip").textContent = "Dag " + Math.min(S.day, WIN_DAY) + " / " + WIN_DAY;
+    document.getElementById("resActions").textContent = "Handlingar: " + S.actionsLeft;
+    document.getElementById("resWood").textContent = "🪵 Ved " + S.wood;
+    document.getElementById("resCamp").textContent = "⛺ Läger " + S.camp;
+
+    var g = [];
+    if(S.gear.spjut) g.push("🔱");
+    if(S.gear.flaska) g.push("🧴");
+    if(S.gear.kniv) g.push("🔪");
+    document.getElementById("resGear").textContent = "🎒 " + (g.length ? g.join(" ") : "—");
+
+    renderLog();
+    var dis = S.over || S.actionsLeft <= 0;
+    var btns = document.querySelectorAll("button.act");
+    for(var i=0;i<btns.length;i++) btns[i].disabled = dis;
+  }
+  function renderLog(){
+    var box = document.getElementById("log");
+    var html = "";
+    for(var i=0;i<S.log.length;i++){
+      var e = S.log[i];
+      if(e.t === "day") html += '<div class="day-sep">— ' + e.text + ' —</div>';
+      else html += '<div class="line ' + e.cls + '">' + e.text + '</div>';
+    }
+    box.innerHTML = html;
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // ---- Overlays ----
+  function showStart(){
+    var rec = getRecord();
+    var recLine = rec > 0 ? '<div class="rec">🏆 Rekord: ' + rec + ' dagar' + (rec >= WIN_DAY ? ' (räddad!)' : '') + '</div>' : '';
+    document.getElementById("modal").innerHTML =
+      '<div class="big">🏝️</div>' +
+      '<h2>Öde ö</h2>' +
+      '<p>Ditt skepp har sjunkit. Överlev <b>' + WIN_DAY + ' dagar</b> tills räddningen kommer.</p>' +
+      '<ul>' +
+        '<li>Varje dag har du <b>' + ACTIONS_PER_DAY + ' handlingar</b>.</li>' +
+        '<li>Håll mat, vatten och energi över noll — annars sjunker hälsan.</li>' +
+        '<li>Bygg läger med ved för att klara nätterna.</li>' +
+        '<li>Utforska för att hitta källor och verktyg.</li>' +
+      '</ul>' +
+      recLine +
+      '<button class="primary" id="startBtn">Skölj i land 🌊</button>';
+    document.getElementById("overlay").classList.remove("hidden");
+    document.getElementById("startBtn").onclick = function(){
+      document.getElementById("overlay").classList.add("hidden");
+      newGame();
+    };
+  }
+  function showEnd(won, survived, rec){
+    var isRec = survived >= rec;
+    document.getElementById("modal").innerHTML =
+      '<div class="big">' + (won ? "⛵" : "💀") + '</div>' +
+      '<h2>' + (won ? "Räddad!" : "Du klarade dig inte") + '</h2>' +
+      '<p>' + (won
+        ? "På dag " + WIN_DAY + " syns ett segel vid horisonten. Du överlevde!"
+        : "Du överlevde <b>" + survived + "</b> " + (survived === 1 ? "dag" : "dagar") + " på ön.") + '</p>' +
+      '<div class="rec">🏆 Rekord: ' + rec + ' dagar' + (isRec && !won ? " — nytt rekord!" : "") + '</div>' +
+      '<button class="primary" id="againBtn">' + (won ? "Spela igen" : "Försök igen") + '</button>';
+    document.getElementById("overlay").classList.remove("hidden");
+    document.getElementById("againBtn").onclick = function(){
+      document.getElementById("overlay").classList.add("hidden");
+      newGame();
+    };
+  }
+
+  // ---- Koppling ----
+  document.getElementById("actions").addEventListener("click", function(ev){
+    var b = ev.target.closest("button.act");
+    if(b && !b.disabled) doAct(b.getAttribute("data-act"));
+  });
+
+  showStart();
+})();
+</script>
+</body>
+</html>
