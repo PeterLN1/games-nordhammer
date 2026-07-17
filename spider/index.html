@@ -334,6 +334,7 @@
     state.moves++;
     renderAll(); updateStats();
     saveGame();  // före checkWin: en vinst rensar sparningen istället
+    animateDeal(row.map(c=>c.el).filter(el=>el && el.isConnected)); // animera de nyutdelade korten
     checkWin();
   }
   function checkWin(){
@@ -518,6 +519,26 @@
     ], { duration:520, delay:delay, easing:"ease-out", fill:"forwards" })
       .addEventListener("finish", ()=>b.remove());
     setTimeout(()=>b.remove(), delay + 520 + 300);
+  }
+
+  // ---- effekt: nya kort flickas ut från Dela-knappen till varje kolumn ----
+  function animateDeal(cardEls){
+    if(reduceMotion.matches) return;
+    const btn = dealBtn.getBoundingClientRect();
+    const bx = btn.left + btn.width/2, by = btn.top + btn.height/2;
+    cardEls.forEach((el, i)=>{
+      if(!el) return;
+      const r = el.getBoundingClientRect();
+      if(!r.width) return;
+      const dx = bx - (r.left + r.width/2);
+      const dy = by - (r.top + r.height/2);
+      // transform adderas ovanpå kortets bas-translateY så vi inte behöver känna till den
+      el.animate([
+        { transform:"translate("+dx+"px,"+dy+"px) scale(.9) rotate(6deg)" },
+        { transform:"translate(0,0) scale(1) rotate(0deg)" }
+      ], { duration:360, delay:i*38, easing:"cubic-bezier(.2,.75,.3,1)", composite:"add" });
+      el.animate([{ opacity:0 }, { opacity:1 }], { duration:200, delay:i*38, easing:"ease-out" });
+    });
   }
 
   function updateStats(){ updateButtons(); }
