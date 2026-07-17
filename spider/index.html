@@ -120,6 +120,12 @@
   }
   #toast.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
   #toast small { display:block; font-weight: 400; font-size: 13px; opacity:.85; margin-top:6px; }
+  #fx { position: fixed; inset: 0; pointer-events: none; z-index: 10001; overflow: visible; }
+  #fx .card { box-shadow: 0 8px 20px rgba(0,0,0,.55); }
+  .fx-burst {
+    position: fixed; width: 64px; height: 64px; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle, rgba(255,214,0,.95) 0%, rgba(255,210,0,.4) 42%, rgba(255,210,0,0) 70%);
+  }
 </style>
 </head>
 <body>
@@ -308,9 +314,15 @@
       if(c[i].value !== 13-(i-start)) return;
       if(c[i].suit !== c[start].suit) return;
     }
+    // fånga kort-elementen och målpricken innan de tas bort och brädet ritas om
+    const els = [];
+    for(let i=start;i<c.length;i++){ if(c[i].el) els.push(c[i].el); }
+    const targetPip = foundationsEl.children[state.foundations];
+    const targetRect = (targetPip || foundationsEl).getBoundingClientRect();
     c.splice(start,13);
     state.foundations++;
     if(c.length && !c[c.length-1].up) c[c.length-1].up = true;
+    flyToFoundation(els, targetRect);
   }
   function dealStock(){
     if(!state.stock.length){ toast("Inga fler kort att dela"); return; }
@@ -458,6 +470,56 @@
       foundationsEl.appendChild(p);
     }
   }
+
+  // ---- effekt: klar Kung–Ess-svit sveper in i framstegspricken ----
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let fxLayer = null;
+  function getFx(){
+    if(!fxLayer){ fxLayer = document.createElement("div"); fxLayer.id = "fx"; document.body.appendChild(fxLayer); }
+    return fxLayer;
+  }
+  function flyToFoundation(els, targetRect){
+    if(reduceMotion.matches || !els.length) return;
+    const fx = getFx();
+    const tx = targetRect.left + targetRect.width/2;
+    const ty = targetRect.top + targetRect.height/2;
+    els.forEach((el, i)=>{
+      const r = el.getBoundingClientRect();
+      if(!r.width) return;
+      const clone = el.cloneNode(true);
+      clone.classList.remove("selected","dragging");
+      const s = clone.style;
+      s.position="fixed"; s.left=r.left+"px"; s.top=r.top+"px";
+      s.width=r.width+"px"; s.height=r.height+"px"; s.margin="0"; s.transform="none"; s.transition="none";
+      fx.appendChild(clone);
+      const dx = tx - (r.left + r.width/2);
+      const dy = ty - (r.top + r.height/2);
+      const rot = Math.random()*44 - 22;
+      const midx = dx*0.26, midy = dy*0.26 - 30 - i*1.5; // lyft och fjäder på vägen
+      clone.animate([
+        { transform:"translate(0,0) scale(1) rotate(0deg)", opacity:1 },
+        { transform:"translate("+midx+"px,"+midy+"px) scale(1.06) rotate("+(rot*0.4)+"deg)", opacity:1, offset:0.4 },
+        { transform:"translate("+dx+"px,"+dy+"px) scale(0.12) rotate("+rot+"deg)", opacity:0 }
+      ], { duration:660, delay:i*32, easing:"cubic-bezier(.4,0,.55,1)", fill:"forwards" })
+        .addEventListener("finish", ()=>clone.remove());
+      setTimeout(()=>clone.remove(), i*32 + 660 + 300); // väggklocka-backup ifall finish uteblir
+    });
+    burst(tx, ty, els.length*32 + 320);
+  }
+  function burst(x, y, delay){
+    const b = document.createElement("div");
+    b.className = "fx-burst";
+    b.style.left = x+"px"; b.style.top = y+"px";
+    getFx().appendChild(b);
+    b.animate([
+      { transform:"translate(-50%,-50%) scale(0.2)", opacity:0 },
+      { transform:"translate(-50%,-50%) scale(1)", opacity:0.95, offset:0.5 },
+      { transform:"translate(-50%,-50%) scale(1.9)", opacity:0 }
+    ], { duration:520, delay:delay, easing:"ease-out", fill:"forwards" })
+      .addEventListener("finish", ()=>b.remove());
+    setTimeout(()=>b.remove(), delay + 520 + 300);
+  }
+
   function updateStats(){ updateButtons(); }
   function updateButtons(){
     undoBtn.disabled = history.length === 0;
