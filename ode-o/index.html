@@ -91,6 +91,18 @@
   }
   .res.actions { color: var(--ink); }
 
+  .scene {
+    margin: 2px 12px 8px; border-radius: 14px; overflow: hidden;
+    border: 1px solid var(--panel-brd); box-shadow: 0 2px 10px var(--shadow);
+    display: block; line-height: 0;
+  }
+  .scene svg { display: block; width: 100%; height: auto; }
+  @keyframes camppop { 0% { transform: translateY(5px) scale(.85); opacity: .3; } 100% { transform: none; opacity: 1; } }
+  @keyframes campshake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-3px) rotate(-1deg); } 60% { transform: translateX(3px) rotate(1deg); } }
+  #campWrap { transform-box: fill-box; transform-origin: bottom center; }
+  #campWrap.pop { animation: camppop .45s ease; }
+  #campWrap.shake { animation: campshake .4s ease; }
+
   .log {
     flex: 1; overflow-y: auto; margin: 0 12px; padding: 10px 12px;
     background: var(--log-bg); border: 1px solid var(--panel-brd);
@@ -179,6 +191,72 @@
     <span class="res" id="resGear">🎒 —</span>
   </div>
 
+  <div class="scene" id="scene">
+    <svg viewBox="0 0 380 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vy över ön med läger och vedhög">
+      <rect x="0" y="0" width="380" height="88" fill="#bfe6f6"/>
+      <circle cx="338" cy="26" r="13" fill="#ffd45e"/>
+      <ellipse cx="70" cy="22" rx="22" ry="8" fill="#ffffff" opacity="0.85"/>
+      <ellipse cx="92" cy="27" rx="14" ry="6" fill="#ffffff" opacity="0.85"/>
+      <rect x="0" y="82" width="380" height="30" fill="#3fa0cd"/>
+      <path d="M0 92 Q40 87 80 92 T160 92 T240 92 T320 92 T400 92" fill="none" stroke="#7fc6e4" stroke-width="2"/>
+      <path d="M0 102 Q40 98 80 102 T160 102 T240 102 T320 102 T400 102" fill="none" stroke="#6bbbde" stroke-width="2"/>
+      <polygon points="0,112 380,100 380,150 0,150" fill="#efdca6"/>
+      <polygon points="0,112 380,100 380,106 0,118" fill="#e4cf95"/>
+
+      <path d="M42 114 C45 96 49 84 47 72" fill="none" stroke="#9c6b3f" stroke-width="6" stroke-linecap="round"/>
+      <ellipse cx="34" cy="68" rx="14" ry="6" fill="#46a85a"/>
+      <ellipse cx="60" cy="68" rx="14" ry="6" fill="#46a85a"/>
+      <ellipse cx="47" cy="59" rx="6" ry="12" fill="#46a85a"/>
+      <ellipse cx="40" cy="62" rx="11" ry="5" fill="#63bd73"/>
+      <ellipse cx="54" cy="62" rx="11" ry="5" fill="#63bd73"/>
+
+      <g id="campWrap">
+        <g id="camp-l1" style="display:none">
+          <ellipse cx="226" cy="121" rx="30" ry="5" fill="#dcc78a"/>
+          <polygon points="206,119 248,119 206,96" fill="#b5793a" stroke="#8a5a26" stroke-width="1"/>
+          <line x1="240" y1="119" x2="236" y2="108" stroke="#8a5a26" stroke-width="1.5"/>
+        </g>
+        <g id="camp-l2" style="display:none">
+          <ellipse cx="230" cy="121" rx="44" ry="6" fill="#dcc78a"/>
+          <polygon points="190,119 270,119 230,74" fill="#b5793a" stroke="#8a5a26" stroke-width="1"/>
+          <path d="M212 102 L230 80 M228 119 L248 92 M250 110 L230 80" stroke="#8a5a26" stroke-width="1" opacity="0.5"/>
+          <polygon points="220,119 240,119 230,92" fill="#5f3f22"/>
+        </g>
+        <g id="camp-l3" style="display:none">
+          <ellipse cx="230" cy="121" rx="52" ry="6" fill="#dcc78a"/>
+          <line x1="196" y1="119" x2="196" y2="86" stroke="#7c4f27" stroke-width="2"/>
+          <polygon points="196,87 210,91 196,95" fill="#e2503f"/>
+          <polygon points="186,119 274,119 230,72" fill="#b5793a" stroke="#8a5a26" stroke-width="1"/>
+          <path d="M210 100 L230 78 M228 119 L250 90 M252 108 L230 78" stroke="#8a5a26" stroke-width="1" opacity="0.5"/>
+          <polygon points="220,119 240,119 230,90" fill="#5f3f22"/>
+          <rect x="250" y="104" width="20" height="15" rx="2" fill="#b5813f" stroke="#7c4f27" stroke-width="1"/>
+          <path d="M250 111 L270 111 M260 104 L260 119" stroke="#7c4f27" stroke-width="1" opacity="0.6"/>
+        </g>
+      </g>
+
+      <g id="fire" style="display:none">
+        <ellipse cx="183" cy="127" rx="11" ry="3" fill="#8a5a2f"/>
+        <path d="M183 125 C178 117 181 111 183 107 C186 112 188 118 183 125 Z" fill="#ff8a3d"/>
+        <path d="M183 125 C180 120 182 116 183 113 C185 117 186 121 183 125 Z" fill="#ffd23e"/>
+      </g>
+      <circle cx="163" cy="108" r="4" fill="#e8b98a"/>
+      <polygon points="159,113 167,113 166,120 160,120" fill="#d9534f"/>
+
+      <g id="woodpile" stroke="#7c4f27" stroke-width="1">
+        <circle class="woodlog" cx="288" cy="118" r="5" fill="#b5813f"/>
+        <circle class="woodlog" cx="300" cy="118" r="5" fill="#b5813f"/>
+        <circle class="woodlog" cx="312" cy="118" r="5" fill="#b5813f"/>
+        <circle class="woodlog" cx="324" cy="118" r="5" fill="#b5813f"/>
+        <circle class="woodlog" cx="294" cy="108" r="5" fill="#b5813f"/>
+        <circle class="woodlog" cx="306" cy="108" r="5" fill="#b5813f"/>
+        <circle class="woodlog" cx="318" cy="108" r="5" fill="#b5813f"/>
+        <circle class="woodlog" cx="300" cy="98" r="5" fill="#b5813f"/>
+        <circle class="woodlog" cx="312" cy="98" r="5" fill="#b5813f"/>
+        <circle class="woodlog" cx="306" cy="88" r="5" fill="#b5813f"/>
+      </g>
+    </svg>
+  </div>
+
   <div class="log" id="log"></div>
 
   <div class="actions" id="actions">
@@ -203,7 +281,8 @@
   var WIN_DAY = 10;         // överlev så här många dagar
   var ACTIONS_PER_DAY = 4;  // handlingar per dag
 
-  var S = null; // spelläge
+  var S = null;          // spelläge
+  var sceneLast = null;  // senast renderad läger-nivå (för animation)
 
   function rint(a, b){ return a + Math.floor(Math.random() * (b - a + 1)); } // inkl. b
   function chance(p){ return Math.random() < p; }
@@ -220,6 +299,7 @@
       weather: "sol",
       over: false, log: []
     };
+    sceneLast = null;
     logDay(1);
     add("Du vaknar på en öde strand. Vraket sjönk. Håll dig vid liv i " + WIN_DAY + " dagar tills hjälp kommer.");
     render();
@@ -425,6 +505,7 @@
     if(S.gear.kniv) g.push("🔪");
     document.getElementById("resGear").textContent = "🎒 " + (g.length ? g.join(" ") : "—");
 
+    renderScene();
     renderLog();
     var dis = S.over || S.actionsLeft <= 0;
     var btns = document.querySelectorAll("button.act");
@@ -440,6 +521,27 @@
     }
     box.innerHTML = html;
     box.scrollTop = box.scrollHeight;
+  }
+
+  function show(id, on){ var el = document.getElementById(id); if(el) el.style.display = on ? "" : "none"; }
+  function renderScene(){
+    var c = S.camp;
+    show("camp-l1", c === 1);
+    show("camp-l2", c === 2);
+    show("camp-l3", c >= 3);
+    show("fire", c >= 1);
+
+    var logs = document.querySelectorAll("#woodpile .woodlog");
+    var n = Math.min(logs.length, S.wood);
+    for(var i=0;i<logs.length;i++) logs[i].style.display = i < n ? "" : "none";
+
+    if(sceneLast !== null && c !== sceneLast){
+      var wrap = document.getElementById("campWrap");
+      var cls = c > sceneLast ? "pop" : "shake";
+      wrap.classList.remove("pop", "shake");
+      requestAnimationFrame(function(){ requestAnimationFrame(function(){ wrap.classList.add(cls); }); });
+    }
+    sceneLast = c;
   }
 
   // ---- Overlays ----
