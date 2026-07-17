@@ -536,8 +536,8 @@
       el.animate([
         { transform:"translate("+dx+"px,"+dy+"px) scale(.9) rotate(6deg)" },
         { transform:"translate(0,0) scale(1) rotate(0deg)" }
-      ], { duration:360, delay:i*38, easing:"cubic-bezier(.2,.75,.3,1)", composite:"add" });
-      el.animate([{ opacity:0 }, { opacity:1 }], { duration:200, delay:i*38, easing:"ease-out" });
+      ], { duration:360, delay:i*38, easing:"cubic-bezier(.2,.75,.3,1)", composite:"add", fill:"backwards" });
+      el.animate([{ opacity:0 }, { opacity:1 }], { duration:200, delay:i*38, easing:"ease-out", fill:"backwards" });
     });
   }
 
