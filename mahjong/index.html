@@ -184,16 +184,37 @@
   #overlay {
     position: fixed; inset: 0; z-index: 100; display: none;
     align-items: center; justify-content: center; padding: 24px;
-    background: rgba(6,18,15,.62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    background: rgba(6,18,15,.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
   #overlay.show { display: flex; animation: fade .3s ease; }
   @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
   .panel {
-    background: linear-gradient(160deg, rgba(255,255,255,.14), rgba(255,255,255,.05));
+    background: linear-gradient(160deg, #1d3f38, #112a25);
     border: 1px solid rgba(255,255,255,.16); border-radius: 22px;
     padding: 28px 26px; text-align: center; max-width: 340px; width: 100%;
+    max-height: 86dvh; overflow-y: auto;
     box-shadow: 0 20px 60px rgba(0,0,0,.5);
   }
+  .iconbtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 10px; border: none;
+    background: rgba(255,255,255,.12); color: var(--ink); font-size: 16px; line-height: 1; font-family: inherit;
+  }
+  .iconbtn:active { background: rgba(255,255,255,.26); }
+  .panel .set-label { text-align: left; font-size: 12px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+  .panel .set-hint { text-align: left; font-size: 12.5px; color: var(--muted); margin: 8px 2px 0; }
+  .panel .seg { display: flex; gap: 6px; }
+  .panel .seg button {
+    flex: 1; width: auto; padding: 13px 6px; border-radius: 11px;
+    border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.08);
+    color: var(--ink); font-size: 14px; font-weight: 600; box-shadow: none;
+  }
+  .panel .seg button.on { background: var(--accent); color: #1a1200; border-color: #e7bf00; }
+  .panel select.wide-select {
+    width: 100%; font-size: 15px; padding: 13px 34px 13px 12px; border-radius: 11px;
+    background-color: rgba(255,255,255,.1); background-position: right 12px center;
+  }
+  .panel #setStart { margin-top: 18px; }
   .panel .emoji { font-size: 46px; }
   .panel h2 { margin: 8px 0 6px; font-size: 24px; }
   .panel p { margin: 0 0 4px; color: var(--muted); font-size: 15px; line-height: 1.5; }
@@ -223,6 +244,7 @@
       <a class="back" href="/" aria-label="Till startsidan">‹</a>
       <h1>Mahjong</h1>
       <span class="spacer"></span>
+      <button id="btnSettings" class="iconbtn" aria-label="Inställningar">⚙</button>
       <label class="theme-ctl">
         <select data-theme-control aria-label="Tema">
           <option value="auto">Auto</option>
@@ -339,21 +361,78 @@
     return pairs; // 27*2 + 7*2 + 4 = 72
   }
 
-  /* ---------- Layout (turtle, 144 positioner) ---------- */
-  function buildLayout(){
-    var P = [];
-    function add(z,x,y){ P.push({ z:z, x:x, y:y }); }
-    var rows = { 0:[1,12], 1:[3,10], 2:[2,11], 3:[1,12], 4:[1,12], 5:[2,11], 6:[3,10], 7:[1,12] };
-    for(var y=0;y<=7;y++){ var r=rows[y]; for(var x=r[0];x<=r[1];x++) add(0,x,y); } // 84
-    add(0, 13, 3.5);   // huvud (höger)
-    add(0, 0, 3.5);    // svans
-    add(0, -1, 3.5);   // svansspets
-    for(var x1=4;x1<=9;x1++) for(var y1=1;y1<=6;y1++) add(1,x1,y1);   // 36
-    for(var x2=5;x2<=8;x2++) for(var y2=2;y2<=5;y2++) add(2,x2,y2);   // 16
-    for(var x3=6;x3<=7;x3++) for(var y3=3;y3<=4;y3++) add(3,x3,y3);   // 4
-    add(4, 6.5, 3.5);  // topp
-    return P; // 144
+  // Bygg en blandad pool med exakt nPairs par (upprepar standardleken vid behov)
+  function makePool(nPairs){
+    var tpl = buildPairs(), pool = tpl.slice();
+    while(pool.length < nPairs) pool = pool.concat(tpl);
+    shuffle(pool);
+    return pool.slice(0, nPairs);
   }
+
+  /* ---------- Layouter (mönster + storlekar) ---------- */
+  // Stapla ett fotavtryck lager på lager via erosion (behåll bara celler
+  // med alla 4 grannar). Ger heltalsjusterade lager med exponerad kant
+  // runt varje våning → gott om fria brickor och en tydlig 3D-trappa.
+  function stackEroded(cells){
+    var layers = [cells], P = [];
+    while(true){
+      var prev = layers[layers.length-1], s = {};
+      prev.forEach(function(c){ s[c[0]+','+c[1]] = 1; });
+      var next = prev.filter(function(c){
+        return s[(c[0]-1)+','+c[1]] && s[(c[0]+1)+','+c[1]] &&
+               s[c[0]+','+(c[1]-1)] && s[c[0]+','+(c[1]+1)];
+      });
+      if(!next.length) break;
+      layers.push(next);
+    }
+    layers.forEach(function(cs, z){ cs.forEach(function(c){ P.push({ z:z, x:c[0], y:c[1] }); }); });
+    return P;
+  }
+  function rect(w,h){ var c=[]; for(var x=0;x<w;x++) for(var y=0;y<h;y++) c.push([x,y]); return stackEroded(c); }
+  function diamond(r){ var c=[]; for(var x=-r;x<=r;x++) for(var y=-r;y<=r;y++) if(Math.abs(x)+Math.abs(y)<=r) c.push([x+r,y+r]); return stackEroded(c); }
+
+  // Klassisk sköldpadda (144, halvstegsförskjutna huvud/svans/topp)
+  function buildTurtle(){
+    var P=[]; function add(z,x,y){ P.push({z:z,x:x,y:y}); }
+    var rows = { 0:[1,12], 1:[3,10], 2:[2,11], 3:[1,12], 4:[1,12], 5:[2,11], 6:[3,10], 7:[1,12] };
+    for(var y=0;y<=7;y++){ var r=rows[y]; for(var x=r[0];x<=r[1];x++) add(0,x,y); }
+    add(0,13,3.5); add(0,0,3.5); add(0,-1,3.5);
+    for(var x1=4;x1<=9;x1++) for(var y1=1;y1<=6;y1++) add(1,x1,y1);
+    for(var x2=5;x2<=8;x2++) for(var y2=2;y2<=5;y2++) add(2,x2,y2);
+    for(var x3=6;x3<=7;x3++) for(var y3=3;y3<=4;y3++) add(3,x3,y3);
+    add(4,6.5,3.5);
+    return P;
+  }
+
+  // säkerställ jämnt antal (ta bort en topp-bricka om udda)
+  function trimEven(P){
+    if(P.length % 2 === 1){ P = P.slice(); var hi=0; for(var i=1;i<P.length;i++) if(P[i].z>P[hi].z) hi=i; P.splice(hi,1); }
+    return P;
+  }
+
+  // Former hålls smala (få kolumner) och gärna höga → större brickor och
+  // mindre tomrum över/under på en stående mobil.
+  var LAYOUTS = {
+    liten: [
+      { id:'liten-torn',    name:'Torn',    build:function(){ return rect(6,6); } },
+      { id:'liten-diamant', name:'Diamant', build:function(){ return diamond(3); } },
+      { id:'liten-pelare',  name:'Pelare',  build:function(){ return rect(4,7); } }
+    ],
+    mellan: [
+      { id:'mellan-pyramid', name:'Pyramid', build:function(){ return rect(6,8); } },
+      { id:'mellan-diamant', name:'Diamant', build:function(){ return diamond(4); } },
+      { id:'mellan-torn',    name:'Torn',    build:function(){ return rect(7,7); } }
+    ],
+    stor: [
+      { id:'stor-skoldpadda', name:'Sköldpadda', build:buildTurtle },
+      { id:'stor-hoghus',     name:'Höghus',     build:function(){ return rect(6,10); } },
+      { id:'stor-torn',       name:'Torn',       build:function(){ return rect(8,8); } }
+    ]
+  };
+  // förberäkna antal brickor per layout (till menyn)
+  Object.keys(LAYOUTS).forEach(function(sz){
+    LAYOUTS[sz].forEach(function(l){ l.count = trimEven(l.build()).length; });
+  });
 
   /* ---------- Frihetslogik ---------- */
   // en position täcks om någon närvarande bricka i lagret ovanför överlappar
@@ -392,7 +471,7 @@
     for(var attempt=0; attempt<400; attempt++){
       var present = new Array(n).fill(true);   // "ännu ej placerad" = närvarande i strukturen
       var assign = new Array(n).fill(null);
-      var pool = shuffle(buildPairs().slice());
+      var pool = makePool(n/2);
       var ok = true, placed = 0;
       while(placed < n){
         // fria positioner bland ännu ej tilldelade
@@ -414,10 +493,13 @@
   /* ============================================================
      Speltillstånd
      ============================================================ */
-  var POS = buildLayout();
-  var N = POS.length;
-  var minX = 99, minY = 99, maxX = -99, maxY = -99;
-  POS.forEach(function(p){ if(p.x<minX)minX=p.x; if(p.y<minY)minY=p.y; if(p.x>maxX)maxX=p.x; if(p.y>maxY)maxY=p.y; });
+  var POS = [], N = 0, minX = 0, minY = 0, maxX = 0, maxY = 0;
+  function setLayout(positions){
+    POS = positions; N = positions.length;
+    minX = 1e9; minY = 1e9; maxX = -1e9; maxY = -1e9;
+    POS.forEach(function(p){ if(p.x<minX)minX=p.x; if(p.y<minY)minY=p.y; if(p.x>maxX)maxX=p.x; if(p.y>maxY)maxY=p.y; });
+    buildBoard();
+  }
 
   var boardEl = document.getElementById('board');
   var wrapEl  = document.getElementById('boardWrap');
@@ -428,8 +510,15 @@
   var hintPair = null, hintTimer = null;
   var timerId = null;
 
-  var SAVE_KEY = 'mahjong:save';
-  var BEST_KEY = 'mahjong:best';
+  var SAVE_KEY = 'mahjong:save', BEST_PFX = 'mahjong:best:', CFG_KEY = 'mahjong:cfg';
+  var cfg = (function(){
+    var c = null; try { c = JSON.parse(localStorage.getItem(CFG_KEY) || 'null'); } catch(e){}
+    c = c || {};
+    if(['liten','mellan','stor'].indexOf(c.size) < 0) c.size = 'mellan';
+    if(!c.pattern) c.pattern = 'slumpa';
+    return c;
+  })();
+  function saveCfg(){ try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch(e){} }
 
   function present(i){ return !state.removed[i]; }
   function freeNow(i){ return present(i) && isFree(i, state.removed.map(function(r){return !r;}), POS); }
@@ -504,7 +593,7 @@
     if(!bw || !bh) return;
     var aw = wrapEl.clientWidth, ah = wrapEl.clientHeight;
     var s = Math.min((aw - 8)/bw, (ah - 8)/bh);
-    s = Math.min(s, 1.35);
+    s = Math.min(s, 1.7);   // tillåt större brickor på små bräden
     var tx = (aw - bw*s)/2, ty = (ah - bh*s)/2;
     boardEl.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')';
   }
@@ -616,8 +705,8 @@
   function save(){
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({
-        faces: state.faces, removed: state.removed, undo: state.undo,
-        moves: state.moves, seconds: state.seconds
+        positions: state.positions, faces: state.faces, removed: state.removed,
+        undo: state.undo, moves: state.moves, seconds: state.seconds
       }));
     } catch(e){}
   }
@@ -625,24 +714,23 @@
   function loadSave(){
     try {
       var s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-      if(!s || !s.faces || s.faces.length !== N) return null;
-      // validera facekeys
-      for(var i=0;i<N;i++) if(!FACES[s.faces[i]]) return null;
-      return { faces:s.faces, removed:s.removed||new Array(N).fill(false),
+      if(!s || !s.positions || !s.faces || s.faces.length !== s.positions.length) return null;
+      for(var i=0;i<s.faces.length;i++) if(!FACES[s.faces[i]]) return null;
+      return { positions:s.positions, faces:s.faces, removed:s.removed||new Array(s.faces.length).fill(false),
                undo:s.undo||[], moves:s.moves||0, seconds:s.seconds||0, done:false };
     } catch(e){ return null; }
   }
-  function getBest(){ try { return parseInt(localStorage.getItem(BEST_KEY)||'0',10)||0; } catch(e){ return 0; } }
-  function setBest(s){ try { localStorage.setItem(BEST_KEY, String(s)); } catch(e){} }
+  function getBest(n){ try { return parseInt(localStorage.getItem(BEST_PFX+n)||'0',10)||0; } catch(e){ return 0; } }
+  function setBest(n,s){ try { localStorage.setItem(BEST_PFX+n, String(s)); } catch(e){} }
 
   /* ---------- Vinst ---------- */
   function win(){
     state.done = true;
     if(timerId) clearInterval(timerId);
     clearSave();
-    var best = getBest();
+    var best = getBest(N);
     var isBest = (best === 0 || state.seconds < best);
-    if(isBest) setBest(state.seconds);
+    if(isBest) setBest(N, state.seconds);
     var panel = document.getElementById('panel');
     panel.innerHTML =
       '<div class="emoji">🀄</div>' +
@@ -667,14 +755,57 @@
   }
 
   /* ---------- Nytt spel ---------- */
+  function pickLayout(){
+    var list = LAYOUTS[cfg.size] || LAYOUTS.mellan, chosen = null;
+    if(cfg.pattern && cfg.pattern !== 'slumpa')
+      chosen = list.filter(function(l){ return l.id === cfg.pattern; })[0];
+    if(!chosen) chosen = list[(Math.random()*list.length)|0];
+    return trimEven(chosen.build());
+  }
   function newGame(){
+    var positions = pickLayout();
+    setLayout(positions);
     var assign = generate(POS);
     if(!assign){ toast('Kunde inte skapa giv, försök igen'); return; }
-    state = { faces: assign, removed: new Array(N).fill(false), undo: [], moves: 0, seconds: 0, done: false };
+    state = { positions: positions, faces: assign, removed: new Array(N).fill(false),
+              undo: [], moves: 0, seconds: 0, done: false };
     selected = -1; clearHint();
     paintFaces(); refresh(); save();
     document.getElementById('statTime').textContent = '0:00';
     startTimer();
+  }
+
+  /* ---------- Inställningar ---------- */
+  function openSettings(){
+    var pending = { size: cfg.size, pattern: cfg.pattern };
+    var panel = document.getElementById('panel');
+    function seg(v,l){ return '<button data-size="'+v+'"'+(pending.size===v?' class="on"':'')+'>'+l+'</button>'; }
+    function render(){
+      var list = LAYOUTS[pending.size];
+      var opts = '<option value="slumpa">Slumpa mönster</option>' + list.map(function(l){
+        return '<option value="'+l.id+'"'+(l.id===pending.pattern?' selected':'')+'>'+l.name+' — '+l.count+' brickor</option>';
+      }).join('');
+      panel.innerHTML =
+        '<h2>Inställningar</h2>' +
+        '<div class="set-label">Antal brickor</div>' +
+        '<div class="seg" id="segSize">'+seg('liten','Liten')+seg('mellan','Mellan')+seg('stor','Stor')+'</div>' +
+        '<div class="set-hint">Färre brickor = större brickor.</div>' +
+        '<div class="set-label">Mönster</div>' +
+        '<select id="setPattern" class="wide-select">'+opts+'</select>' +
+        '<button id="setStart">Starta nytt spel</button>' +
+        '<button id="setClose" class="ghost">Stäng</button>';
+      document.getElementById('segSize').addEventListener('click', function(e){
+        var b = e.target.closest('button'); if(!b) return;
+        pending.size = b.dataset.size; pending.pattern = 'slumpa'; render();
+      });
+      document.getElementById('setPattern').addEventListener('change', function(){ pending.pattern = this.value; });
+      document.getElementById('setStart').onclick = function(){
+        cfg.size = pending.size; cfg.pattern = pending.pattern; saveCfg(); hideOverlay(); newGame();
+      };
+      document.getElementById('setClose').onclick = hideOverlay;
+    }
+    render();
+    document.getElementById('overlay').classList.add('show');
   }
 
   function confirmNew(){
@@ -695,10 +826,10 @@
   }
 
   /* ---------- Init ---------- */
-  buildBoard();
   var saved = loadSave();
   if(saved){
     state = saved;
+    setLayout(state.positions);
     paintFaces(); refresh();
     document.getElementById('statTime').textContent = fmt(state.seconds);
     startTimer();
@@ -711,6 +842,7 @@
   document.getElementById('btnUndo').onclick = undo;
   document.getElementById('btnHint').onclick = hint;
   document.getElementById('btnShuffle').onclick = shuffleRemaining;
+  document.getElementById('btnSettings').onclick = openSettings;
 
   var rz; window.addEventListener('resize', function(){ clearTimeout(rz); rz=setTimeout(fitBoard, 120); });
   window.addEventListener('orientationchange', function(){ setTimeout(fitBoard, 300); });
