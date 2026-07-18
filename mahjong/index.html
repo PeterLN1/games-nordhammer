@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#123b34" data-light="#123b34" data-dark="#0a1512">
+<title>Mahjong</title>
+<script src="/shared/theme.js"></script>
+<style>
+  :root {
+    --felt: radial-gradient(120% 90% at 50% 0%, #1c5a4e 0%, #123b34 55%, #0d2b26 100%);
+    --chrome: rgba(0,0,0,.28);
+    --ink: #f2f7f4;
+    --muted: rgba(242,247,244,.62);
+    /* bricka */
+    --tile-face: linear-gradient(158deg, #fffdf7 0%, #f4efe2 100%);
+    --tile-edge: #d8cfb6;      /* höger/underkant = tjocklek */
+    --tile-hi: rgba(255,255,255,.9);
+    --tile-line: rgba(0,0,0,.06);
+    /* symbolfärger */
+    --bam: #1f9d55;
+    --cir: #2f6fd0;
+    --chr: #cf3a34;
+    --wind: #7a5cc0;
+    --gold: #c99a2e;
+    --teal: #128f8f;
+    --accent: #ffd200;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --felt: radial-gradient(120% 90% at 50% 0%, #123c34 0%, #0c231f 55%, #071512 100%);
+      --chrome: rgba(0,0,0,.5);
+      --tile-face: linear-gradient(158deg, #f3eee1 0%, #e4ddc9 100%);
+      --tile-edge: #b9b096;
+    }
+  }
+  :root[data-theme="dark"]{
+    --felt: radial-gradient(120% 90% at 50% 0%, #123c34 0%, #0c231f 55%, #071512 100%);
+    --chrome: rgba(0,0,0,.5);
+    --tile-face: linear-gradient(158deg, #f3eee1 0%, #e4ddc9 100%);
+    --tile-edge: #b9b096;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #0d2b26;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    touch-action: manipulation; overscroll-behavior: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100dvh; background: var(--felt); }
+
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: max(6px, env(safe-area-inset-top)) 12px 6px;
+    background: var(--chrome); flex: 0 0 auto;
+  }
+  header .back {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 10px; text-decoration: none;
+    color: var(--ink); background: rgba(255,255,255,.12); font-size: 18px; line-height: 1;
+  }
+  header .back:active { background: rgba(255,255,255,.26); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
+  header .spacer { flex: 1; }
+  .theme-ctl { display: inline-flex; align-items: center; }
+  select {
+    font-family: inherit; font-size: 13px; color: var(--ink);
+    background: rgba(255,255,255,.14); border: none; border-radius: 8px;
+    padding: 7px 26px 7px 10px; -webkit-appearance: none; appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='white'><path d='M0 0l5 6 5-6z'/></svg>");
+    background-repeat: no-repeat; background-position: right 9px center;
+  }
+
+  #stats {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 18px;
+    padding: 7px 12px; font-size: 13px; color: var(--muted); background: rgba(0,0,0,.14);
+  }
+  #stats b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+  #stats .sep { width: 1px; height: 14px; background: rgba(255,255,255,.18); }
+
+  #boardWrap {
+    position: relative; flex: 1 1 auto; overflow: hidden;
+  }
+  #board { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+
+  .tile {
+    position: absolute; width: var(--tw); height: var(--th);
+    border-radius: calc(var(--tw) * .14);
+    font-size: var(--th); /* 1em = brickhöjd; inre element skalar i em */
+    background: var(--tile-face);
+    box-shadow:
+      inset 0 0 0 1px var(--tile-line),
+      inset 1.5px 1.5px 0 0 var(--tile-hi),
+      /* tjocklek nedåt/höger */
+      2px 3px 0 0 var(--tile-edge),
+      3px 5px 0 0 var(--tile-edge),
+      4px 8px 12px -3px rgba(0,0,0,.5);
+    cursor: pointer;
+    transition: transform .14s ease, opacity .24s ease, box-shadow .14s ease;
+    will-change: transform, opacity;
+  }
+  .tile .face {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; overflow: hidden;
+    border-radius: inherit;
+  }
+  .tile.free { cursor: pointer; }
+  .tile.blocked { filter: brightness(.9) saturate(.85); cursor: default; }
+  .tile.blocked::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    background: rgba(20,30,25,.22);
+  }
+  .tile.selected {
+    box-shadow:
+      inset 0 0 0 2px var(--accent),
+      inset 1.5px 1.5px 0 0 var(--tile-hi),
+      2px 3px 0 0 var(--tile-edge), 3px 5px 0 0 var(--tile-edge),
+      0 0 0 3px rgba(255,210,0,.55), 4px 8px 16px -2px rgba(0,0,0,.55);
+    transform: translateY(-2px);
+  }
+  .tile.hint { animation: hintPulse 1s ease-in-out infinite; }
+  @keyframes hintPulse {
+    0%,100% { box-shadow: inset 0 0 0 1px var(--tile-line), inset 1.5px 1.5px 0 0 var(--tile-hi), 2px 3px 0 0 var(--tile-edge), 3px 5px 0 0 var(--tile-edge), 0 0 0 2px rgba(47,111,208,.2), 4px 8px 12px -3px rgba(0,0,0,.5); }
+    50%     { box-shadow: inset 0 0 0 1px var(--tile-line), inset 1.5px 1.5px 0 0 var(--tile-hi), 2px 3px 0 0 var(--tile-edge), 3px 5px 0 0 var(--tile-edge), 0 0 0 4px rgba(47,111,208,.85), 4px 8px 16px -2px rgba(0,0,0,.55); }
+  }
+  .tile.gone {
+    opacity: 0; transform: scale(.55) translateY(-6px); pointer-events: none;
+  }
+
+  /* ---- brickmotiv (minimalistiskt) ---- */
+  .face .rank { font-weight: 800; line-height: .9; letter-spacing: -.02em; }
+  .num .rank { font-size: .5em; }
+  .num .suit-ic { width: .3em; height: .3em; margin-top: .06em; opacity: .95; }
+  .wind .rank { font-size: .46em; }
+  .wind .lbl { font-size: .12em; letter-spacing: .18em; margin-top: .1em; opacity: .7; font-weight: 700; text-transform: uppercase; }
+  .glyph { width: .56em; height: .56em; }
+  .bonus-bar { position: absolute; left: 14%; right: 14%; bottom: .1em; height: .05em; border-radius: 999px; }
+  .face svg { display: block; }
+  .c-bam { color: var(--bam); } .c-cir { color: var(--cir); } .c-chr { color: var(--chr); }
+  .c-wind { color: var(--wind); } .c-gold { color: var(--gold); } .c-teal { color: var(--teal); }
+
+  footer#controls {
+    flex: 0 0 auto; display: flex; justify-content: center; align-items: center; gap: 9px;
+    padding: 11px 10px calc(11px + env(safe-area-inset-bottom));
+    background: var(--chrome);
+  }
+  footer#controls button {
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    display: inline-flex; flex-direction: column; align-items: center; gap: 3px;
+    min-width: 62px; min-height: 50px; padding: 6px 8px; border-radius: 13px;
+    background: rgba(255,255,255,.1); color: var(--ink); border: 1px solid rgba(255,255,255,.12);
+    transition: background .12s, transform .06s;
+  }
+  footer#controls button .ic { font-size: 19px; line-height: 1; }
+  footer#controls button:active { background: rgba(255,255,255,.24); transform: scale(.95); }
+  footer#controls button:disabled { opacity: .34; }
+  footer#controls button.primary {
+    background: var(--accent); color: #1a1200; border-color: #e7bf00;
+    box-shadow: 0 2px 12px rgba(255,210,0,.26);
+  }
+
+  /* ---- overlay (vinst / dödläge) ---- */
+  #overlay {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    align-items: center; justify-content: center; padding: 24px;
+    background: rgba(6,18,15,.62); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
+  #overlay.show { display: flex; animation: fade .3s ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .panel {
+    background: linear-gradient(160deg, rgba(255,255,255,.14), rgba(255,255,255,.05));
+    border: 1px solid rgba(255,255,255,.16); border-radius: 22px;
+    padding: 28px 26px; text-align: center; max-width: 340px; width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  }
+  .panel .emoji { font-size: 46px; }
+  .panel h2 { margin: 8px 0 6px; font-size: 24px; }
+  .panel p { margin: 0 0 4px; color: var(--muted); font-size: 15px; line-height: 1.5; }
+  .panel .big-stat { font-size: 34px; font-weight: 800; margin: 12px 0 2px; font-variant-numeric: tabular-nums; }
+  .panel .best { font-size: 13px; color: var(--muted); margin-bottom: 18px; }
+  .panel button {
+    font-family: inherit; font-size: 16px; font-weight: 700; width: 100%;
+    padding: 15px; border-radius: 14px; border: none; cursor: pointer;
+    background: var(--accent); color: #1a1200; box-shadow: 0 4px 16px rgba(255,210,0,.3);
+  }
+  .panel button.ghost { background: rgba(255,255,255,.12); color: var(--ink); box-shadow: none; margin-top: 10px; }
+  .panel button:active { transform: scale(.98); }
+
+  #toast {
+    position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom));
+    transform: translateX(-50%) translateY(10px); z-index: 90;
+    background: rgba(0,0,0,.85); color: #fff; padding: 12px 20px; border-radius: 999px;
+    font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none;
+    transition: opacity .25s, transform .25s; max-width: 84vw; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <a class="back" href="/" aria-label="Till startsidan">‹</a>
+      <h1>Mahjong</h1>
+      <span class="spacer"></span>
+      <label class="theme-ctl">
+        <select data-theme-control aria-label="Tema">
+          <option value="auto">Auto</option>
+          <option value="light">Ljust</option>
+          <option value="dark">Mörkt</option>
+        </select>
+      </label>
+    </header>
+
+    <div id="stats">
+      <span>Tid <b id="statTime">0:00</b></span>
+      <span class="sep"></span>
+      <span>Par kvar <b id="statPairs">72</b></span>
+      <span class="sep"></span>
+      <span>Drag <b id="statMoves">0</b></span>
+    </div>
+
+    <div id="boardWrap">
+      <div id="board"></div>
+    </div>
+
+    <footer id="controls">
+      <button id="btnNew" class="primary"><span class="ic">♻︎</span>Ny giv</button>
+      <button id="btnUndo"><span class="ic">↩︎</span>Ångra</button>
+      <button id="btnHint"><span class="ic">💡</span>Tips</button>
+      <button id="btnShuffle"><span class="ic">🔀</span>Blanda</button>
+    </footer>
+  </div>
+
+  <div id="overlay"><div class="panel" id="panel"></div></div>
+  <div id="toast"></div>
+
+<script>
+"use strict";
+(function(){
+  /* ============================================================
+     Mahjong Solitaire — Nordhammer Spel
+     Ren HTML/CSS/JS. Klassisk turtle-layout (144 brickor),
+     garanterat lösbara givar via bakvänd generering.
+     ============================================================ */
+
+  var TW = 52, TH = 70;          // brickmått i px (naturlig storlek, board skalas sen)
+  var DX = 7, DY = 8;            // lagerförskjutning (djup)
+  var MARGIN = 5 * Math.max(DX, DY);
+
+  /* ---------- Brickmotiv ---------- */
+  // SVG-ikoner (viewBox 0 0 24 24), currentColor = symbolfärg
+  var IC = {
+    bam: '<svg class="suit-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M7 3v18M17 3v18"/><path d="M4 9h6M14 9h6M4 15h6M14 15h6" stroke-width="2"/></svg>',
+    cir: '<svg class="suit-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="8"/></svg>',
+    chr: '<svg class="suit-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12h8" stroke-width="2.6" stroke-linecap="round"/></svg>',
+    compass: '<svg class="suit-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M12 3l3 9-3 9-3-9z" fill="currentColor" fill-opacity=".25"/></svg>'
+  };
+  // Drakar (emblem)
+  var DR = {
+    r: '<svg class="glyph c-chr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M12 2v20" stroke-linecap="round"/></svg>',
+    g: '<svg class="glyph c-bam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15c4-8 12-8 16 0"/><path d="M4 10c4-8 12-8 16 0" opacity=".55"/></svg>',
+    w: '<svg class="glyph c-cir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>'
+  };
+  // Blommor & årstider (fyra distinkta motiv per grupp)
+  var FL = {
+    1: '<svg class="glyph c-gold" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="6" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><circle cx="9" cy="18" r="3"/><circle cx="15" cy="18" r="3"/></svg>',
+    2: '<svg class="glyph c-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 21c-3-6-3-12 0-18 3 6 3 12 0 18z"/><path d="M12 21c5-3 8-8 8-14"/><path d="M12 21c-5-3-8-8-8-14"/></svg>',
+    3: '<svg class="glyph c-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 12l0-8M12 12l7-4M12 12l7 4M12 12l-7 4M12 12l-7-4M12 12l4 7M12 12l-4 7"/></svg>',
+    4: '<svg class="glyph c-gold" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c2 4 6 5 6 10a6 6 0 0 1-12 0c0-5 4-6 6-10z"/></svg>'
+  };
+  var SE = {
+    1: '<svg class="glyph c-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 13c0-4 3-7 7-7-1 5-3 7-7 7z"/><path d="M12 21V11"/></svg>',
+    2: '<svg class="glyph c-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="4.5" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" stroke-linecap="round"/></svg>',
+    3: '<svg class="glyph c-teal" viewBox="0 0 24 24" fill="currentColor"><path d="M11 3h2v7l5-3 1 2-6 3 6 3-1 2-5-3v7h-2v-7l-5 3-1-2 6-3-6-3 1-2 5 3z"/></svg>',
+    4: '<svg class="glyph c-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 2v20M2 12h20M5 5l14 14M19 5L5 19"/></svg>'
+  };
+
+  // Brickregister: key -> {match, html}
+  var FACES = {};
+  function reg(key, match, html){ FACES[key] = { match: match, html: html }; }
+
+  var SUITS = [
+    { p:'bam', cls:'c-bam', ic:IC.bam },
+    { p:'cir', cls:'c-cir', ic:IC.cir },
+    { p:'chr', cls:'c-chr', ic:IC.chr }
+  ];
+  SUITS.forEach(function(s){
+    for(var r=1;r<=9;r++){
+      var key = s.p + r;
+      reg(key, key,
+        '<div class="face num '+s.cls+'"><span class="rank">'+r+'</span>'+s.ic+'</div>');
+    }
+  });
+  // Vindar (svenska väderstreck)
+  [['w-o','Ö','ÖST'],['w-s','S','SYD'],['w-v','V','VÄST'],['w-n','N','NORR']].forEach(function(w){
+    reg(w[0], w[0],
+      '<div class="face wind c-wind"><span class="rank">'+w[1]+'</span><span class="lbl">'+w[2]+'</span></div>');
+  });
+  // Drakar
+  reg('d-r','d-r','<div class="face">'+DR.r+'</div>');
+  reg('d-g','d-g','<div class="face">'+DR.g+'</div>');
+  reg('d-w','d-w','<div class="face">'+DR.w+'</div>');
+  // Blommor (match: "flower") & årstider (match: "season")
+  for(var i=1;i<=4;i++){
+    reg('fl'+i,'flower','<div class="face">'+FL[i]+'<span class="bonus-bar" style="background:var(--gold)"></span></div>');
+    reg('se'+i,'season','<div class="face">'+SE[i]+'<span class="bonus-bar" style="background:var(--teal)"></span></div>');
+  }
+
+  // Par för generering (72 par = 144 brickor)
+  function buildPairs(){
+    var pairs = [];
+    SUITS.forEach(function(s){
+      for(var r=1;r<=9;r++){ var k=s.p+r; pairs.push([k,k]); pairs.push([k,k]); }
+    });
+    ['w-o','w-s','w-v','w-n','d-r','d-g','d-w'].forEach(function(k){ pairs.push([k,k]); pairs.push([k,k]); });
+    pairs.push(['fl1','fl2']); pairs.push(['fl3','fl4']);
+    pairs.push(['se1','se2']); pairs.push(['se3','se4']);
+    return pairs; // 27*2 + 7*2 + 4 = 72
+  }
+
+  /* ---------- Layout (turtle, 144 positioner) ---------- */
+  function buildLayout(){
+    var P = [];
+    function add(z,x,y){ P.push({ z:z, x:x, y:y }); }
+    var rows = { 0:[1,12], 1:[3,10], 2:[2,11], 3:[1,12], 4:[1,12], 5:[2,11], 6:[3,10], 7:[1,12] };
+    for(var y=0;y<=7;y++){ var r=rows[y]; for(var x=r[0];x<=r[1];x++) add(0,x,y); } // 84
+    add(0, 13, 3.5);   // huvud (höger)
+    add(0, 0, 3.5);    // svans
+    add(0, -1, 3.5);   // svansspets
+    for(var x1=4;x1<=9;x1++) for(var y1=1;y1<=6;y1++) add(1,x1,y1);   // 36
+    for(var x2=5;x2<=8;x2++) for(var y2=2;y2<=5;y2++) add(2,x2,y2);   // 16
+    for(var x3=6;x3<=7;x3++) for(var y3=3;y3<=4;y3++) add(3,x3,y3);   // 4
+    add(4, 6.5, 3.5);  // topp
+    return P; // 144
+  }
+
+  /* ---------- Frihetslogik ---------- */
+  // en position täcks om någon närvarande bricka i lagret ovanför överlappar
+  function covered(pos, present, positions){
+    for(var i=0;i<positions.length;i++){
+      if(!present[i]) continue;
+      var q = positions[i];
+      if(q.z === pos.z + 1 && Math.abs(q.x - pos.x) < 0.9 && Math.abs(q.y - pos.y) < 0.9) return true;
+    }
+    return false;
+  }
+  function sideOpen(pos, present, positions, dir){ // dir = -1 vänster, +1 höger
+    for(var i=0;i<positions.length;i++){
+      if(!present[i]) continue;
+      var q = positions[i];
+      if(q.z !== pos.z) continue;
+      var dx = (pos.x - q.x) * dir;      // >0 om q ligger i riktningen dir
+      if(dx > 0.1 && dx < 1.1 && Math.abs(q.y - pos.y) < 0.9) return false;
+    }
+    return true;
+  }
+  function isFree(idx, present, positions){
+    var pos = positions[idx];
+    if(covered(pos, present, positions)) return false;
+    return sideOpen(pos, present, positions, -1) || sideOpen(pos, present, positions, +1);
+  }
+
+  function shuffle(a){
+    for(var i=a.length-1;i>0;i--){ var j=(Math.random()*(i+1))|0; var t=a[i]; a[i]=a[j]; a[j]=t; }
+    return a;
+  }
+
+  /* ---------- Generering av lösbar giv ---------- */
+  function generate(positions){
+    var n = positions.length;
+    for(var attempt=0; attempt<400; attempt++){
+      var present = new Array(n).fill(true);   // "ännu ej placerad" = närvarande i strukturen
+      var assign = new Array(n).fill(null);
+      var pool = shuffle(buildPairs().slice());
+      var ok = true, placed = 0;
+      while(placed < n){
+        // fria positioner bland ännu ej tilldelade
+        var free = [];
+        for(var i=0;i<n;i++) if(present[i] && isFree(i, present, positions)) free.push(i);
+        if(free.length < 2){ ok = false; break; }
+        shuffle(free);
+        var a = free[0], b = free[1];
+        var pair = pool.pop();
+        assign[a] = pair[0]; assign[b] = pair[1];
+        present[a] = false; present[b] = false;
+        placed += 2;
+      }
+      if(ok) return assign;
+    }
+    return null; // ytterst osannolikt
+  }
+
+  /* ============================================================
+     Speltillstånd
+     ============================================================ */
+  var POS = buildLayout();
+  var N = POS.length;
+  var minX = 99, minY = 99, maxX = -99, maxY = -99;
+  POS.forEach(function(p){ if(p.x<minX)minX=p.x; if(p.y<minY)minY=p.y; if(p.x>maxX)maxX=p.x; if(p.y>maxY)maxY=p.y; });
+
+  var boardEl = document.getElementById('board');
+  var wrapEl  = document.getElementById('boardWrap');
+  var tileEls = [];   // DOM per position
+
+  var state = null;   // { faces:[], removed:[bool], undo:[[a,b]], moves, seconds, done }
+  var selected = -1;
+  var hintPair = null, hintTimer = null;
+  var timerId = null;
+
+  var SAVE_KEY = 'mahjong:save';
+  var BEST_KEY = 'mahjong:best';
+
+  function present(i){ return !state.removed[i]; }
+  function freeNow(i){ return present(i) && isFree(i, state.removed.map(function(r){return !r;}), POS); }
+
+  // snabbare frihetskoll som använder removed direkt
+  function isFreeIdx(idx){
+    if(state.removed[idx]) return false;
+    var pos = POS[idx];
+    // täckt?
+    for(var i=0;i<N;i++){
+      if(state.removed[i]) continue;
+      var q = POS[i];
+      if(q.z === pos.z+1 && Math.abs(q.x-pos.x)<0.9 && Math.abs(q.y-pos.y)<0.9) return false;
+    }
+    var leftBlocked=false, rightBlocked=false;
+    for(var j=0;j<N;j++){
+      if(state.removed[j] || j===idx) continue;
+      var r = POS[j];
+      if(r.z !== pos.z) continue;
+      if(Math.abs(r.y-pos.y) >= 0.9) continue;
+      var d = pos.x - r.x;
+      if(d>0.1 && d<1.1) leftBlocked = true;
+      if(d<-0.1 && d>-1.1) rightBlocked = true;
+    }
+    return !leftBlocked || !rightBlocked;
+  }
+
+  function matchKey(i){ return FACES[state.faces[i]].match; }
+  function matches(i,j){ return i!==j && matchKey(i)===matchKey(j); }
+
+  /* ---------- Rendering ---------- */
+  function buildBoard(){
+    boardEl.innerHTML = '';
+    boardEl.style.setProperty('--tw', TW + 'px');
+    boardEl.style.setProperty('--th', TH + 'px');
+    tileEls = [];
+    // rita underst först (z låg, y låg) så DOM-ordning ~ staplingsordning
+    var order = POS.map(function(_,i){return i;}).sort(function(a,b){
+      var pa=POS[a], pb=POS[b];
+      if(pa.z!==pb.z) return pa.z-pb.z;
+      if(pa.y!==pb.y) return pa.y-pb.y;
+      return pa.x-pb.x;
+    });
+    order.forEach(function(i){
+      var p = POS[i];
+      var el = document.createElement('div');
+      el.className = 'tile';
+      el.dataset.idx = i;
+      var left = MARGIN + (p.x - minX)*TW - p.z*DX;
+      var top  = MARGIN + (p.y - minY)*TH - p.z*DY;
+      el.style.left = left + 'px';
+      el.style.top  = top + 'px';
+      el.style.zIndex = (p.z*1000 + Math.round((p.y-minY)*2)*20 + Math.round((p.x-minX)*2));
+      boardEl.appendChild(el);
+      tileEls[i] = el;
+    });
+    var bw = MARGIN + (maxX - minX + 1)*TW + 6;
+    var bh = MARGIN + (maxY - minY + 1)*TH + 8;
+    boardEl.style.width = bw + 'px';
+    boardEl.style.height = bh + 'px';
+    fitBoard();
+  }
+
+  function paintFaces(){
+    for(var i=0;i<N;i++){
+      tileEls[i].innerHTML = FACES[state.faces[i]].html;
+    }
+  }
+
+  function fitBoard(){
+    var bw = parseFloat(boardEl.style.width), bh = parseFloat(boardEl.style.height);
+    if(!bw || !bh) return;
+    var aw = wrapEl.clientWidth, ah = wrapEl.clientHeight;
+    var s = Math.min((aw - 8)/bw, (ah - 8)/bh);
+    s = Math.min(s, 1.35);
+    var tx = (aw - bw*s)/2, ty = (ah - bh*s)/2;
+    boardEl.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')';
+  }
+
+  function refresh(){
+    for(var i=0;i<N;i++){
+      var el = tileEls[i];
+      if(state.removed[i]){ el.classList.add('gone'); el.classList.remove('free','blocked','selected','hint'); continue; }
+      el.classList.remove('gone');
+      var free = isFreeIdx(i);
+      el.classList.toggle('free', free);
+      el.classList.toggle('blocked', !free);
+      el.classList.toggle('selected', i===selected);
+    }
+    document.getElementById('statMoves').textContent = state.moves;
+    var left = 0; for(var k=0;k<N;k++) if(!state.removed[k]) left++;
+    document.getElementById('statPairs').textContent = (left/2)|0;
+    document.getElementById('btnUndo').disabled = state.undo.length===0;
+  }
+
+  /* ---------- Interaktion ---------- */
+  function onBoardClick(e){
+    var t = e.target.closest('.tile');
+    if(!t) return;
+    var i = +t.dataset.idx;
+    if(state.removed[i] || !isFreeIdx(i)) return;
+    clearHint();
+    if(selected === -1){ selected = i; refresh(); return; }
+    if(selected === i){ selected = -1; refresh(); return; }
+    if(matches(selected, i)){
+      removePair(selected, i);
+      selected = -1;
+    } else {
+      selected = i;
+      refresh();
+    }
+  }
+
+  function removePair(a, b){
+    state.removed[a] = true; state.removed[b] = true;
+    state.undo.push([a,b]);
+    state.moves++;
+    if(navigator.vibrate) try { navigator.vibrate(12); } catch(e){}
+    refresh();
+    save();
+    // vinst?
+    var left = 0; for(var k=0;k<N;k++) if(!state.removed[k]) left++;
+    if(left === 0){ win(); return; }
+    // dödläge?
+    if(!hasMove()){
+      setTimeout(function(){ toast('Inga drag kvar — tryck Blanda'); }, 300);
+    }
+  }
+
+  function undo(){
+    if(!state.undo.length) return;
+    var pair = state.undo.pop();
+    state.removed[pair[0]] = false; state.removed[pair[1]] = false;
+    state.moves = Math.max(0, state.moves-1);
+    selected = -1; clearHint();
+    refresh(); save();
+  }
+
+  /* ---------- Tips & dödläge ---------- */
+  function findMove(){
+    var freeList = [];
+    for(var i=0;i<N;i++) if(!state.removed[i] && isFreeIdx(i)) freeList.push(i);
+    for(var a=0;a<freeList.length;a++)
+      for(var b=a+1;b<freeList.length;b++)
+        if(matches(freeList[a], freeList[b])) return [freeList[a], freeList[b]];
+    return null;
+  }
+  function hasMove(){ return !!findMove(); }
+
+  function hint(){
+    clearHint();
+    var m = findMove();
+    if(!m){ toast('Inga drag — tryck Blanda'); return; }
+    hintPair = m;
+    tileEls[m[0]].classList.add('hint');
+    tileEls[m[1]].classList.add('hint');
+    hintTimer = setTimeout(clearHint, 2200);
+  }
+  function clearHint(){
+    if(hintPair){ tileEls[hintPair[0]].classList.remove('hint'); tileEls[hintPair[1]].classList.remove('hint'); hintPair=null; }
+    if(hintTimer){ clearTimeout(hintTimer); hintTimer=null; }
+  }
+
+  // Blanda om kvarvarande brickor så minst ett drag finns (behåller par-antal)
+  function shuffleRemaining(){
+    var idxs = []; for(var i=0;i<N;i++) if(!state.removed[i]) idxs.push(i);
+    if(idxs.length < 2){ return; }
+    var faces = idxs.map(function(i){ return state.faces[i]; });
+    for(var attempt=0; attempt<60; attempt++){
+      shuffle(faces);
+      for(var k=0;k<idxs.length;k++) state.faces[idxs[k]] = faces[k];
+      if(hasMove()) break;
+    }
+    selected = -1; clearHint(); paintFaces(); refresh(); save();
+    toast('Brickorna blandades');
+  }
+
+  /* ---------- Timer ---------- */
+  function fmt(s){ var m=(s/60)|0; var r=s%60; return m + ':' + (r<10?'0':'') + r; }
+  function tick(){ if(state && !state.done){ state.seconds++; document.getElementById('statTime').textContent = fmt(state.seconds); } }
+  function startTimer(){ if(timerId) clearInterval(timerId); timerId = setInterval(tick, 1000); }
+
+  /* ---------- Persistens ---------- */
+  function save(){
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({
+        faces: state.faces, removed: state.removed, undo: state.undo,
+        moves: state.moves, seconds: state.seconds
+      }));
+    } catch(e){}
+  }
+  function clearSave(){ try { localStorage.removeItem(SAVE_KEY); } catch(e){} }
+  function loadSave(){
+    try {
+      var s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+      if(!s || !s.faces || s.faces.length !== N) return null;
+      // validera facekeys
+      for(var i=0;i<N;i++) if(!FACES[s.faces[i]]) return null;
+      return { faces:s.faces, removed:s.removed||new Array(N).fill(false),
+               undo:s.undo||[], moves:s.moves||0, seconds:s.seconds||0, done:false };
+    } catch(e){ return null; }
+  }
+  function getBest(){ try { return parseInt(localStorage.getItem(BEST_KEY)||'0',10)||0; } catch(e){ return 0; } }
+  function setBest(s){ try { localStorage.setItem(BEST_KEY, String(s)); } catch(e){} }
+
+  /* ---------- Vinst ---------- */
+  function win(){
+    state.done = true;
+    if(timerId) clearInterval(timerId);
+    clearSave();
+    var best = getBest();
+    var isBest = (best === 0 || state.seconds < best);
+    if(isBest) setBest(state.seconds);
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">🀄</div>' +
+      '<h2>Klart!</h2>' +
+      '<p>Du rensade hela brädet.</p>' +
+      '<div class="big-stat">' + fmt(state.seconds) + '</div>' +
+      '<div class="best">' + (isBest ? '🏆 Nytt rekord!' : 'Bästa tid: ' + fmt(best)) + '</div>' +
+      '<button id="pNew">Ny giv</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pNew').onclick = function(){ hideOverlay(); newGame(); };
+    if(navigator.vibrate) try { navigator.vibrate([20,40,20]); } catch(e){}
+  }
+  function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
+
+  /* ---------- Toast ---------- */
+  var toastTimer = null;
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2000);
+  }
+
+  /* ---------- Nytt spel ---------- */
+  function newGame(){
+    var assign = generate(POS);
+    if(!assign){ toast('Kunde inte skapa giv, försök igen'); return; }
+    state = { faces: assign, removed: new Array(N).fill(false), undo: [], moves: 0, seconds: 0, done: false };
+    selected = -1; clearHint();
+    paintFaces(); refresh(); save();
+    document.getElementById('statTime').textContent = '0:00';
+    startTimer();
+  }
+
+  function confirmNew(){
+    var anyProgress = state && state.moves > 0 && !state.done;
+    if(anyProgress){
+      var panel = document.getElementById('panel');
+      panel.innerHTML =
+        '<div class="emoji">♻︎</div><h2>Ny giv?</h2>' +
+        '<p>Det pågående spelet försvinner.</p>' +
+        '<button id="pYes">Ja, ny giv</button>' +
+        '<button id="pNo" class="ghost">Avbryt</button>';
+      document.getElementById('overlay').classList.add('show');
+      document.getElementById('pYes').onclick = function(){ hideOverlay(); newGame(); };
+      document.getElementById('pNo').onclick = hideOverlay;
+    } else {
+      newGame();
+    }
+  }
+
+  /* ---------- Init ---------- */
+  buildBoard();
+  var saved = loadSave();
+  if(saved){
+    state = saved;
+    paintFaces(); refresh();
+    document.getElementById('statTime').textContent = fmt(state.seconds);
+    startTimer();
+  } else {
+    newGame();
+  }
+
+  boardEl.addEventListener('click', onBoardClick);
+  document.getElementById('btnNew').onclick = confirmNew;
+  document.getElementById('btnUndo').onclick = undo;
+  document.getElementById('btnHint').onclick = hint;
+  document.getElementById('btnShuffle').onclick = shuffleRemaining;
+
+  var rz; window.addEventListener('resize', function(){ clearTimeout(rz); rz=setTimeout(fitBoard, 120); });
+  window.addEventListener('orientationchange', function(){ setTimeout(fitBoard, 300); });
+  document.getElementById('overlay').addEventListener('click', function(e){ if(e.target.id==='overlay') hideOverlay(); });
+
+})();
+</script>
+</body>
+</html>
