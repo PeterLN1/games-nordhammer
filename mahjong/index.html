@@ -236,6 +236,19 @@
     transition: opacity .25s, transform .25s; max-width: 84vw; text-align: center;
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.cheer {
+    background: linear-gradient(135deg, #ffdb42, #ffb300); color: #241800;
+    font-size: 19px; font-weight: 800; letter-spacing: .2px;
+    padding: 14px 26px; border: 2px solid #fff3c0;
+    box-shadow: 0 8px 28px rgba(255,180,0,.55), 0 0 0 6px rgba(255,210,0,.14);
+    bottom: auto; top: 26%;
+  }
+  #toast.cheer.show { animation: cheerPop .45s cubic-bezier(.3,1.5,.5,1) both; }
+  @keyframes cheerPop {
+    0% { transform: translateX(-50%) scale(.5); opacity: 0; }
+    60% { transform: translateX(-50%) scale(1.14); opacity: 1; }
+    100% { transform: translateX(-50%) scale(1); opacity: 1; }
+  }
 </style>
 </head>
 <body>
@@ -516,6 +529,7 @@
     c = c || {};
     if(['liten','mellan','stor'].indexOf(c.size) < 0) c.size = 'mellan';
     if(!c.pattern) c.pattern = 'slumpa';
+    if(typeof c.sound !== 'boolean') c.sound = true;
     return c;
   })();
   function saveCfg(){ try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch(e){} }
@@ -621,14 +635,13 @@
     var i = +t.dataset.idx;
     if(state.removed[i] || !isFreeIdx(i)) return;
     clearHint();
-    if(selected === -1){ selected = i; refresh(); return; }
+    if(selected === -1){ selected = i; sfx('select'); refresh(); return; }
     if(selected === i){ selected = -1; refresh(); return; }
     if(matches(selected, i)){
       removePair(selected, i);
       selected = -1;
     } else {
-      selected = i;
-      refresh();
+      selected = i; sfx('invalid'); refresh();
     }
   }
 
@@ -636,16 +649,32 @@
     state.removed[a] = true; state.removed[b] = true;
     state.undo.push([a,b]);
     state.moves++;
+    // combo: matchningar i följd inom ett tidsfönster
+    var now = Date.now();
+    state.combo = (state.lastMatch && now - state.lastMatch < 3000) ? (state.combo||0)+1 : 1;
+    state.lastMatch = now;
     if(navigator.vibrate) try { navigator.vibrate(12); } catch(e){}
+    sfx('match', state.combo);
     refresh();
     save();
     // vinst?
     var left = 0; for(var k=0;k<N;k++) if(!state.removed[k]) left++;
     if(left === 0){ win(); return; }
+    praiseAfterMatch(left);
     // dödläge?
     if(!hasMove()){
+      sfx('deadlock');
       setTimeout(function(){ toast('Inga drag kvar — tryck Blanda'); }, 300);
     }
+  }
+
+  // Beröm: combo-milstolpar + framstegshälsningar (sparsamt, inte varje drag)
+  var COMBO_MSG = { 3:'Bra! ×3 🔥', 5:'Snyggt! ×5 🔥', 8:'Grymt! ×8 ⚡', 12:'Otroligt! ×12 🌟', 16:'Magiskt! ×16 ✨' };
+  function praiseAfterMatch(left){
+    var total = N/2, said = false;
+    if(COMBO_MSG[state.combo]){ celebrate(COMBO_MSG[state.combo]); said = true; }
+    if(!state.flHalf && left <= total/2 && left > 3){ state.flHalf = true; if(!said){ celebrate('Halvvägs! 💪'); said = true; } }
+    if(left === 3 && !state.flNear){ state.flNear = true; if(!said) celebrate('Snart klart!'); }
   }
 
   function undo(){
@@ -653,7 +682,8 @@
     var pair = state.undo.pop();
     state.removed[pair[0]] = false; state.removed[pair[1]] = false;
     state.moves = Math.max(0, state.moves-1);
-    selected = -1; clearHint();
+    state.combo = 0; state.lastMatch = 0;
+    selected = -1; clearHint(); sfx('undo');
     refresh(); save();
   }
 
@@ -675,6 +705,7 @@
     hintPair = m;
     tileEls[m[0]].classList.add('hint');
     tileEls[m[1]].classList.add('hint');
+    sfx('hint');
     hintTimer = setTimeout(clearHint, 2200);
   }
   function clearHint(){
@@ -692,7 +723,8 @@
       for(var k=0;k<idxs.length;k++) state.faces[idxs[k]] = faces[k];
       if(hasMove()) break;
     }
-    selected = -1; clearHint(); paintFaces(); refresh(); save();
+    state.combo = 0; state.lastMatch = 0;
+    selected = -1; clearHint(); sfx('shuffle'); paintFaces(); refresh(); save();
     toast('Brickorna blandades');
   }
 
@@ -741,6 +773,7 @@
       '<button id="pNew">Ny giv</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pNew').onclick = function(){ hideOverlay(); newGame(); };
+    sfx('win');
     if(navigator.vibrate) try { navigator.vibrate([20,40,20]); } catch(e){}
   }
   function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
@@ -749,9 +782,53 @@
   var toastTimer = null;
   function toast(msg){
     var t = document.getElementById('toast');
-    t.textContent = msg; t.classList.add('show');
+    t.className = ''; t.textContent = msg; t.classList.add('show');
     if(toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2000);
+  }
+  function celebrate(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'show cheer';
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 1400);
+  }
+
+  /* ---------- Ljud (Web Audio, syntetiskt) ---------- */
+  var actx = null;
+  function ac(){
+    if(!actx){ try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ actx = false; } }
+    if(actx && actx.state === 'suspended') actx.resume();
+    return actx;
+  }
+  function tone(freq, start, dur, type, vol){
+    var a = ac(); if(!a) return;
+    var t0 = a.currentTime + start;
+    var osc = a.createOscillator(), g = a.createGain();
+    osc.type = type || 'sine'; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g); g.connect(a.destination);
+    osc.start(t0); osc.stop(t0 + dur + 0.02);
+  }
+  function sfx(name, level){
+    if(!cfg.sound) return;
+    switch(name){
+      case 'select': tone(600, 0, 0.06, 'sine', 0.12); break;
+      case 'match':
+        var base = 523 * Math.pow(1.06, Math.min((level||1)-1, 12));
+        tone(base, 0, 0.10, 'sine', 0.18);
+        tone(base*1.5, 0.05, 0.12, 'sine', 0.14);
+        break;
+      case 'invalid': tone(196, 0, 0.12, 'sawtooth', 0.10); break;
+      case 'undo': tone(300, 0, 0.10, 'triangle', 0.12); break;
+      case 'shuffle': tone(500, 0, 0.10, 'triangle', 0.12); tone(360, 0.08, 0.12, 'triangle', 0.10); break;
+      case 'hint': tone(760, 0, 0.09, 'sine', 0.12); tone(1010, 0.07, 0.10, 'sine', 0.10); break;
+      case 'win':
+        [523,659,784,1047].forEach(function(f,i){ tone(f, i*0.12, 0.28, 'sine', 0.2); });
+        break;
+      case 'deadlock': tone(300, 0, 0.14, 'sawtooth', 0.10); tone(220, 0.12, 0.18, 'sawtooth', 0.10); break;
+    }
   }
 
   /* ---------- Nytt spel ---------- */
@@ -792,6 +869,11 @@
         '<div class="set-hint">Färre brickor = större brickor.</div>' +
         '<div class="set-label">Mönster</div>' +
         '<select id="setPattern" class="wide-select">'+opts+'</select>' +
+        '<div class="set-label">Ljud</div>' +
+        '<div class="seg" id="segSound">' +
+          '<button data-sound="1"'+(cfg.sound?' class="on"':'')+'>På</button>' +
+          '<button data-sound="0"'+(!cfg.sound?' class="on"':'')+'>Av</button>' +
+        '</div>' +
         '<button id="setStart">Starta nytt spel</button>' +
         '<button id="setClose" class="ghost">Stäng</button>';
       document.getElementById('segSize').addEventListener('click', function(e){
@@ -799,6 +881,10 @@
         pending.size = b.dataset.size; pending.pattern = 'slumpa'; render();
       });
       document.getElementById('setPattern').addEventListener('change', function(){ pending.pattern = this.value; });
+      document.getElementById('segSound').addEventListener('click', function(e){
+        var b = e.target.closest('button'); if(!b) return;
+        cfg.sound = b.dataset.sound === '1'; saveCfg(); if(cfg.sound) sfx('select'); render();
+      });
       document.getElementById('setStart').onclick = function(){
         cfg.size = pending.size; cfg.pattern = pending.pattern; saveCfg(); hideOverlay(); newGame();
       };
