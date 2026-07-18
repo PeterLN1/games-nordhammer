@@ -1,0 +1,17 @@
+{
+  "name": "mahjong-leaderboard",
+  "version": "1.0.0",
+  "description": "Topplista-API för Mahjong (Nordhammer Spel). Railway + Supabase (Postgres).",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
+  }
+}

@@ -215,6 +215,31 @@
     background-color: rgba(255,255,255,.1); background-position: right 12px center;
   }
   .panel #setStart { margin-top: 18px; }
+  /* ---- topplista ---- */
+  .lb-area { margin: 4px 0 16px; }
+  .lb-area:empty { margin: 0; }
+  .lb-title { font-size: 13px; font-weight: 700; color: var(--muted); margin: 6px 0 8px; }
+  .lb-list { text-align: left; font-size: 13px; color: var(--muted); max-height: 32vh; overflow-y: auto; }
+  .lb-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; }
+  .lb-row:nth-child(odd) { background: rgba(255,255,255,.05); }
+  .lb-row.me { background: rgba(255,210,0,.16); box-shadow: inset 0 0 0 1px rgba(255,210,0,.4); }
+  .lb-rank { width: 26px; text-align: center; font-weight: 800; color: var(--ink); font-size: 14px; }
+  .lb-name { flex: 1; color: var(--ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-time { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--ink); }
+  .lb-empty { text-align: center; padding: 14px; color: var(--muted); }
+  .lb-entry { display: flex; gap: 8px; }
+  .lb-input {
+    flex: 1; width: 100%; font-family: inherit; font-size: 15px; color: var(--ink);
+    background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.16);
+    border-radius: 11px; padding: 12px 12px; -webkit-appearance: none; appearance: none;
+  }
+  .lb-input::placeholder { color: rgba(242,247,244,.45); }
+  .panel .lb-save {
+    flex: 0 0 auto; font-family: inherit; font-weight: 700; font-size: 15px; width: auto;
+    min-height: 48px; padding: 0 22px; margin: 0;
+    border-radius: 11px; border: none; background: var(--accent); color: #1a1200; cursor: pointer; box-shadow: none;
+  }
+  .panel .lb-btn { margin-top: 10px; }
   .panel .emoji { font-size: 46px; }
   .panel h2 { margin: 8px 0 6px; font-size: 24px; }
   .panel p { margin: 0 0 4px; color: var(--muted); font-size: 15px; line-height: 1.5; }
@@ -738,7 +763,7 @@
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         positions: state.positions, faces: state.faces, removed: state.removed,
-        undo: state.undo, moves: state.moves, seconds: state.seconds
+        undo: state.undo, moves: state.moves, seconds: state.seconds, mode: state.mode
       }));
     } catch(e){}
   }
@@ -749,11 +774,50 @@
       if(!s || !s.positions || !s.faces || s.faces.length !== s.positions.length) return null;
       for(var i=0;i<s.faces.length;i++) if(!FACES[s.faces[i]]) return null;
       return { positions:s.positions, faces:s.faces, removed:s.removed||new Array(s.faces.length).fill(false),
-               undo:s.undo||[], moves:s.moves||0, seconds:s.seconds||0, done:false };
+               undo:s.undo||[], moves:s.moves||0, seconds:s.seconds||0, done:false, mode:s.mode||'classic' };
     } catch(e){ return null; }
   }
   function getBest(n){ try { return parseInt(localStorage.getItem(BEST_PFX+n)||'0',10)||0; } catch(e){ return 0; } }
   function setBest(n,s){ try { localStorage.setItem(BEST_PFX+n, String(s)); } catch(e){} }
+
+  /* ---------- Global topplista (Railway + Supabase) ---------- */
+  // Sätt din Railway-URL här (utan avslutande snedstreck). Tom = topplista av.
+  var LEADERBOARD_API = '';
+  var NAME_KEY = 'mahjong:name';
+  function apiBase(){
+    try { return (localStorage.getItem('mahjong:api') || LEADERBOARD_API || '').replace(/\/+$/,''); }
+    catch(e){ return LEADERBOARD_API; }
+  }
+  function hasLeaderboard(){ return !!apiBase(); }
+  function getName(){ try { return localStorage.getItem(NAME_KEY) || ''; } catch(e){ return ''; } }
+  function setName(n){ try { localStorage.setItem(NAME_KEY, n); } catch(e){} }
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  function lbFetch(tiles, mode, cb){
+    var base = apiBase(); if(!base) return cb(new Error('ingen topplista'));
+    fetch(base + '/api/leaderboard?tiles=' + tiles + '&mode=' + (mode||'classic') + '&limit=20')
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb(null, (d && d.scores) || []); })
+      .catch(function(e){ cb(e); });
+  }
+  function lbSubmit(payload, cb){
+    var base = apiBase(); if(!base) return cb && cb(new Error('ingen topplista'));
+    fetch(base + '/api/scores', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb && cb(d && d.error ? new Error(d.error) : null, d); })
+      .catch(function(e){ cb && cb(e); });
+  }
+  function lbRenderList(el, list, myName){
+    if(!list || !list.length){ el.innerHTML = '<div class="lb-empty">Var först på listan!</div>'; return; }
+    var medals = ['🥇','🥈','🥉'];
+    el.innerHTML = list.map(function(s,i){
+      var me = (myName && s.name === myName) ? ' me' : '';
+      var rank = i < 3 ? medals[i] : (i+1);
+      return '<div class="lb-row'+me+'"><span class="lb-rank">'+rank+'</span>' +
+             '<span class="lb-name">'+esc(s.name)+'</span>' +
+             '<span class="lb-time">'+fmt(s.seconds)+'</span></div>';
+    }).join('');
+  }
 
   /* ---------- Vinst ---------- */
   function win(){
@@ -770,11 +834,74 @@
       '<p>Du rensade hela brädet.</p>' +
       '<div class="big-stat">' + fmt(state.seconds) + '</div>' +
       '<div class="best">' + (isBest ? '🏆 Nytt rekord!' : 'Bästa tid: ' + fmt(best)) + '</div>' +
+      '<div id="lbArea" class="lb-area"></div>' +
       '<button id="pNew">Ny giv</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pNew').onclick = function(){ hideOverlay(); newGame(); };
+    setupWinLeaderboard(document.getElementById('lbArea'), N, state.mode, state.seconds, state.moves);
     sfx('win');
     if(navigator.vibrate) try { navigator.vibrate([20,40,20]); } catch(e){}
+  }
+
+  // Topplista i vinstpanelen: skicka in tid (om namn finns) annars fråga efter namn
+  function setupWinLeaderboard(area, tiles, mode, seconds, moves){
+    if(!hasLeaderboard()){ area.innerHTML = ''; return; }
+    function showList(){
+      area.innerHTML = '<div class="lb-title">🏆 Topplista — ' + tiles + ' brickor</div>' +
+                       '<div class="lb-list">Laddar…</div>';
+      lbFetch(tiles, mode, function(err, list){
+        var el = area.querySelector('.lb-list');
+        if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
+        lbRenderList(el, list, getName());
+      });
+    }
+    var name = getName();
+    if(name){
+      lbSubmit({ name:name, mode:mode, tiles:tiles, seconds:seconds, moves:moves }, function(){ showList(); });
+      showList();
+    } else {
+      area.innerHTML =
+        '<div class="lb-title">🏆 Kom med i topplistan</div>' +
+        '<div class="lb-entry">' +
+          '<input id="lbName" class="lb-input" maxlength="20" placeholder="Ditt namn" autocomplete="off">' +
+          '<button id="lbSave" class="lb-save">Spara</button>' +
+        '</div>';
+      var save = function(){
+        var v = (area.querySelector('#lbName').value || '').trim();
+        if(!v) return;
+        setName(v);
+        lbSubmit({ name:v, mode:mode, tiles:tiles, seconds:seconds, moves:moves }, function(){ showList(); });
+      };
+      area.querySelector('#lbSave').onclick = save;
+      area.querySelector('#lbName').addEventListener('keydown', function(e){ if(e.key === 'Enter') save(); });
+    }
+  }
+
+  // Fristående topplista-vy (från inställningar)
+  function openLeaderboard(){
+    var panel = document.getElementById('panel');
+    var counts = [];
+    Object.keys(LAYOUTS).forEach(function(sz){ LAYOUTS[sz].forEach(function(l){ if(counts.indexOf(l.count) < 0) counts.push(l.count); }); });
+    counts.sort(function(a,b){ return a-b; });
+    var startT = (state && N) ? N : counts[0];
+    var opts = counts.map(function(c){ return '<option value="'+c+'"'+(c===startT?' selected':'')+'>'+c+' brickor</option>'; }).join('');
+    panel.innerHTML =
+      '<h2>🏆 Topplista</h2>' +
+      '<select id="lbPick" class="wide-select">' + opts + '</select>' +
+      '<div id="lbView" class="lb-list">Laddar…</div>' +
+      '<button id="lbClose" class="ghost">Stäng</button>';
+    function load(){
+      var t = +document.getElementById('lbPick').value;
+      var el = document.getElementById('lbView'); el.textContent = 'Laddar…';
+      lbFetch(t, 'classic', function(err, list){
+        if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
+        lbRenderList(el, list, getName());
+      });
+    }
+    document.getElementById('lbPick').onchange = load;
+    document.getElementById('lbClose').onclick = hideOverlay;
+    load();
+    document.getElementById('overlay').classList.add('show');
   }
   function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
 
@@ -845,7 +972,7 @@
     var assign = generate(POS);
     if(!assign){ toast('Kunde inte skapa giv, försök igen'); return; }
     state = { positions: positions, faces: assign, removed: new Array(N).fill(false),
-              undo: [], moves: 0, seconds: 0, done: false };
+              undo: [], moves: 0, seconds: 0, done: false, mode: 'classic' };
     selected = -1; clearHint();
     paintFaces(); refresh(); save();
     document.getElementById('statTime').textContent = '0:00';
@@ -874,6 +1001,11 @@
           '<button data-sound="1"'+(cfg.sound?' class="on"':'')+'>På</button>' +
           '<button data-sound="0"'+(!cfg.sound?' class="on"':'')+'>Av</button>' +
         '</div>' +
+        (hasLeaderboard() ?
+          '<div class="set-label">Namn (topplista)</div>' +
+          '<input id="setName" class="wide-select lb-input" maxlength="20" placeholder="Ditt namn" value="'+esc(getName())+'" autocomplete="off">' +
+          '<button id="setLb" class="ghost lb-btn">🏆 Se topplistan</button>'
+        : '') +
         '<button id="setStart">Starta nytt spel</button>' +
         '<button id="setClose" class="ghost">Stäng</button>';
       document.getElementById('segSize').addEventListener('click', function(e){
@@ -885,6 +1017,10 @@
         var b = e.target.closest('button'); if(!b) return;
         cfg.sound = b.dataset.sound === '1'; saveCfg(); if(cfg.sound) sfx('select'); render();
       });
+      var setNameEl = document.getElementById('setName');
+      if(setNameEl) setNameEl.addEventListener('input', function(){ setName(this.value.trim()); });
+      var setLbEl = document.getElementById('setLb');
+      if(setLbEl) setLbEl.onclick = openLeaderboard;
       document.getElementById('setStart').onclick = function(){
         cfg.size = pending.size; cfg.pattern = pending.pattern; saveCfg(); hideOverlay(); newGame();
       };
