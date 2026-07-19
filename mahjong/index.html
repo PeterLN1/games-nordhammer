@@ -320,6 +320,7 @@
       <h1>Mahjong</h1>
       <span class="spacer"></span>
       <button id="btnLeaderboard" class="iconbtn" aria-label="Topplista">🏆</button>
+      <button id="btnStats" class="iconbtn" aria-label="Statistik">📊</button>
       <button id="btnSettings" class="iconbtn" aria-label="Inställningar">⚙</button>
     </header>
 
@@ -1288,7 +1289,6 @@
           '<div class="set-label">Namn (topplista)</div>' +
           '<input id="setName" class="wide-select lb-input" maxlength="20" placeholder="Ditt namn" value="'+esc(getName())+'" autocomplete="off">'
         : '') +
-        '<button id="setStats" class="ghost lb-btn">📊 Statistik &amp; märken</button>' +
         '<button id="setStart">Starta nytt spel</button>' +
         '<button id="setClose" class="ghost">Stäng</button>';
       document.getElementById('segMode').addEventListener('click', function(e){
@@ -1306,7 +1306,6 @@
       });
       var setNameEl = document.getElementById('setName');
       if(setNameEl) setNameEl.addEventListener('input', function(){ setName(this.value.trim()); });
-      document.getElementById('setStats').onclick = openStats;
       document.getElementById('setStart').onclick = function(){
         cfg.size = pending.size; cfg.pattern = pending.pattern; cfg.mode = pending.mode; saveCfg(); hideOverlay(); newGame();
       };
@@ -1354,6 +1353,7 @@
   document.getElementById('btnSettings').onclick = openSettings;
   var btnLb = document.getElementById('btnLeaderboard');
   if(hasLeaderboard()) btnLb.onclick = openLeaderboard; else btnLb.style.display = 'none';
+  document.getElementById('btnStats').onclick = openStats;
 
   // Fråga efter namn första gången (om topplista finns och namn saknas)
   if(hasLeaderboard() && !getName()) openNamePrompt();
