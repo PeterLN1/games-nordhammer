@@ -1036,7 +1036,7 @@
   /* ---------- Vinst ---------- */
   // Tidsstraff för hjälpmedel (klockan är ärlig; påslaget läggs på sluttiden
   // som räknas mot rekord och topplista). Ångra är gratis.
-  var PEN_TIP = 5, PEN_SHUFFLE = 10;
+  var PEN_TIP = 10, PEN_SHUFFLE = 10;
   function penaltySeconds(){ return (state.tips||0)*PEN_TIP + (state.shuffles||0)*PEN_SHUFFLE; }
   function penBreakdown(){
     var parts = [];
