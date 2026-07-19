@@ -301,16 +301,16 @@
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   #toast.cheer {
     background: linear-gradient(135deg, #ffdb42, #ffb300); color: #241800;
-    font-size: 19px; font-weight: 800; letter-spacing: .2px;
-    padding: 14px 26px; border: 2px solid #fff3c0;
+    font-size: 17px; font-weight: 800; letter-spacing: .2px;
+    padding: 11px 22px; border: 2px solid #fff3c0;
     box-shadow: 0 8px 28px rgba(255,180,0,.55), 0 0 0 6px rgba(255,210,0,.14);
-    bottom: auto; top: 26%;
+    bottom: auto; top: max(10px, env(safe-area-inset-top));
   }
-  #toast.cheer.show { animation: cheerPop .45s cubic-bezier(.3,1.5,.5,1) both; }
-  @keyframes cheerPop {
-    0% { transform: translateX(-50%) scale(.5); opacity: 0; }
-    60% { transform: translateX(-50%) scale(1.14); opacity: 1; }
-    100% { transform: translateX(-50%) scale(1); opacity: 1; }
+  #toast.cheer.show { animation: cheerDrop .4s cubic-bezier(.3,1.4,.5,1) both; }
+  @keyframes cheerDrop {
+    0% { transform: translateX(-50%) translateY(-140%); opacity: 0; }
+    70% { transform: translateX(-50%) translateY(6%); opacity: 1; }
+    100% { transform: translateX(-50%) translateY(0); opacity: 1; }
   }
 </style>
 </head>
