@@ -87,6 +87,27 @@
   }
   #board { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 
+  /* ---- fack (Tile Match) ---- */
+  #tray {
+    flex: 0 0 auto; display: none; justify-content: center; gap: 6px;
+    padding: 9px 10px; background: rgba(0,0,0,.18);
+  }
+  .tray-slot {
+    width: 40px; height: 54px; border-radius: 8px; box-sizing: border-box;
+    border: 2px dashed rgba(255,255,255,.2);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tray-slot.filled { border: none; }
+  .mini-tile {
+    width: 40px; height: 54px; border-radius: 8px; position: relative;
+    font-size: 54px; background: var(--tile-face);
+    box-shadow: inset 0 0 0 1px var(--tile-line), inset 1px 1px 0 0 var(--tile-hi), 0 2px 4px rgba(0,0,0,.4);
+    overflow: hidden; animation: trayPop .18s ease-out;
+  }
+  .mini-tile.clearing { animation: trayClear .28s ease forwards; }
+  @keyframes trayPop { from { transform: scale(.4); opacity: .3; } to { transform: scale(1); opacity: 1; } }
+  @keyframes trayClear { to { transform: scale(.3) translateY(-8px); opacity: 0; } }
+
   .tile {
     position: absolute; width: var(--tw); height: var(--th);
     border-radius: calc(var(--tw) * .14);
@@ -240,6 +261,22 @@
     border-radius: 11px; border: none; background: var(--accent); color: #1a1200; cursor: pointer; box-shadow: none;
   }
   .panel .lb-btn { margin-top: 10px; }
+  /* ---- statistik & märken ---- */
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 4px; }
+  .stat-cell {
+    background: rgba(255,255,255,.06); border-radius: 12px; padding: 12px 6px; text-align: center;
+  }
+  .stat-cell b { display: block; font-size: 22px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .stat-cell span { font-size: 11px; color: var(--muted); }
+  .badge-list { display: flex; flex-direction: column; gap: 8px; max-height: 40vh; overflow-y: auto; text-align: left; }
+  .badge-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); opacity: .5; }
+  .badge-item.unlocked { opacity: 1; background: rgba(255,210,0,.12); box-shadow: inset 0 0 0 1px rgba(255,210,0,.3); }
+  .badge-ic { font-size: 26px; width: 30px; text-align: center; filter: grayscale(1); }
+  .badge-item.unlocked .badge-ic { filter: none; }
+  .badge-txt { flex: 1; min-width: 0; }
+  .badge-name { font-weight: 700; color: var(--ink); font-size: 14px; }
+  .badge-desc { font-size: 12px; color: var(--muted); }
+  .badge-check { color: var(--accent); font-weight: 800; font-size: 18px; }
   .panel .emoji { font-size: 46px; }
   .panel h2 { margin: 8px 0 6px; font-size: 24px; }
   .panel p { margin: 0 0 4px; color: var(--muted); font-size: 15px; line-height: 1.5; }
@@ -295,7 +332,7 @@
     <div id="stats">
       <span>Tid <b id="statTime">0:00</b></span>
       <span class="sep"></span>
-      <span>Par kvar <b id="statPairs">72</b></span>
+      <span><span id="statMidLabel">Par kvar</span> <b id="statPairs">72</b></span>
       <span class="sep"></span>
       <span>Drag <b id="statMoves">0</b></span>
     </div>
@@ -303,6 +340,8 @@
     <div id="boardWrap">
       <div id="board"></div>
     </div>
+
+    <div id="tray"></div>
 
     <footer id="controls">
       <button id="btnNew" class="primary"><span class="ic">♻︎</span>Ny giv</button>
@@ -467,9 +506,15 @@
       { id:'stor-torn',       name:'Torn',       build:function(){ return rect(8,8); } }
     ]
   };
-  // förberäkna antal brickor per layout (till menyn)
+  // trimma till en multipel av m (2 för par-läge, 3 för Tile Match)
+  function trimTo(P, m){
+    P = P.slice();
+    while(P.length % m !== 0){ var hi=0; for(var i=1;i<P.length;i++) if(P[i].z>P[hi].z) hi=i; P.splice(hi,1); }
+    return P;
+  }
+  // förberäkna antal brickor per layout och läge (till menyn)
   Object.keys(LAYOUTS).forEach(function(sz){
-    LAYOUTS[sz].forEach(function(l){ l.count = trimEven(l.build()).length; });
+    LAYOUTS[sz].forEach(function(l){ var raw=l.build(); l.n2=trimTo(raw,2).length; l.n3=trimTo(raw,3).length; l.count=l.n2; });
   });
 
   /* ---------- Frihetslogik ---------- */
@@ -528,6 +573,38 @@
     return null; // ytterst osannolikt
   }
 
+  // Tile Match: distinkta brick-id (trippel = tre identiska)
+  function tmIds(nTriples){
+    var ids = [];
+    SUITS.forEach(function(s){ for(var r=1;r<=9;r++) ids.push(s.p+r); });
+    ['w-o','w-s','w-v','w-n','d-r','d-g','d-w'].forEach(function(k){ ids.push(k); });
+    for(var i=1;i<=4;i++){ ids.push('fl'+i); ids.push('se'+i); }  // 42 distinkta id
+    var pool = [];
+    while(pool.length < nTriples) pool = pool.concat(ids);
+    shuffle(pool);
+    return pool.slice(0, nTriples);
+  }
+  // Bakvänd generering med trippel → garanterat lösbar (facket behöver aldrig >3)
+  function generateTriples(positions){
+    var n = positions.length;
+    for(var attempt=0; attempt<400; attempt++){
+      var present = new Array(n).fill(true), assign = new Array(n).fill(null);
+      var pool = tmIds(n/3), ok = true, placed = 0;
+      while(placed < n){
+        var free = [];
+        for(var i=0;i<n;i++) if(present[i] && isFree(i, present, positions)) free.push(i);
+        if(free.length < 3){ ok = false; break; }
+        shuffle(free);
+        var a=free[0], b=free[1], c=free[2], id=pool.pop();
+        assign[a]=id; assign[b]=id; assign[c]=id;
+        present[a]=false; present[b]=false; present[c]=false;
+        placed += 3;
+      }
+      if(ok) return assign;
+    }
+    return null;
+  }
+
   /* ============================================================
      Speltillstånd
      ============================================================ */
@@ -555,6 +632,7 @@
     if(['liten','mellan','stor'].indexOf(c.size) < 0) c.size = 'mellan';
     if(!c.pattern) c.pattern = 'slumpa';
     if(typeof c.sound !== 'boolean') c.sound = true;
+    if(['classic','tilematch'].indexOf(c.mode) < 0) c.mode = 'classic';
     return c;
   })();
   function saveCfg(){ try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch(e){} }
@@ -649,7 +727,7 @@
     }
     document.getElementById('statMoves').textContent = state.moves;
     var left = 0; for(var k=0;k<N;k++) if(!state.removed[k]) left++;
-    document.getElementById('statPairs').textContent = (left/2)|0;
+    document.getElementById('statPairs').textContent = state.mode === 'tilematch' ? left : ((left/2)|0);
     document.getElementById('btnUndo').disabled = state.undo.length===0;
   }
 
@@ -658,7 +736,8 @@
     var t = e.target.closest('.tile');
     if(!t) return;
     var i = +t.dataset.idx;
-    if(state.removed[i] || !isFreeIdx(i)) return;
+    if(state.done || state.removed[i] || !isFreeIdx(i)) return;
+    if(state.mode === 'tilematch'){ pickTile(i); return; }
     clearHint();
     if(selected === -1){ selected = i; sfx('select'); refresh(); return; }
     if(selected === i){ selected = -1; refresh(); return; }
@@ -678,6 +757,7 @@
     var now = Date.now();
     state.combo = (state.lastMatch && now - state.lastMatch < 3000) ? (state.combo||0)+1 : 1;
     state.lastMatch = now;
+    noteCombo(state.combo);
     if(navigator.vibrate) try { navigator.vibrate(12); } catch(e){}
     sfx('match', state.combo);
     refresh();
@@ -702,8 +782,84 @@
     if(left === 3 && !state.flNear){ state.flNear = true; if(!said) celebrate('Snart klart!'); }
   }
 
+  /* ---------- Tile Match ---------- */
+  function faceId(idx){ return state.faces[idx]; }
+  function renderTray(){
+    var tray = document.getElementById('tray');
+    if(!state || state.mode !== 'tilematch'){ return; }
+    var html = '';
+    for(var s=0;s<7;s++){
+      if(s < state.tray.length){
+        var ix = state.tray[s];
+        html += '<div class="tray-slot filled"><div class="mini-tile">' + FACES[state.faces[ix]].html + '</div></div>';
+      } else {
+        html += '<div class="tray-slot"></div>';
+      }
+    }
+    tray.innerHTML = html;
+  }
+  function resolveTray(id){
+    var same = state.tray.filter(function(ix){ return state.faces[ix] === id; });
+    if(same.length >= 3){
+      var three = same.slice(0,3);
+      state.tray = state.tray.filter(function(ix){ return three.indexOf(ix) < 0; });
+      return true;
+    }
+    return false;
+  }
+  function pickTile(idx){
+    if(state.done) return;
+    // ögonblicksbild för ångra
+    state.undo.push({ removed: state.removed.slice(), tray: state.tray.slice(), moves: state.moves });
+    if(state.undo.length > 300) state.undo.shift();
+    state.removed[idx] = true;
+    state.tray.push(idx);
+    state.moves++;
+    state.tray.sort(function(a,b){ var fa=state.faces[a], fb=state.faces[b]; return fa<fb?-1:fa>fb?1:0; });
+    if(navigator.vibrate) try { navigator.vibrate(8); } catch(e){}
+    var cleared = resolveTray(state.faces[idx]);
+    if(cleared){
+      var now = Date.now();
+      state.combo = (state.lastMatch && now - state.lastMatch < 4000) ? (state.combo||0)+1 : 1;
+      state.lastMatch = now;
+      noteCombo(state.combo);
+      sfx('match', state.combo);
+    } else {
+      sfx('select');
+    }
+    refresh(); renderTray(); save();
+    var collected = 0; for(var k=0;k<N;k++) if(state.removed[k]) collected++;
+    if(collected === N && state.tray.length === 0){ win(); return; }
+    if(cleared && COMBO_MSG[state.combo]) celebrate(COMBO_MSG[state.combo]);
+    if(state.tray.length >= 7){ lose(); }
+  }
+  function lose(){
+    state.done = true;
+    if(timerId) clearInterval(timerId);
+    recordStat(state.mode, false, {});
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">🚫</div>' +
+      '<h2>Facket fullt!</h2>' +
+      '<p>Inga fler platser i facket. Ångra ett drag och försök igen, eller börja om.</p>' +
+      '<button id="pUndoLose">↩︎ Ångra drag</button>' +
+      '<button id="pNewLose" class="ghost">Ny giv</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pUndoLose').onclick = function(){ hideOverlay(); state.done = false; startTimer(); undo(); };
+    document.getElementById('pNewLose').onclick = function(){ hideOverlay(); newGame(); };
+    sfx('deadlock');
+    if(navigator.vibrate) try { navigator.vibrate([40,60,40]); } catch(e){}
+  }
+
   function undo(){
     if(!state.undo.length) return;
+    if(state.mode === 'tilematch'){
+      var snap = state.undo.pop();
+      state.removed = snap.removed; state.tray = snap.tray; state.moves = snap.moves;
+      state.combo = 0; state.lastMatch = 0;
+      sfx('undo'); refresh(); renderTray(); save();
+      return;
+    }
     var pair = state.undo.pop();
     state.removed[pair[0]] = false; state.removed[pair[1]] = false;
     state.moves = Math.max(0, state.moves-1);
@@ -740,13 +896,19 @@
 
   // Blanda om kvarvarande brickor så minst ett drag finns (behåller par-antal)
   function shuffleRemaining(){
+    if(state.done) return;
     var idxs = []; for(var i=0;i<N;i++) if(!state.removed[i]) idxs.push(i);
     if(idxs.length < 2){ return; }
     var faces = idxs.map(function(i){ return state.faces[i]; });
-    for(var attempt=0; attempt<60; attempt++){
+    if(state.mode === 'tilematch'){
       shuffle(faces);
       for(var k=0;k<idxs.length;k++) state.faces[idxs[k]] = faces[k];
-      if(hasMove()) break;
+    } else {
+      for(var attempt=0; attempt<60; attempt++){
+        shuffle(faces);
+        for(var m=0;m<idxs.length;m++) state.faces[idxs[m]] = faces[m];
+        if(hasMove()) break;
+      }
     }
     state.combo = 0; state.lastMatch = 0;
     selected = -1; clearHint(); sfx('shuffle'); paintFaces(); refresh(); save();
@@ -763,7 +925,7 @@
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         positions: state.positions, faces: state.faces, removed: state.removed,
-        undo: state.undo, moves: state.moves, seconds: state.seconds, mode: state.mode
+        tray: state.tray, undo: state.undo, moves: state.moves, seconds: state.seconds, mode: state.mode
       }));
     } catch(e){}
   }
@@ -774,11 +936,62 @@
       if(!s || !s.positions || !s.faces || s.faces.length !== s.positions.length) return null;
       for(var i=0;i<s.faces.length;i++) if(!FACES[s.faces[i]]) return null;
       return { positions:s.positions, faces:s.faces, removed:s.removed||new Array(s.faces.length).fill(false),
-               undo:s.undo||[], moves:s.moves||0, seconds:s.seconds||0, done:false, mode:s.mode||'classic' };
+               tray:s.tray||[], undo:s.undo||[], moves:s.moves||0, seconds:s.seconds||0, done:false, mode:s.mode||'classic' };
     } catch(e){ return null; }
   }
-  function getBest(n){ try { return parseInt(localStorage.getItem(BEST_PFX+n)||'0',10)||0; } catch(e){ return 0; } }
-  function setBest(n,s){ try { localStorage.setItem(BEST_PFX+n, String(s)); } catch(e){} }
+  function getBest(mode,n){ try { return parseInt(localStorage.getItem(BEST_PFX+mode+':'+n)||'0',10)||0; } catch(e){ return 0; } }
+  function setBest(mode,n,s){ try { localStorage.setItem(BEST_PFX+mode+':'+n, String(s)); } catch(e){} }
+
+  /* ---------- Statistik & märken ---------- */
+  var STATS_KEY = 'mahjong:stats';
+  var stats = (function(){
+    var s = null; try { s = JSON.parse(localStorage.getItem(STATS_KEY) || 'null'); } catch(e){}
+    s = s || {};
+    s.started = s.started||0; s.wins = s.wins||0; s.streak = s.streak||0; s.bestStreak = s.bestStreak||0;
+    s.bestCombo = s.bestCombo||0; s.byMode = s.byMode||{}; s.badges = s.badges||{};
+    s.fastWin = !!s.fastWin; s.big144 = !!s.big144;
+    return s;
+  })();
+  function saveStats(){ try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch(e){} }
+  function statStart(mode){
+    stats.started++;
+    stats.byMode[mode] = stats.byMode[mode] || { started:0, wins:0 };
+    stats.byMode[mode].started++;
+    saveStats();
+  }
+  function noteCombo(c){ if(c > stats.bestCombo){ stats.bestCombo = c; saveStats(); checkBadges(); } }
+  function recordStat(mode, won, ctx){
+    ctx = ctx || {};
+    var bm = stats.byMode[mode] = stats.byMode[mode] || { started:0, wins:0 };
+    if(won){
+      stats.wins++; bm.wins++; stats.streak++;
+      if(stats.streak > stats.bestStreak) stats.bestStreak = stats.streak;
+      if(ctx.seconds && ctx.seconds < 60) stats.fastWin = true;
+      if(ctx.tiles === 144) stats.big144 = true;
+    } else {
+      stats.streak = 0;
+    }
+    saveStats();
+    checkBadges();
+  }
+  var BADGES = [
+    { id:'first',     icon:'🎉', name:'Första segern', desc:'Vinn ditt första spel',      test:function(){ return stats.wins >= 1; } },
+    { id:'ten',       icon:'🏅', name:'Rutinerad',     desc:'Vinn 10 spel totalt',        test:function(){ return stats.wins >= 10; } },
+    { id:'fifty',     icon:'👑', name:'Mästare',       desc:'Vinn 50 spel totalt',        test:function(){ return stats.wins >= 50; } },
+    { id:'streak3',   icon:'🔥', name:'På rad',        desc:'Vinn 3 spel i rad',          test:function(){ return stats.bestStreak >= 3; } },
+    { id:'combo8',    icon:'⚡', name:'Combo-mästare', desc:'Nå combo ×8',                test:function(){ return stats.bestCombo >= 8; } },
+    { id:'fast',      icon:'⏱️', name:'Blixtsnabb',    desc:'Vinn på under 1 minut',      test:function(){ return stats.fastWin; } },
+    { id:'big',       icon:'🐢', name:'Sköldpaddan',   desc:'Vinn ett Stor-spel (144)',   test:function(){ return stats.big144; } },
+    { id:'tilematch', icon:'🀄', name:'Tre lika',      desc:'Vinn ett Tile Match-spel',   test:function(){ return stats.byMode.tilematch && stats.byMode.tilematch.wins >= 1; } }
+  ];
+  function checkBadges(){
+    var newly = [];
+    BADGES.forEach(function(b){ if(!stats.badges[b.id] && b.test()){ stats.badges[b.id] = true; newly.push(b); } });
+    if(newly.length){
+      saveStats();
+      newly.forEach(function(b,i){ setTimeout(function(){ celebrate('Nytt märke! ' + b.icon + ' ' + b.name); }, 900 + i*1600); });
+    }
+  }
 
   /* ---------- Global topplista (Railway + Supabase) ---------- */
   // Sätt din Railway-URL här (utan avslutande snedstreck). Tom = topplista av.
@@ -824,9 +1037,10 @@
     state.done = true;
     if(timerId) clearInterval(timerId);
     clearSave();
-    var best = getBest(N);
+    var best = getBest(state.mode, N);
     var isBest = (best === 0 || state.seconds < best);
-    if(isBest) setBest(N, state.seconds);
+    if(isBest) setBest(state.mode, N, state.seconds);
+    recordStat(state.mode, true, { seconds: state.seconds, tiles: N });
     var panel = document.getElementById('panel');
     panel.innerHTML =
       '<div class="emoji">🀄</div>' +
@@ -880,20 +1094,25 @@
   // Fristående topplista-vy (från inställningar)
   function openLeaderboard(){
     var panel = document.getElementById('panel');
+    var mode = (state && state.mode) || 'classic';
     var counts = [];
-    Object.keys(LAYOUTS).forEach(function(sz){ LAYOUTS[sz].forEach(function(l){ if(counts.indexOf(l.count) < 0) counts.push(l.count); }); });
+    Object.keys(LAYOUTS).forEach(function(sz){ LAYOUTS[sz].forEach(function(l){
+      var c = mode === 'tilematch' ? l.n3 : l.n2;
+      if(counts.indexOf(c) < 0) counts.push(c);
+    }); });
     counts.sort(function(a,b){ return a-b; });
     var startT = (state && N) ? N : counts[0];
     var opts = counts.map(function(c){ return '<option value="'+c+'"'+(c===startT?' selected':'')+'>'+c+' brickor</option>'; }).join('');
     panel.innerHTML =
       '<h2>🏆 Topplista</h2>' +
+      '<div class="set-hint" style="text-align:center;margin:0 0 10px">'+(mode==='tilematch'?'Tile Match':'Klassisk par')+'</div>' +
       '<select id="lbPick" class="wide-select">' + opts + '</select>' +
       '<div id="lbView" class="lb-list">Laddar…</div>' +
       '<button id="lbClose" class="ghost">Stäng</button>';
     function load(){
       var t = +document.getElementById('lbPick').value;
       var el = document.getElementById('lbView'); el.textContent = 'Laddar…';
-      lbFetch(t, 'classic', function(err, list){
+      lbFetch(t, mode, function(err, list){
         if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
         lbRenderList(el, list, getName());
       });
@@ -904,6 +1123,36 @@
     document.getElementById('overlay').classList.add('show');
   }
   function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
+
+  /* ---------- Statistik-vy ---------- */
+  function openStats(){
+    var panel = document.getElementById('panel');
+    var winPct = stats.started ? Math.round(100*stats.wins/stats.started) : 0;
+    var badgeHtml = BADGES.map(function(b){
+      var un = !!stats.badges[b.id];
+      return '<div class="badge-item'+(un?' unlocked':'')+'">' +
+               '<div class="badge-ic">'+b.icon+'</div>' +
+               '<div class="badge-txt"><div class="badge-name">'+b.name+'</div><div class="badge-desc">'+b.desc+'</div></div>' +
+               (un?'<div class="badge-check">✓</div>':'') +
+             '</div>';
+    }).join('');
+    var unlocked = BADGES.filter(function(b){ return stats.badges[b.id]; }).length;
+    panel.innerHTML =
+      '<h2>📊 Statistik</h2>' +
+      '<div class="stat-grid">' +
+        '<div class="stat-cell"><b>'+stats.wins+'</b><span>Vinster</span></div>' +
+        '<div class="stat-cell"><b>'+stats.started+'</b><span>Spelade</span></div>' +
+        '<div class="stat-cell"><b>'+winPct+'%</b><span>Vinstandel</span></div>' +
+        '<div class="stat-cell"><b>'+stats.bestStreak+'</b><span>Bästa svit</span></div>' +
+        '<div class="stat-cell"><b>×'+stats.bestCombo+'</b><span>Bästa combo</span></div>' +
+        '<div class="stat-cell"><b>'+stats.streak+'</b><span>Svit nu</span></div>' +
+      '</div>' +
+      '<div class="set-label">Märken ('+unlocked+' / '+BADGES.length+')</div>' +
+      '<div class="badge-list">'+badgeHtml+'</div>' +
+      '<button id="stClose" class="ghost">Stäng</button>';
+    document.getElementById('stClose').onclick = hideOverlay;
+    document.getElementById('overlay').classList.add('show');
+  }
 
   /* ---------- Toast ---------- */
   var toastTimer = null;
@@ -959,38 +1208,54 @@
   }
 
   /* ---------- Nytt spel ---------- */
-  function pickLayout(){
+  function pickLayout(mode){
     var list = LAYOUTS[cfg.size] || LAYOUTS.mellan, chosen = null;
     if(cfg.pattern && cfg.pattern !== 'slumpa')
       chosen = list.filter(function(l){ return l.id === cfg.pattern; })[0];
     if(!chosen) chosen = list[(Math.random()*list.length)|0];
-    return trimEven(chosen.build());
+    return trimTo(chosen.build(), mode === 'tilematch' ? 3 : 2);
+  }
+  function applyModeUI(){
+    var tm = state && state.mode === 'tilematch';
+    document.getElementById('tray').style.display = tm ? 'flex' : 'none';
+    document.getElementById('btnHint').style.display = tm ? 'none' : '';
+    document.getElementById('statMidLabel').textContent = tm ? 'Kvar' : 'Par kvar';
   }
   function newGame(){
-    var positions = pickLayout();
+    var mode = cfg.mode === 'tilematch' ? 'tilematch' : 'classic';
+    var positions = pickLayout(mode);
     setLayout(positions);
-    var assign = generate(POS);
+    var assign = mode === 'tilematch' ? generateTriples(POS) : generate(POS);
     if(!assign){ toast('Kunde inte skapa giv, försök igen'); return; }
     state = { positions: positions, faces: assign, removed: new Array(N).fill(false),
-              undo: [], moves: 0, seconds: 0, done: false, mode: 'classic' };
+              tray: [], undo: [], moves: 0, seconds: 0, done: false, mode: mode };
     selected = -1; clearHint();
-    paintFaces(); refresh(); save();
+    statStart(mode);
+    applyModeUI();
+    paintFaces(); refresh(); renderTray(); save();
     document.getElementById('statTime').textContent = '0:00';
     startTimer();
   }
 
   /* ---------- Inställningar ---------- */
   function openSettings(){
-    var pending = { size: cfg.size, pattern: cfg.pattern };
+    var pending = { size: cfg.size, pattern: cfg.pattern, mode: cfg.mode };
     var panel = document.getElementById('panel');
     function seg(v,l){ return '<button data-size="'+v+'"'+(pending.size===v?' class="on"':'')+'>'+l+'</button>'; }
     function render(){
       var list = LAYOUTS[pending.size];
       var opts = '<option value="slumpa">Slumpa mönster</option>' + list.map(function(l){
-        return '<option value="'+l.id+'"'+(l.id===pending.pattern?' selected':'')+'>'+l.name+' — '+l.count+' brickor</option>';
+        var cnt = pending.mode === 'tilematch' ? l.n3 : l.n2;
+        return '<option value="'+l.id+'"'+(l.id===pending.pattern?' selected':'')+'>'+l.name+' — '+cnt+' brickor</option>';
       }).join('');
       panel.innerHTML =
         '<h2>Inställningar</h2>' +
+        '<div class="set-label">Spelläge</div>' +
+        '<div class="seg" id="segMode">' +
+          '<button data-mode="classic"'+(pending.mode==='classic'?' class="on"':'')+'>Klassisk par</button>' +
+          '<button data-mode="tilematch"'+(pending.mode==='tilematch'?' class="on"':'')+'>Tile Match</button>' +
+        '</div>' +
+        '<div class="set-hint">'+(pending.mode==='tilematch'?'Plocka brickor till facket — tre lika försvinner.':'Para ihop två lika lediga brickor.')+'</div>' +
         '<div class="set-label">Antal brickor</div>' +
         '<div class="seg" id="segSize">'+seg('liten','Liten')+seg('mellan','Mellan')+seg('stor','Stor')+'</div>' +
         '<div class="set-hint">Färre brickor = större brickor.</div>' +
@@ -1006,8 +1271,13 @@
           '<input id="setName" class="wide-select lb-input" maxlength="20" placeholder="Ditt namn" value="'+esc(getName())+'" autocomplete="off">' +
           '<button id="setLb" class="ghost lb-btn">🏆 Se topplistan</button>'
         : '') +
+        '<button id="setStats" class="ghost lb-btn">📊 Statistik &amp; märken</button>' +
         '<button id="setStart">Starta nytt spel</button>' +
         '<button id="setClose" class="ghost">Stäng</button>';
+      document.getElementById('segMode').addEventListener('click', function(e){
+        var b = e.target.closest('button'); if(!b) return;
+        pending.mode = b.dataset.mode; pending.pattern = 'slumpa'; render();
+      });
       document.getElementById('segSize').addEventListener('click', function(e){
         var b = e.target.closest('button'); if(!b) return;
         pending.size = b.dataset.size; pending.pattern = 'slumpa'; render();
@@ -1021,8 +1291,9 @@
       if(setNameEl) setNameEl.addEventListener('input', function(){ setName(this.value.trim()); });
       var setLbEl = document.getElementById('setLb');
       if(setLbEl) setLbEl.onclick = openLeaderboard;
+      document.getElementById('setStats').onclick = openStats;
       document.getElementById('setStart').onclick = function(){
-        cfg.size = pending.size; cfg.pattern = pending.pattern; saveCfg(); hideOverlay(); newGame();
+        cfg.size = pending.size; cfg.pattern = pending.pattern; cfg.mode = pending.mode; saveCfg(); hideOverlay(); newGame();
       };
       document.getElementById('setClose').onclick = hideOverlay;
     }
@@ -1052,7 +1323,8 @@
   if(saved){
     state = saved;
     setLayout(state.positions);
-    paintFaces(); refresh();
+    applyModeUI();
+    paintFaces(); refresh(); renderTray();
     document.getElementById('statTime').textContent = fmt(state.seconds);
     startTimer();
   } else {
