@@ -319,14 +319,8 @@
       <a class="back" href="/" aria-label="Till startsidan">‹</a>
       <h1>Mahjong</h1>
       <span class="spacer"></span>
+      <button id="btnLeaderboard" class="iconbtn" aria-label="Topplista">🏆</button>
       <button id="btnSettings" class="iconbtn" aria-label="Inställningar">⚙</button>
-      <label class="theme-ctl">
-        <select data-theme-control aria-label="Tema">
-          <option value="auto">Auto</option>
-          <option value="light">Ljust</option>
-          <option value="dark">Mörkt</option>
-        </select>
-      </label>
     </header>
 
     <div id="stats">
@@ -1154,6 +1148,30 @@
     document.getElementById('overlay').classList.add('show');
   }
 
+  /* ---------- Namn-ruta (vid start om inget namn) ---------- */
+  function openNamePrompt(){
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">🏆</div>' +
+      '<h2>Välkommen!</h2>' +
+      '<p>Ange ett namn för topplistan. Du kan ändra det senare i inställningarna.</p>' +
+      '<div class="lb-entry" style="margin-top:14px">' +
+        '<input id="npName" class="lb-input" maxlength="20" placeholder="Ditt namn" autocomplete="off">' +
+        '<button id="npSave" class="lb-save">Spara</button>' +
+      '</div>' +
+      '<button id="npSkip" class="ghost">Hoppa över</button>';
+    document.getElementById('overlay').classList.add('show');
+    var save = function(){
+      var v = (document.getElementById('npName').value || '').trim();
+      if(!v) return;
+      setName(v); hideOverlay();
+    };
+    document.getElementById('npSave').onclick = save;
+    document.getElementById('npName').addEventListener('keydown', function(e){ if(e.key === 'Enter') save(); });
+    document.getElementById('npSkip').onclick = hideOverlay;
+    try { document.getElementById('npName').focus(); } catch(e){}
+  }
+
   /* ---------- Toast ---------- */
   var toastTimer = null;
   function toast(msg){
@@ -1268,8 +1286,7 @@
         '</div>' +
         (hasLeaderboard() ?
           '<div class="set-label">Namn (topplista)</div>' +
-          '<input id="setName" class="wide-select lb-input" maxlength="20" placeholder="Ditt namn" value="'+esc(getName())+'" autocomplete="off">' +
-          '<button id="setLb" class="ghost lb-btn">🏆 Se topplistan</button>'
+          '<input id="setName" class="wide-select lb-input" maxlength="20" placeholder="Ditt namn" value="'+esc(getName())+'" autocomplete="off">'
         : '') +
         '<button id="setStats" class="ghost lb-btn">📊 Statistik &amp; märken</button>' +
         '<button id="setStart">Starta nytt spel</button>' +
@@ -1289,8 +1306,6 @@
       });
       var setNameEl = document.getElementById('setName');
       if(setNameEl) setNameEl.addEventListener('input', function(){ setName(this.value.trim()); });
-      var setLbEl = document.getElementById('setLb');
-      if(setLbEl) setLbEl.onclick = openLeaderboard;
       document.getElementById('setStats').onclick = openStats;
       document.getElementById('setStart').onclick = function(){
         cfg.size = pending.size; cfg.pattern = pending.pattern; cfg.mode = pending.mode; saveCfg(); hideOverlay(); newGame();
@@ -1337,6 +1352,11 @@
   document.getElementById('btnHint').onclick = hint;
   document.getElementById('btnShuffle').onclick = shuffleRemaining;
   document.getElementById('btnSettings').onclick = openSettings;
+  var btnLb = document.getElementById('btnLeaderboard');
+  if(hasLeaderboard()) btnLb.onclick = openLeaderboard; else btnLb.style.display = 'none';
+
+  // Fråga efter namn första gången (om topplista finns och namn saknas)
+  if(hasLeaderboard() && !getName()) openNamePrompt();
 
   var rz; window.addEventListener('resize', function(){ clearTimeout(rz); rz=setTimeout(fitBoard, 120); });
   window.addEventListener('orientationchange', function(){ setTimeout(fitBoard, 300); });
