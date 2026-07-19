@@ -782,7 +782,7 @@
 
   /* ---------- Global topplista (Railway + Supabase) ---------- */
   // Sätt din Railway-URL här (utan avslutande snedstreck). Tom = topplista av.
-  var LEADERBOARD_API = '';
+  var LEADERBOARD_API = 'https://games-nordhammer-production.up.railway.app';
   var NAME_KEY = 'mahjong:name';
   function apiBase(){
     try { return (localStorage.getItem('mahjong:api') || LEADERBOARD_API || '').replace(/\/+$/,''); }
