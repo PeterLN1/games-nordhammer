@@ -569,6 +569,49 @@
     return null; // ytterst osannolikt
   }
 
+  // Bygg par av matchande brickor (samma "grupp" som spelet matchar mot,
+  // t.ex. matchar alla fyra blommor varandra) utifrån de brickor som
+  // faktiskt finns kvar på brädet — sammansättningen ändras alltså inte.
+  function subsetPairPool(idxs){
+    var byGroup = {};
+    idxs.forEach(function(i){
+      var id = state.faces[i], key = FACES[id].match;
+      (byGroup[key] = byGroup[key] || []).push(id);
+    });
+    var pairs = [];
+    Object.keys(byGroup).forEach(function(key){
+      var arr = shuffle(byGroup[key].slice());
+      for(var i=0;i+1<arr.length;i+=2) pairs.push([arr[i], arr[i+1]]);
+    });
+    return pairs;
+  }
+
+  // Blanda kvarvarande brickor till en garanterat lösbar uppställning —
+  // samma bakvända generering som en ny giv, men begränsad till de
+  // positioner som fortfarande har brickor kvar. Förhindrar att t.ex.
+  // de två sista brickorna råkar hamna staplade (omöjliga att matcha).
+  function generateSolvableSubset(idxs){
+    var template = subsetPairPool(idxs);
+    for(var attempt=0; attempt<400; attempt++){
+      var present = new Array(N).fill(false);
+      idxs.forEach(function(i){ present[i] = true; });
+      var assign = {}, pool = shuffle(template.slice());
+      var ok = true, placed = 0;
+      while(placed < idxs.length){
+        var free = [];
+        for(var k=0;k<idxs.length;k++){ var i=idxs[k]; if(present[i] && isFree(i, present, POS)) free.push(i); }
+        if(free.length < 2){ ok = false; break; }
+        shuffle(free);
+        var a = free[0], b = free[1], pair = pool.pop();
+        assign[a] = pair[0]; assign[b] = pair[1];
+        present[a] = false; present[b] = false;
+        placed += 2;
+      }
+      if(ok) return assign;
+    }
+    return null;
+  }
+
   // Tile Match: distinkta brick-id (trippel = tre identiska)
   function tmIds(nTriples){
     var ids = [];
@@ -639,6 +682,18 @@
   // snabbare frihetskoll som använder removed direkt
   function isFreeIdx(idx){
     if(state.removed[idx]) return false;
+    // I klassiskt läge har varje matchningsgrupp alltid ett jämnt antal
+    // brickor kvar (par tas alltid bort två och två), så när exakt två
+    // brickor återstår totalt matchar de garanterat varandra. Gör dem då
+    // alltid valbara — annars kan de råka ligga fysiskt staplade (den ena
+    // ovanpå den andra) och bli helt omöjliga att plocka samtidigt, oavsett
+    // hur många gånger man blandar (en blandning byter bara symboler, inte
+    // positioner, så den kan aldrig lösa upp en sådan geometrisk låsning).
+    if(state.mode !== 'tilematch'){
+      var leftOnBoard = 0;
+      for(var r=0;r<N;r++){ if(!state.removed[r]){ leftOnBoard++; if(leftOnBoard>2) break; } }
+      if(leftOnBoard <= 2) return true;
+    }
     var pos = POS[idx];
     // täckt?
     for(var i=0;i<N;i++){
@@ -892,20 +947,30 @@
     if(hintTimer){ clearTimeout(hintTimer); hintTimer=null; }
   }
 
-  // Blanda om kvarvarande brickor så minst ett drag finns (behåller par-antal)
+  // Blanda om kvarvarande brickor. I klassiskt läge garanteras hela
+  // återstoden vara lösbar (annars kan t.ex. de två sista brickorna
+  // råka hamna staplade och bli omöjliga att matcha). Tile Match kräver
+  // aldrig två samtidigt fria brickor, så en ren omkastning räcker där.
   function shuffleRemaining(){
     if(state.done) return;
     var idxs = []; for(var i=0;i<N;i++) if(!state.removed[i]) idxs.push(i);
     if(idxs.length < 2){ return; }
-    var faces = idxs.map(function(i){ return state.faces[i]; });
     if(state.mode === 'tilematch'){
+      var faces = idxs.map(function(i){ return state.faces[i]; });
       shuffle(faces);
       for(var k=0;k<idxs.length;k++) state.faces[idxs[k]] = faces[k];
     } else {
-      for(var attempt=0; attempt<60; attempt++){
-        shuffle(faces);
-        for(var m=0;m<idxs.length;m++) state.faces[idxs[m]] = faces[m];
-        if(hasMove()) break;
+      var assign = generateSolvableSubset(idxs);
+      if(assign){
+        idxs.forEach(function(i){ state.faces[i] = assign[i]; });
+      } else {
+        // ytterst osannolikt: reservläge som tidigare (garanterar minst ett drag)
+        var faces2 = idxs.map(function(i){ return state.faces[i]; });
+        for(var attempt=0; attempt<60; attempt++){
+          shuffle(faces2);
+          for(var m=0;m<idxs.length;m++) state.faces[idxs[m]] = faces2[m];
+          if(hasMove()) break;
+        }
       }
     }
     state.shuffles = (state.shuffles||0) + 1;
