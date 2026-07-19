@@ -281,7 +281,8 @@
   .panel h2 { margin: 8px 0 6px; font-size: 24px; }
   .panel p { margin: 0 0 4px; color: var(--muted); font-size: 15px; line-height: 1.5; }
   .panel .big-stat { font-size: 34px; font-weight: 800; margin: 12px 0 2px; font-variant-numeric: tabular-nums; }
-  .panel .best { font-size: 13px; color: var(--muted); margin-bottom: 18px; }
+  .panel .pen-note { font-size: 12.5px; color: var(--muted); margin: 2px 0 0; }
+  .panel .best { font-size: 13px; color: var(--muted); margin-bottom: 18px; margin-top: 6px; }
   .panel button {
     font-family: inherit; font-size: 16px; font-weight: 700; width: 100%;
     padding: 15px; border-radius: 14px; border: none; cursor: pointer;
@@ -882,6 +883,8 @@
     tileEls[m[0]].classList.add('hint');
     tileEls[m[1]].classList.add('hint');
     sfx('hint');
+    state.tips = (state.tips||0) + 1; save();
+    toast('Tips – +' + PEN_TIP + ' s på sluttiden');
     hintTimer = setTimeout(clearHint, 2200);
   }
   function clearHint(){
@@ -905,9 +908,10 @@
         if(hasMove()) break;
       }
     }
+    state.shuffles = (state.shuffles||0) + 1;
     state.combo = 0; state.lastMatch = 0;
     selected = -1; clearHint(); sfx('shuffle'); paintFaces(); refresh(); save();
-    toast('Brickorna blandades');
+    toast('Blandat – +' + PEN_SHUFFLE + ' s på sluttiden');
   }
 
   /* ---------- Timer ---------- */
@@ -920,7 +924,8 @@
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         positions: state.positions, faces: state.faces, removed: state.removed,
-        tray: state.tray, undo: state.undo, moves: state.moves, seconds: state.seconds, mode: state.mode
+        tray: state.tray, undo: state.undo, moves: state.moves, seconds: state.seconds, mode: state.mode,
+        tips: state.tips, shuffles: state.shuffles
       }));
     } catch(e){}
   }
@@ -931,7 +936,8 @@
       if(!s || !s.positions || !s.faces || s.faces.length !== s.positions.length) return null;
       for(var i=0;i<s.faces.length;i++) if(!FACES[s.faces[i]]) return null;
       return { positions:s.positions, faces:s.faces, removed:s.removed||new Array(s.faces.length).fill(false),
-               tray:s.tray||[], undo:s.undo||[], moves:s.moves||0, seconds:s.seconds||0, done:false, mode:s.mode||'classic' };
+               tray:s.tray||[], undo:s.undo||[], moves:s.moves||0, seconds:s.seconds||0, done:false, mode:s.mode||'classic',
+               tips:s.tips||0, shuffles:s.shuffles||0 };
     } catch(e){ return null; }
   }
   function getBest(mode,n){ try { return parseInt(localStorage.getItem(BEST_PFX+mode+':'+n)||'0',10)||0; } catch(e){ return 0; } }
@@ -1028,26 +1034,39 @@
   }
 
   /* ---------- Vinst ---------- */
+  // Tidsstraff för hjälpmedel (klockan är ärlig; påslaget läggs på sluttiden
+  // som räknas mot rekord och topplista). Ångra är gratis.
+  var PEN_TIP = 5, PEN_SHUFFLE = 10;
+  function penaltySeconds(){ return (state.tips||0)*PEN_TIP + (state.shuffles||0)*PEN_SHUFFLE; }
+  function penBreakdown(){
+    var parts = [];
+    if(state.tips) parts.push(state.tips + (state.tips===1 ? ' tips' : ' tips'));
+    if(state.shuffles) parts.push(state.shuffles + (state.shuffles===1 ? ' blanda' : ' blandningar'));
+    return parts.join(', ');
+  }
   function win(){
     state.done = true;
     if(timerId) clearInterval(timerId);
     clearSave();
+    var pen = penaltySeconds();
+    var finalSeconds = state.seconds + pen;
     var best = getBest(state.mode, N);
-    var isBest = (best === 0 || state.seconds < best);
-    if(isBest) setBest(state.mode, N, state.seconds);
-    recordStat(state.mode, true, { seconds: state.seconds, tiles: N });
+    var isBest = (best === 0 || finalSeconds < best);
+    if(isBest) setBest(state.mode, N, finalSeconds);
+    recordStat(state.mode, true, { seconds: finalSeconds, tiles: N });
     var panel = document.getElementById('panel');
     panel.innerHTML =
       '<div class="emoji">🀄</div>' +
       '<h2>Klart!</h2>' +
       '<p>Du rensade hela brädet.</p>' +
-      '<div class="big-stat">' + fmt(state.seconds) + '</div>' +
+      '<div class="big-stat">' + fmt(finalSeconds) + '</div>' +
+      (pen > 0 ? '<div class="pen-note">⏱️ ' + fmt(state.seconds) + ' + ' + pen + ' s straff (' + penBreakdown() + ')</div>' : '') +
       '<div class="best">' + (isBest ? '🏆 Nytt rekord!' : 'Bästa tid: ' + fmt(best)) + '</div>' +
       '<div id="lbArea" class="lb-area"></div>' +
       '<button id="pNew">Ny giv</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pNew').onclick = function(){ hideOverlay(); newGame(); };
-    setupWinLeaderboard(document.getElementById('lbArea'), N, state.mode, state.seconds, state.moves);
+    setupWinLeaderboard(document.getElementById('lbArea'), N, state.mode, finalSeconds, state.moves);
     sfx('win');
     if(navigator.vibrate) try { navigator.vibrate([20,40,20]); } catch(e){}
   }
@@ -1247,7 +1266,8 @@
     var assign = mode === 'tilematch' ? generateTriples(POS) : generate(POS);
     if(!assign){ toast('Kunde inte skapa giv, försök igen'); return; }
     state = { positions: positions, faces: assign, removed: new Array(N).fill(false),
-              tray: [], undo: [], moves: 0, seconds: 0, done: false, mode: mode };
+              tray: [], undo: [], moves: 0, seconds: 0, done: false, mode: mode,
+              tips: 0, shuffles: 0 };
     selected = -1; clearHint();
     statStart(mode);
     applyModeUI();
