@@ -81,6 +81,16 @@
   }
   #stats b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
   #stats .sep { width: 1px; height: 14px; background: rgba(255,255,255,.18); }
+  #statVsVal { color: #7be08a; }
+  #statVsVal.vs-behind { color: #ff8a7a; }
+
+  #challengeBar {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+    gap: 6px; flex-wrap: wrap; text-align: center;
+    padding: 7px 14px; font-size: 12.5px; font-weight: 600; color: #1a1200;
+    background: linear-gradient(135deg, #ffdb42, #ffb300);
+  }
+  #challengeBar b { font-weight: 800; }
 
   #boardWrap {
     position: relative; flex: 1 1 auto; overflow: hidden;
@@ -262,7 +272,8 @@
   }
   .panel .lb-btn { margin-top: 10px; }
   /* ---- utmaningar (delade givar) ---- */
-  .ch-row { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 12px; background: rgba(255,255,255,.05); margin-bottom: 8px; text-align: left; }
+  .ch-row { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 12px; background: rgba(255,255,255,.05); margin-bottom: 8px; text-align: left; cursor: pointer; }
+  .ch-row:active { background: rgba(255,255,255,.1); }
   .ch-main { flex: 1; min-width: 0; }
   .ch-title { font-weight: 700; color: var(--ink); font-size: 14px; }
   .ch-sub { font-size: 12px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -334,12 +345,16 @@
       <button id="btnSettings" class="iconbtn" aria-label="Inställningar">⚙</button>
     </header>
 
+    <div id="challengeBar" style="display:none"></div>
+
     <div id="stats">
       <span>Tid <b id="statTime">0:00</b></span>
       <span class="sep"></span>
       <span><span id="statMidLabel">Par kvar</span> <b id="statPairs">72</b></span>
       <span class="sep"></span>
       <span>Drag <b id="statMoves">0</b></span>
+      <span class="sep" id="statVsSep" style="display:none"></span>
+      <span id="statVsWrap" style="display:none">🎯 <b id="statVsVal">–</b></span>
     </div>
 
     <div id="boardWrap">
@@ -963,6 +978,7 @@
     tileEls[m[1]].classList.add('hint');
     sfx('hint');
     state.tips = (state.tips||0) + 1; save();
+    updateChallengeStat();
     toast('Tips – +' + PEN_TIP + ' s på sluttiden');
     hintTimer = setTimeout(clearHint, 2200);
   }
@@ -1000,12 +1016,13 @@
     state.shuffles = (state.shuffles||0) + 1;
     state.combo = 0; state.lastMatch = 0;
     selected = -1; clearHint(); sfx('shuffle'); paintFaces(); refresh(); save();
+    updateChallengeStat();
     toast('Blandat – +' + PEN_SHUFFLE + ' s på sluttiden');
   }
 
   /* ---------- Timer ---------- */
   function fmt(s){ var m=(s/60)|0; var r=s%60; return m + ':' + (r<10?'0':'') + r; }
-  function tick(){ if(state && !state.done){ state.seconds++; document.getElementById('statTime').textContent = fmt(state.seconds); } }
+  function tick(){ if(state && !state.done){ state.seconds++; document.getElementById('statTime').textContent = fmt(state.seconds); updateChallengeStat(); } }
   function startTimer(){ if(timerId) clearInterval(timerId); timerId = setInterval(tick, 1000); }
 
   /* ---------- Persistens ---------- */
@@ -1223,6 +1240,46 @@
     });
   }
 
+  /* ---------- Utmaning: banner + live-jämförelse mot motståndare ---------- */
+  // challengeTarget = snabbaste motståndarens tid (sekunder) för denna giv,
+  // hämtat en gång när utmaningen laddas. Räknas inte om under spelets gång.
+  var challengeTarget = null;
+  function updateChallengeBanner(){
+    var bar = document.getElementById('challengeBar');
+    if(!bar) return;
+    challengeTarget = null;
+    updateChallengeStat();
+    if(!state || !state.fromShare || !hasLeaderboard()){ bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    bar.innerHTML = '🧩 Du spelar en utmaning · Laddar motståndare…';
+    var forSeed = state.seed;
+    lbFetchBySeed(forSeed, function(err, list){
+      if(!state || !state.fromShare || state.seed !== forSeed) return; // spelet hann bytas medan vi väntade
+      if(err){ bar.innerHTML = '🧩 Du spelar en utmaning'; return; }
+      var myName = getName();
+      var others = (list || []).filter(function(s){ return s.name !== myName; });
+      if(!others.length){
+        bar.innerHTML = '🧩 Du spelar en utmaning · Bli först att klara den!';
+        return;
+      }
+      challengeTarget = others[0].seconds; // snabbast, listan är redan sorterad
+      var names = others.slice(0,4).map(function(s){ return esc(s.name) + ' <b>' + fmt(s.seconds) + '</b>'; }).join(' · ');
+      bar.innerHTML = '🧩 Utmaning mot: ' + names + (others.length > 4 ? ' …' : '');
+      updateChallengeStat();
+    });
+  }
+  function updateChallengeStat(){
+    var wrap = document.getElementById('statVsWrap'), sep = document.getElementById('statVsSep');
+    if(!wrap || !sep) return;
+    if(!state || !state.fromShare || challengeTarget == null){ wrap.style.display = 'none'; sep.style.display = 'none'; return; }
+    wrap.style.display = ''; sep.style.display = '';
+    var mine = state.seconds + penaltySeconds();
+    var diff = challengeTarget - mine;
+    var valEl = document.getElementById('statVsVal');
+    if(diff >= 0){ valEl.textContent = '−' + fmt(diff); valEl.className = ''; }
+    else { valEl.textContent = '+' + fmt(-diff); valEl.className = 'vs-behind'; }
+  }
+
   /* ---------- Vinst ---------- */
   // Tidsstraff för hjälpmedel (klockan är ärlig; påslaget läggs på sluttiden
   // som räknas mot rekord och topplista). Ångra är gratis.
@@ -1303,13 +1360,36 @@
 
   function challengeRowHtml(c){
     var modeLabel = c.mode === 'tilematch' ? 'Tile Match' : 'Klassisk par';
-    return '<div class="ch-row" data-code="'+esc(c.seed)+'">' +
+    return '<div class="ch-row" data-code="'+esc(c.seed)+'" data-mode="'+esc(c.mode)+'" data-tiles="'+c.tiles+'" role="button" tabindex="0">' +
              '<div class="ch-main">' +
                '<div class="ch-title">'+modeLabel+' · '+c.tiles+' brickor</div>' +
                '<div class="ch-sub">🥇 '+esc(c.bestName)+' '+fmt(c.bestSeconds)+' · '+c.players+' spelare</div>' +
              '</div>' +
              '<button class="ch-play">Spela</button>' +
            '</div>';
+  }
+  // Detaljvy för en enskild utmaning: topplista + spela-knapp.
+  function openChallengeDetail(code, mode, tiles){
+    var panel = document.getElementById('panel');
+    var modeLabel = mode === 'tilematch' ? 'Tile Match' : 'Klassisk par';
+    panel.innerHTML =
+      '<h2>🧩 Utmaning</h2>' +
+      '<div class="set-hint" style="text-align:center;margin:0 0 10px">'+modeLabel+' · '+tiles+' brickor</div>' +
+      '<div id="chDetailList" class="lb-list">Laddar…</div>' +
+      '<button id="chPlay">Spela utmaningen</button>' +
+      '<button id="chBack" class="ghost">Tillbaka</button>';
+    var el = document.getElementById('chDetailList');
+    lbFetchBySeed(code, function(err, list){
+      if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
+      lbRenderList(el, list, getName());
+    });
+    document.getElementById('chPlay').onclick = function(){
+      var info = parseSeedCode(code);
+      if(!info){ toast('Kunde inte läsa in utmaningen'); return; }
+      hideOverlay();
+      newGame({ seedInfo: info, fromShare: true });
+    };
+    document.getElementById('chBack').onclick = function(){ openLeaderboard('challenges'); };
   }
   // Fristående topplista-vy (från inställningar/header): flikar mellan
   // globala topplistor per brädstorlek och öppet bläddringsbara
@@ -1341,8 +1421,14 @@
         if(err){ el.textContent = 'Kunde inte hämta utmaningar'; return; }
         if(!list.length){ el.innerHTML = '<div class="lb-empty">Inga delade givar ännu — bli först med att dela en!</div>'; return; }
         el.innerHTML = list.map(challengeRowHtml).join('');
+        el.querySelectorAll('.ch-row').forEach(function(row){
+          row.addEventListener('click', function(){
+            openChallengeDetail(row.dataset.code, row.dataset.mode, row.dataset.tiles);
+          });
+        });
         el.querySelectorAll('.ch-play').forEach(function(btn){
-          btn.onclick = function(){
+          btn.onclick = function(e){
+            e.stopPropagation();
             var code = btn.closest('.ch-row').dataset.code;
             var info = parseSeedCode(code);
             if(!info){ toast('Kunde inte läsa in utmaningen'); return; }
@@ -1534,6 +1620,7 @@
     selected = -1; clearHint();
     statStart(mode);
     applyModeUI();
+    updateChallengeBanner();
     paintFaces(); refresh(); renderTray(); save();
     document.getElementById('statTime').textContent = '0:00';
     startTimer();
@@ -1622,6 +1709,7 @@
   /* ---------- Init ---------- */
   function resumeSaved(s){
     state = s; setLayout(state.positions); applyModeUI();
+    updateChallengeBanner();
     paintFaces(); refresh(); renderTray();
     document.getElementById('statTime').textContent = fmt(state.seconds);
     startTimer();
