@@ -658,6 +658,8 @@
     if(S.gear.spjut) g.push("🔱");
     if(S.gear.flaska) g.push("🧴");
     if(S.gear.kniv) g.push("🔪");
+    if(S.raftMats.rep) g.push("🪢");
+    if(S.raftMats.segel) g.push("⛵");
     document.getElementById("resGear").textContent = "🎒 " + (g.length ? g.join(" ") : "—");
 
     updateBuildButton();
