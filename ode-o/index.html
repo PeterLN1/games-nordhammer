@@ -99,9 +99,11 @@
   .scene svg { display: block; width: 100%; height: auto; }
   @keyframes camppop { 0% { transform: translateY(5px) scale(.85); opacity: .3; } 100% { transform: none; opacity: 1; } }
   @keyframes campshake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-3px) rotate(-1deg); } 60% { transform: translateX(3px) rotate(1deg); } }
-  #campWrap { transform-box: fill-box; transform-origin: bottom center; }
-  #campWrap.pop { animation: camppop .45s ease; }
+  #campWrap, #raftWrap { transform-box: fill-box; transform-origin: bottom center; }
+  #campWrap.pop, #raftWrap.pop { animation: camppop .45s ease; }
   #campWrap.shake { animation: campshake .4s ease; }
+  @keyframes raftBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+  #raftWrap.ready { animation: raftBob 2.2s ease-in-out infinite; }
 
   @keyframes wxRainFall { 0% { transform: translateY(-6px); } 100% { transform: translateY(6px); } }
   .wxRainLine { animation: wxRainFall .4s linear infinite; }
@@ -197,6 +199,7 @@
     <span class="res actions" id="resActions">Handlingar: 4</span>
     <span class="res" id="resWood">🪵 Ved 0</span>
     <span class="res" id="resCamp">⛺ Läger 0</span>
+    <span class="res" id="resRaft">🛟 Flotte 0/3</span>
     <span class="res" id="resGear">🎒 —</span>
   </div>
 
@@ -226,6 +229,33 @@
       <path id="waveStorm2" style="display:none" d="M0 104 Q25 90 50 104 T100 104 T150 104 T200 104 T250 104 T300 104 T350 104 T400 104" fill="none" stroke="#1c3d52" stroke-width="3"/>
       <polygon points="0,112 380,100 380,150 0,150" fill="#efdca6"/>
       <polygon points="0,112 380,100 380,106 0,118" fill="#e4cf95"/>
+
+      <g id="raftWrap">
+        <g id="raft-l1" style="display:none">
+          <rect x="100" y="97" width="56" height="7" rx="2" fill="#a9713e" stroke="#7c4f27" stroke-width="1"/>
+          <line x1="106" y1="97" x2="106" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+          <line x1="120" y1="97" x2="120" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+          <line x1="134" y1="97" x2="134" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+          <line x1="148" y1="97" x2="148" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+        </g>
+        <g id="raft-l2" style="display:none">
+          <rect x="100" y="97" width="56" height="7" rx="2" fill="#a9713e" stroke="#7c4f27" stroke-width="1"/>
+          <line x1="106" y1="97" x2="106" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+          <line x1="120" y1="97" x2="120" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+          <line x1="134" y1="97" x2="134" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+          <line x1="148" y1="97" x2="148" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+          <line x1="128" y1="97" x2="128" y2="74" stroke="#7c4f27" stroke-width="2"/>
+        </g>
+        <g id="raft-l3" style="display:none">
+          <rect x="100" y="97" width="56" height="7" rx="2" fill="#a9713e" stroke="#7c4f27" stroke-width="1"/>
+          <line x1="106" y1="97" x2="106" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+          <line x1="120" y1="97" x2="120" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+          <line x1="134" y1="97" x2="134" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+          <line x1="148" y1="97" x2="148" y2="104" stroke="#7c4f27" stroke-width="1.2"/>
+          <line x1="128" y1="97" x2="128" y2="74" stroke="#7c4f27" stroke-width="2"/>
+          <polygon points="128,76 128,96 150,90" fill="#f4ead1" stroke="#c9b98a" stroke-width="1"/>
+        </g>
+      </g>
 
       <path d="M42 114 C45 96 49 84 47 72" fill="none" stroke="#9c6b3f" stroke-width="6" stroke-linecap="round"/>
       <ellipse cx="34" cy="68" rx="14" ry="6" fill="#46a85a"/>
@@ -301,7 +331,7 @@
     <button class="act" data-act="water"><span class="em">💧</span><span class="lbl">Hämta vatten<small>Vatten</small></span></button>
     <button class="act" data-act="forest"><span class="em">🌴</span><span class="lbl">Skogen<small>Ved · frukt</small></span></button>
     <button class="act" data-act="explore"><span class="em">🔍</span><span class="lbl">Utforska<small>Slump</small></span></button>
-    <button class="act" data-act="build"><span class="em">🔥</span><span class="lbl">Bygg läger<small>−ved</small></span></button>
+    <button class="act" data-act="build"><span class="em" id="buildEm">🔥</span><span class="lbl"><span id="buildLbl">Bygg läger</span><small id="buildSub">−ved</small></span></button>
     <button class="act" data-act="rest"><span class="em">😴</span><span class="lbl">Vila<small>+energi</small></span></button>
   </div>
 </div>
@@ -320,6 +350,7 @@
 
   var S = null;          // spelläge
   var sceneLast = null;  // senast renderad läger-nivå (för animation)
+  var raftLast = null;   // senast renderad flotte-nivå (för animation)
   var stormTimer = null; // timeout-id för pågående stormblixt
 
   function rint(a, b){ return a + Math.floor(Math.random() * (b - a + 1)); } // inkl. b
@@ -331,20 +362,24 @@
       day: 1,
       actionsLeft: ACTIONS_PER_DAY,
       health: 100, food: 80, water: 80, energy: 90,
-      wood: 0, camp: 0,
+      wood: 0, camp: 0, raft: 0,
       gear: { spjut: false, flaska: false, kniv: false },
+      raftMats: { rep: false, segel: false },
       waterFound: false,   // hittad färskvattenkälla → effektivare vatten
       weather: "sol", stormFlash: false,
       over: false, log: []
     };
     sceneLast = null;
+    raftLast = null;
     if(stormTimer){ clearTimeout(stormTimer); stormTimer = null; }
     var sceneEl = document.getElementById("scene");
     if(sceneEl) sceneEl.classList.remove("storm-shake");
     var boltEl = document.getElementById("wxBolt");
     if(boltEl) boltEl.classList.remove("flash");
+    var raftWrapEl = document.getElementById("raftWrap");
+    if(raftWrapEl) raftWrapEl.classList.remove("pop", "ready");
     logDay(1);
-    add("Du vaknar på en öde strand. Vraket sjönk. Håll dig vid liv i " + WIN_DAY + " dagar tills hjälp kommer.");
+    add("Du vaknar på en öde strand. Vraket sjönk. Du har " + WIN_DAY + " dagar — men ingen kommer och räddar dig av sig själv.");
     render();
   }
 
@@ -395,14 +430,16 @@
       if(!S.gear.spjut) missing.push("spjut");
       if(!S.gear.flaska) missing.push("flaska");
       if(!S.gear.kniv) missing.push("kniv");
+      if(!S.raftMats.rep) missing.push("rep");
+      if(!S.raftMats.segel) missing.push("segel");
 
       if(!S.waterFound && roll < 0.20){
         S.waterFound = true;
         add("🔍 Du upptäckte en <b>färskvattenkälla</b> inne på ön! Vatten blir lättare härefter.", "good");
       } else if(missing.length && roll < 0.48){
         var item = missing[rint(0, missing.length - 1)];
-        S.gear[item] = true;
-        var names = { spjut: "ett fiskespjut 🔱 (bättre fiske)", flaska: "en flaska 🧴 (bär mer vatten)", kniv: "en kniv 🔪 (mer ved)" };
+        var names = { spjut: "ett fiskespjut 🔱 (bättre fiske)", flaska: "en flaska 🧴 (bär mer vatten)", kniv: "en kniv 🔪 (mer ved)", rep: "ett rep 🪢 (för flottens mast)", segel: "en bit segelduk ⛵ (för flottens segel)" };
+        if(item === "rep" || item === "segel") S.raftMats[item] = true; else S.gear[item] = true;
         add("🔍 Bland vrakspillrorna hittade du " + names[item] + ".", "good");
       } else if(roll < 0.72){
         var w = rint(2, 4);
@@ -419,14 +456,31 @@
       }
     },
     build: function(){
-      if(S.camp >= 3){ add("⛺ Ditt läger är redan i toppskick."); return false; }
-      var cost = 3 + S.camp; // dyrare för varje nivå
-      if(S.wood < cost){ add("⛺ Du behöver " + cost + " ved för att bygga vidare (har " + S.wood + ")."); return false; }
-      S.wood -= cost;
-      S.energy = clamp(S.energy - 10);
-      S.camp += 1;
-      var lvl = ["", "enkelt vindskydd med lägereld", "stabil hydda", "rejält läger med förråd"][S.camp];
-      add("🔥 Du byggde ett " + lvl + ". <small>Läger nivå " + S.camp + "</small>", "good");
+      if(S.camp < 3){
+        var cost = 3 + S.camp; // dyrare för varje nivå
+        if(S.wood < cost){ add("⛺ Du behöver " + cost + " ved för att bygga vidare (har " + S.wood + ")."); return false; }
+        S.wood -= cost;
+        S.energy = clamp(S.energy - 10);
+        S.camp += 1;
+        var lvl = ["", "enkelt vindskydd med lägereld", "stabil hydda", "rejält läger med förråd"][S.camp];
+        add("🔥 Du byggde ett " + lvl + ". <small>Läger nivå " + S.camp + "</small>", "good");
+        return;
+      }
+      // Lägret är fullt utbyggt — nu gäller flotten som ska ta dig hem
+      if(S.raft >= 3){
+        add("⛵ Du sätter segel mot havet — äntligen på väg hem!", "good");
+        endGame(true, "raft");
+        return false;
+      }
+      if(S.raft === 1 && !S.raftMats.rep){ add("🛟 Du behöver rep för att resa masten. Utforska ön för att hitta mer."); return false; }
+      if(S.raft === 2 && !S.raftMats.segel){ add("🛟 Du behöver segelduk för att hissa seglet. Utforska ön för att hitta mer."); return false; }
+      var raftCost = [4, 5, 3][S.raft];
+      if(S.wood < raftCost){ add("🛟 Du behöver " + raftCost + " ved för flotten (har " + S.wood + ")."); return false; }
+      S.wood -= raftCost;
+      S.energy = clamp(S.energy - 12);
+      S.raft += 1;
+      var rmsg = ["", "Du band ihop stockar till ett flottskrov.", "Du reste en mast och surrade fast den med rep.", "Du hissade seglet — flotten är redo att segla!"][S.raft];
+      add("🛟 " + rmsg, "good");
     },
     rest: function(){
       var g = 24 + S.camp * 10;
@@ -481,7 +535,11 @@
 
     // Ny dag
     S.day += 1;
-    if(S.day > WIN_DAY){ endGame(true); return; }
+    if(S.day > WIN_DAY){
+      if(S.raft >= 3) endGame(true, "timeout-ready");
+      else endGame(false, "timeout-miss");
+      return;
+    }
 
     S.actionsLeft = ACTIONS_PER_DAY;
     rollWeather();
@@ -511,20 +569,28 @@
   }
 
   // ---- Slut ----
-  function checkEnd(){ if(!S.over && S.health <= 0) endGame(false); }
+  function checkEnd(){ if(!S.over && S.health <= 0) endGame(false, "death"); }
 
-  function endGame(won){
+  function endGame(won, reason){
     S.over = true;
-    var survived = won ? WIN_DAY : S.day;
+    var survived = reason === "raft" ? S.day : Math.min(S.day, WIN_DAY);
     var rec = getRecord();
-    if(survived > rec){ setRecord(survived); rec = survived; }
+    var isNew = survived > rec.days || (survived === rec.days && won && !rec.won);
+    if(isNew){ setRecord(survived, won); rec = { days: survived, won: won }; }
     render();
-    showEnd(won, survived, rec);
+    showEnd(won, survived, rec, reason, isNew);
   }
 
   // ---- Rekord ----
-  function getRecord(){ try { return parseInt(localStorage.getItem(REC_KEY) || "0", 10) || 0; } catch(e){ return 0; } }
-  function setRecord(v){ try { localStorage.setItem(REC_KEY, String(v)); } catch(e){} }
+  function getRecord(){
+    var raw; try { raw = localStorage.getItem(REC_KEY); } catch(e){}
+    if(!raw) return { days: 0, won: false };
+    var parts = raw.split("|");
+    var days = parseInt(parts[0], 10) || 0;
+    var won = parts.length > 1 ? parts[1] === "1" : days >= WIN_DAY;
+    return { days: days, won: won };
+  }
+  function setRecord(days, won){ try { localStorage.setItem(REC_KEY, days + "|" + (won ? "1" : "0")); } catch(e){} }
 
   // ---- Rendering ----
   function setBar(id, v, color){
@@ -543,6 +609,7 @@
     document.getElementById("resActions").textContent = "Handlingar: " + S.actionsLeft;
     document.getElementById("resWood").textContent = "🪵 Ved " + S.wood;
     document.getElementById("resCamp").textContent = "⛺ Läger " + S.camp;
+    document.getElementById("resRaft").textContent = "🛟 Flotte " + S.raft + "/3";
 
     var g = [];
     if(S.gear.spjut) g.push("🔱");
@@ -550,6 +617,7 @@
     if(S.gear.kniv) g.push("🔪");
     document.getElementById("resGear").textContent = "🎒 " + (g.length ? g.join(" ") : "—");
 
+    updateBuildButton();
     renderScene();
     renderLog();
     var dis = S.over || S.actionsLeft <= 0;
@@ -566,6 +634,22 @@
     }
     box.innerHTML = html;
     box.scrollTop = box.scrollHeight;
+  }
+
+  function updateBuildButton(){
+    var em = document.getElementById("buildEm");
+    var lbl = document.getElementById("buildLbl");
+    var sub = document.getElementById("buildSub");
+    if(S.camp < 3){
+      em.textContent = "🔥"; lbl.textContent = "Bygg läger"; sub.textContent = "−ved";
+    } else if(S.raft < 3){
+      em.textContent = "🛟"; lbl.textContent = "Bygg flotte";
+      if(S.raft === 1 && !S.raftMats.rep) sub.textContent = "Kräver rep";
+      else if(S.raft === 2 && !S.raftMats.segel) sub.textContent = "Kräver segelduk";
+      else sub.textContent = "−ved";
+    } else {
+      em.textContent = "⛵"; lbl.textContent = "Sätt segel"; sub.textContent = "Fly ön!";
+    }
   }
 
   function show(id, on){ var el = document.getElementById(id); if(el) el.style.display = on ? "" : "none"; }
@@ -587,6 +671,18 @@
       requestAnimationFrame(function(){ requestAnimationFrame(function(){ wrap.classList.add(cls); }); });
     }
     sceneLast = c;
+
+    var r = S.raft;
+    show("raft-l1", r === 1);
+    show("raft-l2", r === 2);
+    show("raft-l3", r >= 3);
+    var raftWrap = document.getElementById("raftWrap");
+    raftWrap.classList.toggle("ready", r >= 3);
+    if(raftLast !== null && r > raftLast){
+      raftWrap.classList.remove("pop");
+      requestAnimationFrame(function(){ requestAnimationFrame(function(){ raftWrap.classList.add("pop"); }); });
+    }
+    raftLast = r;
 
     renderWeather();
   }
@@ -633,16 +729,17 @@
   // ---- Overlays ----
   function showStart(){
     var rec = getRecord();
-    var recLine = rec > 0 ? '<div class="rec">🏆 Rekord: ' + rec + ' dagar' + (rec >= WIN_DAY ? ' (räddad!)' : '') + '</div>' : '';
+    var recLine = rec.days > 0 ? '<div class="rec">🏆 Rekord: ' + rec.days + ' dagar' + (rec.won ? ' (räddad!)' : '') + '</div>' : '';
     document.getElementById("modal").innerHTML =
       '<div class="big">🏝️</div>' +
       '<h2>Öde ö</h2>' +
-      '<p>Ditt skepp har sjunkit. Överlev <b>' + WIN_DAY + ' dagar</b> tills räddningen kommer.</p>' +
+      '<p>Ditt skepp har sjunkit. Du har <b>' + WIN_DAY + ' dagar</b> på dig — men ingen räddar dig av sig själv.</p>' +
       '<ul>' +
         '<li>Varje dag har du <b>' + ACTIONS_PER_DAY + ' handlingar</b>.</li>' +
         '<li>Håll mat, vatten och energi över noll — annars sjunker hälsan.</li>' +
         '<li>Bygg läger med ved för att klara nätterna.</li>' +
-        '<li>Utforska för att hitta källor och verktyg.</li>' +
+        '<li>När lägret är klart — bygg en flotte av ved, rep och segelduk för att kunna fly.</li>' +
+        '<li>Utforska ön för att hitta källor, verktyg och flottdelar.</li>' +
       '</ul>' +
       recLine +
       '<button class="primary" id="startBtn">Skölj i land 🌊</button>';
@@ -652,15 +749,19 @@
       newGame();
     };
   }
-  function showEnd(won, survived, rec){
-    var isRec = survived >= rec;
+  function showEnd(won, survived, rec, reason, isNew){
+    var icon = won ? "⛵" : (reason === "timeout-miss" ? "🚢" : "💀");
+    var title = won ? "Räddad!" : (reason === "timeout-miss" ? "Skeppet såg dig aldrig" : "Du klarade dig inte");
+    var body;
+    if(reason === "raft") body = "Dag " + survived + " sätter du segel på din egen flotte och lämnar ön för gott!";
+    else if(reason === "timeout-ready") body = "Dag " + WIN_DAY + " syns ett skepp vid horisonten — och den här gången ser de dig. Du är räddad!";
+    else if(reason === "timeout-miss") body = "Dag " + WIN_DAY + " kom och gick. Ett skepp passerade långt ute — men utan en flotte att signalera med såg ingen dig. Du överlevde ön, men kom aldrig hem.";
+    else body = "Du överlevde <b>" + survived + "</b> " + (survived === 1 ? "dag" : "dagar") + " på ön.";
     document.getElementById("modal").innerHTML =
-      '<div class="big">' + (won ? "⛵" : "💀") + '</div>' +
-      '<h2>' + (won ? "Räddad!" : "Du klarade dig inte") + '</h2>' +
-      '<p>' + (won
-        ? "På dag " + WIN_DAY + " syns ett segel vid horisonten. Du överlevde!"
-        : "Du överlevde <b>" + survived + "</b> " + (survived === 1 ? "dag" : "dagar") + " på ön.") + '</p>' +
-      '<div class="rec">🏆 Rekord: ' + rec + ' dagar' + (isRec && !won ? " — nytt rekord!" : "") + '</div>' +
+      '<div class="big">' + icon + '</div>' +
+      '<h2>' + title + '</h2>' +
+      '<p>' + body + '</p>' +
+      '<div class="rec">🏆 Rekord: ' + rec.days + ' dagar' + (rec.won ? ' (räddad!)' : '') + (isNew ? " — nytt rekord!" : "") + '</div>' +
       '<button class="primary" id="againBtn">' + (won ? "Spela igen" : "Försök igen") + '</button>';
     document.getElementById("overlay").classList.remove("hidden");
     document.getElementById("againBtn").onclick = function(){
