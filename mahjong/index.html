@@ -302,7 +302,7 @@
 
   #toast {
     position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom));
-    transform: translateX(-50%) translateY(10px); z-index: 90;
+    transform: translateX(-50%) translateY(10px); z-index: 10000; /* över #overlay (100) — annars döljs notisen bakom en öppen panel */
     background: rgba(0,0,0,.85); color: #fff; padding: 12px 20px; border-radius: 999px;
     font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none;
     transition: opacity .25s, transform .25s; max-width: 84vw; text-align: center;
@@ -1136,11 +1136,22 @@
   function shareUrlFor(code){
     var url = new URL(location.href); url.search = ''; url.hash = ''; url.searchParams.set('giv', code); return url.toString();
   }
-  function shareCurrentGame(){
+  // btn = knappen som klickades (valfri) — ger omedelbar, svårmissad
+  // feedback direkt på knappen, utöver notisen (som annars är lätt att
+  // missa om den hamnar bakom en fortsatt öppen panel).
+  function shareCurrentGame(btn){
     if(!state || !state.seed) return;
     var url = shareUrlFor(state.seed);
+    function flashCopied(){
+      toast('Länk kopierad!');
+      if(!btn) return;
+      var orig = btn.textContent;
+      btn.textContent = '✓ Länk kopierad!';
+      btn.disabled = true;
+      setTimeout(function(){ btn.textContent = orig; btn.disabled = false; }, 1800);
+    }
     if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(url).then(function(){ toast('Länk kopierad!'); }).catch(function(){ showShareFallback(url); });
+      navigator.clipboard.writeText(url).then(flashCopied).catch(function(){ showShareFallback(url); });
     } else {
       showShareFallback(url);
     }
@@ -1248,7 +1259,7 @@
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pNew').onclick = function(){ hideOverlay(); newGame(); };
     var pShare = document.getElementById('pShare');
-    if(pShare) pShare.onclick = shareCurrentGame;
+    if(pShare) pShare.onclick = function(){ shareCurrentGame(pShare); };
     setupWinLeaderboard(document.getElementById('lbArea'), N, state.mode, finalSeconds, state.moves, state.seed, function(){
       if(state.fromShare) setupSeedLeaderboard(document.getElementById('lbSeedArea'), state.seed);
     });
@@ -1580,7 +1591,8 @@
       });
       var setNameEl = document.getElementById('setName');
       if(setNameEl) setNameEl.addEventListener('input', function(){ setName(this.value.trim()); });
-      document.getElementById('setShare').onclick = shareCurrentGame;
+      var setShareBtn = document.getElementById('setShare');
+      setShareBtn.onclick = function(){ shareCurrentGame(setShareBtn); };
       document.getElementById('setStart').onclick = function(){
         cfg.size = pending.size; cfg.pattern = pending.pattern; cfg.mode = pending.mode; saveCfg(); hideOverlay(); newGame();
       };
