@@ -449,8 +449,8 @@
       if(!S.gear.spjut) missing.push("spjut");
       if(!S.gear.flaska) missing.push("flaska");
       if(!S.gear.kniv) missing.push("kniv");
-      if(!S.raftMats.rep) missing.push("rep");
-      if(!S.raftMats.segel) missing.push("segel");
+      if(!S.raftMats.rep && S.raft < 2) missing.push("rep");     // redan använt förbi masten? inget mer att hitta
+      if(!S.raftMats.segel && S.raft < 3) missing.push("segel"); // redan använt förbi seglet? inget mer att hitta
 
       if(!S.waterFound && roll < 0.20){
         S.waterFound = true;
@@ -497,6 +497,8 @@
       if(S.wood < raftCost){ add("🛟 Du behöver " + raftCost + " ved för flotten (har " + S.wood + ")."); return false; }
       S.wood -= raftCost;
       S.energy = clamp(S.energy - 12);
+      if(S.raft === 1) S.raftMats.rep = false;   // repet sitter nu bundet kring masten
+      if(S.raft === 2) S.raftMats.segel = false; // segelduken är hissad som segel
       S.raft += 1;
       var rmsg = ["", "Du band ihop stockar till ett flottskrov.", "Du reste en mast och surrade fast den med rep.", "Du hissade seglet — flotten är redo att segla!"][S.raft];
       add("🛟 " + rmsg, "good");
