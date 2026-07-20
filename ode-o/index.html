@@ -103,6 +103,15 @@
   #campWrap.pop { animation: camppop .45s ease; }
   #campWrap.shake { animation: campshake .4s ease; }
 
+  @keyframes wxRainFall { 0% { transform: translateY(-6px); } 100% { transform: translateY(6px); } }
+  .wxRainLine { animation: wxRainFall .4s linear infinite; }
+  @keyframes wxBoltFlash { 0%,100% { opacity: 0; } 8%,14% { opacity: 1; } 22% { opacity: 0; } 46%,52% { opacity: .9; } 62% { opacity: 0; } }
+  #wxBolt.flash { animation: wxBoltFlash 1.9s ease-in-out 1; }
+  @keyframes wxSceneShake { 0%,100% { transform: translateX(0); } 15% { transform: translateX(-3px); } 35% { transform: translateX(3px); } 55% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
+  .scene.storm-shake svg { animation: wxSceneShake .6s ease-in-out 1; }
+  @keyframes wxShimmer { 0%,100% { opacity: .25; } 50% { opacity: .55; } }
+  .wxShimmerLine { animation: wxShimmer 1.8s ease-in-out infinite; }
+
   .log {
     flex: 1; overflow-y: auto; margin: 0 12px; padding: 10px 12px;
     background: var(--log-bg); border: 1px solid var(--panel-brd);
@@ -192,14 +201,29 @@
   </div>
 
   <div class="scene" id="scene">
-    <svg viewBox="0 0 380 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vy över ön med läger och vedhög">
+    <svg viewBox="0 0 380 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vy över ön med läger, vedhög och väder">
       <rect x="0" y="0" width="380" height="88" fill="#bfe6f6"/>
-      <circle cx="338" cy="26" r="13" fill="#ffd45e"/>
-      <ellipse cx="70" cy="22" rx="22" ry="8" fill="#ffffff" opacity="0.85"/>
-      <ellipse cx="92" cy="27" rx="14" ry="6" fill="#ffffff" opacity="0.85"/>
+      <circle id="sunGlow" cx="338" cy="26" r="22" fill="#ffb454" opacity="0.35" style="display:none"/>
+      <circle id="sun" cx="338" cy="26" r="13" fill="#ffd45e"/>
+      <g id="cloudsCalm">
+        <ellipse cx="70" cy="22" rx="22" ry="8" fill="#ffffff" opacity="0.85"/>
+        <ellipse cx="92" cy="27" rx="14" ry="6" fill="#ffffff" opacity="0.85"/>
+      </g>
+      <g id="cloudsGray" style="display:none">
+        <ellipse cx="58" cy="23" rx="30" ry="10" fill="#9aa7b2"/>
+        <ellipse cx="94" cy="19" rx="21" ry="9" fill="#8b98a3"/>
+        <ellipse cx="258" cy="17" rx="33" ry="11" fill="#9aa7b2"/>
+        <ellipse cx="298" cy="24" rx="23" ry="9" fill="#8b98a3"/>
+      </g>
+      <g id="wxHeat" style="display:none">
+        <path class="wxShimmerLine" d="M36 78 Q56 74 76 78 T116 78 T156 78" fill="none" stroke="#ffdca0" stroke-width="1.5" opacity="0.35"/>
+        <path class="wxShimmerLine" d="M200 76 Q220 72 240 76 T280 76 T320 76" fill="none" stroke="#ffdca0" stroke-width="1.5" opacity="0.35"/>
+      </g>
       <rect x="0" y="82" width="380" height="30" fill="#3fa0cd"/>
-      <path d="M0 92 Q40 87 80 92 T160 92 T240 92 T320 92 T400 92" fill="none" stroke="#7fc6e4" stroke-width="2"/>
-      <path d="M0 102 Q40 98 80 102 T160 102 T240 102 T320 102 T400 102" fill="none" stroke="#6bbbde" stroke-width="2"/>
+      <path id="wave1" d="M0 92 Q40 87 80 92 T160 92 T240 92 T320 92 T400 92" fill="none" stroke="#7fc6e4" stroke-width="2"/>
+      <path id="wave2" d="M0 102 Q40 98 80 102 T160 102 T240 102 T320 102 T400 102" fill="none" stroke="#6bbbde" stroke-width="2"/>
+      <path id="waveStorm1" style="display:none" d="M0 93 Q25 78 50 93 T100 93 T150 93 T200 93 T250 93 T300 93 T350 93 T400 93" fill="none" stroke="#25506b" stroke-width="3"/>
+      <path id="waveStorm2" style="display:none" d="M0 104 Q25 90 50 104 T100 104 T150 104 T200 104 T250 104 T300 104 T350 104 T400 104" fill="none" stroke="#1c3d52" stroke-width="3"/>
       <polygon points="0,112 380,100 380,150 0,150" fill="#efdca6"/>
       <polygon points="0,112 380,100 380,106 0,118" fill="#e4cf95"/>
 
@@ -254,6 +278,19 @@
         <circle class="woodlog" cx="312" cy="98" r="5" fill="#b5813f"/>
         <circle class="woodlog" cx="306" cy="88" r="5" fill="#b5813f"/>
       </g>
+
+      <g id="wxRain" style="display:none">
+        <line class="wxRainLine" x1="40" y1="10" x2="34" y2="30" stroke="#dcefff" stroke-width="1.5" opacity="0.55"/>
+        <line class="wxRainLine" x1="90" y1="4" x2="84" y2="24" stroke="#dcefff" stroke-width="1.5" opacity="0.5" style="animation-delay:.12s"/>
+        <line class="wxRainLine" x1="150" y1="14" x2="144" y2="34" stroke="#dcefff" stroke-width="1.5" opacity="0.55" style="animation-delay:.22s"/>
+        <line class="wxRainLine" x1="200" y1="6" x2="194" y2="26" stroke="#dcefff" stroke-width="1.5" opacity="0.5" style="animation-delay:.05s"/>
+        <line class="wxRainLine" x1="250" y1="16" x2="244" y2="36" stroke="#dcefff" stroke-width="1.5" opacity="0.55" style="animation-delay:.3s"/>
+        <line class="wxRainLine" x1="120" y1="40" x2="114" y2="60" stroke="#dcefff" stroke-width="1.5" opacity="0.45" style="animation-delay:.18s"/>
+        <line class="wxRainLine" x1="280" y1="44" x2="274" y2="64" stroke="#dcefff" stroke-width="1.5" opacity="0.45" style="animation-delay:.08s"/>
+        <line class="wxRainLine" x1="330" y1="50" x2="324" y2="70" stroke="#dcefff" stroke-width="1.5" opacity="0.5" style="animation-delay:.26s"/>
+      </g>
+      <polygon id="wxBolt" points="250,10 240,44 252,44 244,78 268,36 254,36 262,10" fill="#fff7d6" opacity="0"/>
+      <rect id="wxTint" x="0" y="0" width="380" height="150" fill="#000000" opacity="0"/>
     </svg>
   </div>
 
@@ -283,6 +320,7 @@
 
   var S = null;          // spelläge
   var sceneLast = null;  // senast renderad läger-nivå (för animation)
+  var stormTimer = null; // timeout-id för pågående stormblixt
 
   function rint(a, b){ return a + Math.floor(Math.random() * (b - a + 1)); } // inkl. b
   function chance(p){ return Math.random() < p; }
@@ -296,10 +334,15 @@
       wood: 0, camp: 0,
       gear: { spjut: false, flaska: false, kniv: false },
       waterFound: false,   // hittad färskvattenkälla → effektivare vatten
-      weather: "sol",
+      weather: "sol", stormFlash: false,
       over: false, log: []
     };
     sceneLast = null;
+    if(stormTimer){ clearTimeout(stormTimer); stormTimer = null; }
+    var sceneEl = document.getElementById("scene");
+    if(sceneEl) sceneEl.classList.remove("storm-shake");
+    var boltEl = document.getElementById("wxBolt");
+    if(boltEl) boltEl.classList.remove("flash");
     logDay(1);
     add("Du vaknar på en öde strand. Vraket sjönk. Håll dig vid liv i " + WIN_DAY + " dagar tills hjälp kommer.");
     render();
@@ -449,10 +492,12 @@
   function rollWeather(){
     var r = Math.random();
     S.weather = r < 0.5 ? "sol" : r < 0.75 ? "moln" : r < 0.9 ? "regn" : "hetta";
+    S.stormFlash = false;
     // Storm kan skada lägret
     if(chance(0.12) && S.camp > 0){
       S.camp -= 1;
       S.weather = "storm";
+      S.stormFlash = true; // dramatisk blixt-animation vid dagens första rendering
     }
   }
   function weatherText(){
@@ -542,6 +587,47 @@
       requestAnimationFrame(function(){ requestAnimationFrame(function(){ wrap.classList.add(cls); }); });
     }
     sceneLast = c;
+
+    renderWeather();
+  }
+
+  var WX_TINT = { sol: [null, 0], moln: ["#8a97a3", 0.18], regn: ["#4d6270", 0.30], hetta: ["#ffb454", 0.14], storm: ["#131a22", 0.55] };
+
+  function renderWeather(){
+    var w = S.weather;
+    show("sun", w === "sol" || w === "hetta");
+    show("sunGlow", w === "hetta");
+    show("cloudsCalm", w === "sol");
+    show("cloudsGray", w === "moln" || w === "regn" || w === "storm");
+    show("wxHeat", w === "hetta");
+    show("wxRain", w === "regn" || w === "storm");
+    show("wave1", w !== "storm");
+    show("wave2", w !== "storm");
+    show("waveStorm1", w === "storm");
+    show("waveStorm2", w === "storm");
+
+    var tint = WX_TINT[w] || WX_TINT.sol;
+    var tintEl = document.getElementById("wxTint");
+    tintEl.setAttribute("fill", tint[0] || "#000000");
+    tintEl.setAttribute("opacity", tint[1]);
+
+    if(S.stormFlash){
+      S.stormFlash = false; // fyr av bara en gång per storm
+      var scene = document.getElementById("scene");
+      var bolt = document.getElementById("wxBolt");
+      scene.classList.remove("storm-shake");
+      bolt.classList.remove("flash");
+      if(stormTimer) clearTimeout(stormTimer);
+      requestAnimationFrame(function(){ requestAnimationFrame(function(){
+        scene.classList.add("storm-shake");
+        bolt.classList.add("flash");
+      }); });
+      stormTimer = setTimeout(function(){
+        scene.classList.remove("storm-shake");
+        bolt.classList.remove("flash");
+        stormTimer = null;
+      }, 1900);
+    }
   }
 
   // ---- Overlays ----
