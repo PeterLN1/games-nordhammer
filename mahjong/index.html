@@ -289,6 +289,9 @@
   .stat-cell b { display: block; font-size: 22px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
   .stat-cell span { font-size: 11px; color: var(--muted); }
   .badge-list { display: flex; flex-direction: column; gap: 8px; max-height: 40vh; overflow-y: auto; text-align: left; }
+  .wn-list { text-align: left; max-height: 42vh; overflow-y: auto; margin: 4px 0 18px; }
+  .wn-entry ul { margin: 0; padding: 0 0 0 20px; }
+  .wn-entry li { color: var(--ink); font-size: 14.5px; line-height: 1.6; }
   .badge-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); opacity: .5; }
   .badge-item.unlocked { opacity: 1; background: rgba(255,210,0,.12); box-shadow: inset 0 0 0 1px rgba(255,210,0,.3); }
   .badge-ic { font-size: 26px; width: 30px; text-align: center; filter: grayscale(1); }
@@ -1522,6 +1525,61 @@
     try { document.getElementById('npName').focus(); } catch(e){}
   }
 
+  /* ---------- Nyheter ("Nytt sedan sist") ----------
+     Lägg till en ny post ÖVERST i CHANGELOG vid varje uppdatering du vill
+     notifiera spelarna om. v = kort unik id (datum funkar bra). */
+  var CHANGELOG = [
+    { v:'2026-07-20', items:[
+      'Dela en giv — vänner spelar exakt samma bräde via en länk',
+      'Öppen Utmaningar-lista och live-jämförelse mot motståndares tid',
+      'Tidsstraff för Tips/Blanda gör topplistan rättvisare',
+      'Statistik, märken och ljudeffekter (av/på)'
+    ] }
+  ];
+  var SEEN_KEY = 'mahjong:seenVersion';
+  function getSeenVersion(){ try { return localStorage.getItem(SEEN_KEY); } catch(e){ return null; } }
+  function setSeenVersion(v){ try { localStorage.setItem(SEEN_KEY, v); } catch(e){} }
+  function hasPriorActivity(){
+    try {
+      for(var i=0;i<localStorage.length;i++){
+        var k = localStorage.key(i);
+        if(k && k.indexOf('mahjong:') === 0 && k !== SEEN_KEY) return true;
+      }
+    } catch(e){}
+    return false;
+  }
+  // Måste fångas HÄR, innan initGame() nedan hinner skapa mahjong:save m.fl.
+  // — annars ser även en helt ny spelare ut att ha spelat förut.
+  var hadPriorActivityAtLoad = hasPriorActivity();
+  // Vilka poster (om några) som ska visas för den här spelaren just nu.
+  function pendingChangelog(){
+    var seen = getSeenVersion();
+    if(seen == null){
+      // Ingen sparad version. Helt ny spelare: inget att visa (markeras
+      // som sett tyst). Återkommande spelare från innan denna funktion
+      // fanns: visa senaste posten en gång.
+      return hadPriorActivityAtLoad ? CHANGELOG.slice(0,1) : [];
+    }
+    var idx = -1;
+    for(var i=0;i<CHANGELOG.length;i++) if(CHANGELOG[i].v === seen){ idx = i; break; }
+    if(idx === -1) return CHANGELOG.slice(0,1); // okänd/gammal version -> visa senaste
+    return CHANGELOG.slice(0, idx); // allt nyare än det spelaren sett
+  }
+  function openWhatsNew(entries){
+    var panel = document.getElementById('panel');
+    var body = entries.map(function(e){
+      return '<div class="wn-entry"><ul>' +
+        e.items.map(function(t){ return '<li>'+esc(t)+'</li>'; }).join('') +
+        '</ul></div>';
+    }).join('');
+    panel.innerHTML =
+      '<div class="emoji">🆕</div><h2>Nytt sedan sist</h2>' +
+      '<div class="wn-list">' + body + '</div>' +
+      '<button id="wnClose">Toppen!</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('wnClose').onclick = function(){ hideOverlay(); setSeenVersion(CHANGELOG[0].v); };
+  }
+
   /* ---------- Toast ---------- */
   var toastTimer = null;
   function toast(msg){
@@ -1760,6 +1818,18 @@
 
   // Fråga efter namn första gången (om topplista finns och namn saknas)
   if(hasLeaderboard() && !getName()) openNamePrompt();
+
+  // Nyheter: en helt ny spelare (allra första sidladdningen) markeras som
+  // "sett" direkt och tyst — oavsett om namnfrågan råkar visas just nu —
+  // så de aldrig ser "Nytt sedan sist" vid sitt andra besök. Återkommande
+  // spelare med nytt innehåll att visa får det, men bara om ingen annan
+  // ruta (giv-bekräftelse eller namnfråga) redan tar upp skärmen.
+  if(getSeenVersion() == null && !hadPriorActivityAtLoad){
+    setSeenVersion(CHANGELOG[0].v);
+  } else if(!document.getElementById('overlay').classList.contains('show')){
+    var newStuff = pendingChangelog();
+    if(newStuff.length) openWhatsNew(newStuff);
+  }
 
   var rz; window.addEventListener('resize', function(){ clearTimeout(rz); rz=setTimeout(fitBoard, 120); });
   window.addEventListener('orientationchange', function(){ setTimeout(fitBoard, 300); });
