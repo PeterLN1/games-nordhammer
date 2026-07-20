@@ -261,6 +261,15 @@
     border-radius: 11px; border: none; background: var(--accent); color: #1a1200; cursor: pointer; box-shadow: none;
   }
   .panel .lb-btn { margin-top: 10px; }
+  /* ---- utmaningar (delade givar) ---- */
+  .ch-row { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 12px; background: rgba(255,255,255,.05); margin-bottom: 8px; text-align: left; }
+  .ch-main { flex: 1; min-width: 0; }
+  .ch-title { font-weight: 700; color: var(--ink); font-size: 14px; }
+  .ch-sub { font-size: 12px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .panel .ch-play {
+    flex: 0 0 auto; width: auto; font-family: inherit; font-weight: 700; font-size: 13px;
+    padding: 9px 14px; margin: 0; border-radius: 10px; border: none; background: var(--accent); color: #1a1200; box-shadow: none; cursor: pointer;
+  }
   /* ---- statistik & märken ---- */
   .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 6px 0 4px; }
   .stat-cell {
@@ -539,8 +548,23 @@
     return sideOpen(pos, present, positions, -1) || sideOpen(pos, present, positions, +1);
   }
 
+  // Seedbar slumpgenerator (mulberry32) — låter en hel giv (mönster +
+  // brickornas placering) återskapas exakt från ett litet fröNumber, vilket
+  // är grunden för delbara givar. rng() används normalt = Math.random.
+  function mulberry32(seed){
+    return function(){
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var rng = Math.random;
+  function seedRngFrom(n){ rng = mulberry32(n >>> 0); }
+  function unseedRng(){ rng = Math.random; }
+
   function shuffle(a){
-    for(var i=a.length-1;i>0;i--){ var j=(Math.random()*(i+1))|0; var t=a[i]; a[i]=a[j]; a[j]=t; }
+    for(var i=a.length-1;i>0;i--){ var j=(rng()*(i+1))|0; var t=a[i]; a[i]=a[j]; a[j]=t; }
     return a;
   }
 
@@ -990,7 +1014,7 @@
       localStorage.setItem(SAVE_KEY, JSON.stringify({
         positions: state.positions, faces: state.faces, removed: state.removed,
         tray: state.tray, undo: state.undo, moves: state.moves, seconds: state.seconds, mode: state.mode,
-        tips: state.tips, shuffles: state.shuffles
+        tips: state.tips, shuffles: state.shuffles, seed: state.seed, fromShare: state.fromShare
       }));
     } catch(e){}
   }
@@ -1002,7 +1026,7 @@
       for(var i=0;i<s.faces.length;i++) if(!FACES[s.faces[i]]) return null;
       return { positions:s.positions, faces:s.faces, removed:s.removed||new Array(s.faces.length).fill(false),
                tray:s.tray||[], undo:s.undo||[], moves:s.moves||0, seconds:s.seconds||0, done:false, mode:s.mode||'classic',
-               tips:s.tips||0, shuffles:s.shuffles||0 };
+               tips:s.tips||0, shuffles:s.shuffles||0, seed:s.seed||null, fromShare:!!s.fromShare };
     } catch(e){ return null; }
   }
   function getBest(mode,n){ try { return parseInt(localStorage.getItem(BEST_PFX+mode+':'+n)||'0',10)||0; } catch(e){ return 0; } }
@@ -1072,6 +1096,72 @@
   function setName(n){ try { localStorage.setItem(NAME_KEY, n); } catch(e){} }
   function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
+  /* ---------- Delbara givar (seed-kod) ---------- */
+  // En giv kodas som base64url({p:mönster-id, m:läge, r:rng-frö}).
+  // Mönster-id är globalt unikt och pekar ut både storlek och form, så
+  // koden är självständig och stabil även om LAYOUTS ändras i framtiden.
+  function b64urlEncode(str){ return btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+  function b64urlDecode(str){ str = str.replace(/-/g,'+').replace(/_/g,'/'); while(str.length % 4) str += '='; return atob(str); }
+  function findLayoutById(id){
+    var sizes = Object.keys(LAYOUTS);
+    for(var i=0;i<sizes.length;i++){
+      var found = LAYOUTS[sizes[i]].filter(function(l){ return l.id === id; })[0];
+      if(found) return found;
+    }
+    return null;
+  }
+  function makeSeedCode(patternId, mode, rngSeed){
+    try { return b64urlEncode(JSON.stringify({ p: patternId, m: mode, r: rngSeed })); } catch(e){ return null; }
+  }
+  function parseSeedCode(code){
+    try {
+      var obj = JSON.parse(b64urlDecode(code));
+      if(!obj || typeof obj.p !== 'string' || typeof obj.r !== 'number') return null;
+      if(['classic','tilematch'].indexOf(obj.m) < 0) return null;
+      var layoutDef = findLayoutById(obj.p);
+      if(!layoutDef) return null;
+      return { layoutDef: layoutDef, mode: obj.m, rngSeed: obj.r };
+    } catch(e){ return null; }
+  }
+  function getGivParam(){ try { return new URLSearchParams(location.search).get('giv'); } catch(e){ return null; } }
+  function setGivParam(code){
+    try { var url = new URL(location.href); url.searchParams.set('giv', code); history.replaceState(null, '', url.toString()); } catch(e){}
+  }
+  function clearGivParam(){
+    try {
+      if(!new URLSearchParams(location.search).has('giv')) return;
+      var url = new URL(location.href); url.searchParams.delete('giv'); history.replaceState(null, '', url.toString());
+    } catch(e){}
+  }
+  function shareUrlFor(code){
+    var url = new URL(location.href); url.search = ''; url.hash = ''; url.searchParams.set('giv', code); return url.toString();
+  }
+  function shareCurrentGame(){
+    if(!state || !state.seed) return;
+    var url = shareUrlFor(state.seed);
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(function(){ toast('Länk kopierad!'); }).catch(function(){ showShareFallback(url); });
+    } else {
+      showShareFallback(url);
+    }
+  }
+  function showShareFallback(url){
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">🔗</div><h2>Dela giv</h2>' +
+      '<p>Kopiera länken och skicka till en vän — de spelar exakt samma bräde.</p>' +
+      '<input id="shareUrl" class="lb-input wide-select" style="text-align:center" readonly value="'+esc(url)+'">' +
+      '<button id="shareCopy">Kopiera länk</button>' +
+      '<button id="shareClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    var inp = document.getElementById('shareUrl');
+    setTimeout(function(){ try { inp.focus(); inp.select(); } catch(e){} }, 50);
+    document.getElementById('shareCopy').onclick = function(){
+      try { inp.focus(); inp.select(); document.execCommand('copy'); toast('Länk kopierad!'); } catch(e){}
+    };
+    document.getElementById('shareClose').onclick = hideOverlay;
+  }
+
   function lbFetch(tiles, mode, cb){
     var base = apiBase(); if(!base) return cb(new Error('ingen topplista'));
     fetch(base + '/api/leaderboard?tiles=' + tiles + '&mode=' + (mode||'classic') + '&limit=20')
@@ -1096,6 +1186,30 @@
              '<span class="lb-name">'+esc(s.name)+'</span>' +
              '<span class="lb-time">'+fmt(s.seconds)+'</span></div>';
     }).join('');
+  }
+  function lbFetchBySeed(seed, cb){
+    var base = apiBase(); if(!base) return cb(new Error('ingen topplista'));
+    fetch(base + '/api/leaderboard?seed=' + encodeURIComponent(seed) + '&limit=20')
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb(null, (d && d.scores) || []); })
+      .catch(function(e){ cb(e); });
+  }
+  function lbFetchChallenges(cb){
+    var base = apiBase(); if(!base) return cb(new Error('ingen topplista'));
+    fetch(base + '/api/challenges?limit=20')
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb(null, (d && d.challenges) || []); })
+      .catch(function(e){ cb(e); });
+  }
+  function setupSeedLeaderboard(area, seed){
+    if(!area) return;
+    area.innerHTML = '<div class="lb-title">🧩 Topplista för denna giv</div><div class="lb-list">Laddar…</div>';
+    lbFetchBySeed(seed, function(err, list){
+      var el = area.querySelector('.lb-list');
+      if(!el) return;
+      if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
+      lbRenderList(el, list, getName());
+    });
   }
 
   /* ---------- Vinst ---------- */
@@ -1127,18 +1241,24 @@
       '<div class="big-stat">' + fmt(finalSeconds) + '</div>' +
       (pen > 0 ? '<div class="pen-note">⏱️ ' + fmt(state.seconds) + ' + ' + pen + ' s straff (' + penBreakdown() + ')</div>' : '') +
       '<div class="best">' + (isBest ? '🏆 Nytt rekord!' : 'Bästa tid: ' + fmt(best)) + '</div>' +
+      (state.fromShare ? '<div id="lbSeedArea" class="lb-area"></div>' : '') +
       '<div id="lbArea" class="lb-area"></div>' +
+      (state.seed ? '<button id="pShare" class="ghost">🔗 Dela denna giv</button>' : '') +
       '<button id="pNew">Ny giv</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pNew').onclick = function(){ hideOverlay(); newGame(); };
-    setupWinLeaderboard(document.getElementById('lbArea'), N, state.mode, finalSeconds, state.moves);
+    var pShare = document.getElementById('pShare');
+    if(pShare) pShare.onclick = shareCurrentGame;
+    setupWinLeaderboard(document.getElementById('lbArea'), N, state.mode, finalSeconds, state.moves, state.seed, function(){
+      if(state.fromShare) setupSeedLeaderboard(document.getElementById('lbSeedArea'), state.seed);
+    });
     sfx('win');
     if(navigator.vibrate) try { navigator.vibrate([20,40,20]); } catch(e){}
   }
 
   // Topplista i vinstpanelen: skicka in tid (om namn finns) annars fråga efter namn
-  function setupWinLeaderboard(area, tiles, mode, seconds, moves){
-    if(!hasLeaderboard()){ area.innerHTML = ''; return; }
+  function setupWinLeaderboard(area, tiles, mode, seconds, moves, seed, onDone){
+    if(!hasLeaderboard()){ area.innerHTML = ''; if(onDone) onDone(); return; }
     function showList(){
       area.innerHTML = '<div class="lb-title">🏆 Topplista — ' + tiles + ' brickor</div>' +
                        '<div class="lb-list">Laddar…</div>';
@@ -1150,7 +1270,7 @@
     }
     var name = getName();
     if(name){
-      lbSubmit({ name:name, mode:mode, tiles:tiles, seconds:seconds, moves:moves }, function(){ showList(); });
+      lbSubmit({ name:name, mode:mode, tiles:tiles, seconds:seconds, moves:moves, seed:seed }, function(){ showList(); if(onDone) onDone(); });
       showList();
     } else {
       area.innerHTML =
@@ -1163,42 +1283,90 @@
         var v = (area.querySelector('#lbName').value || '').trim();
         if(!v) return;
         setName(v);
-        lbSubmit({ name:v, mode:mode, tiles:tiles, seconds:seconds, moves:moves }, function(){ showList(); });
+        lbSubmit({ name:v, mode:mode, tiles:tiles, seconds:seconds, moves:moves, seed:seed }, function(){ showList(); if(onDone) onDone(); });
       };
       area.querySelector('#lbSave').onclick = save;
       area.querySelector('#lbName').addEventListener('keydown', function(e){ if(e.key === 'Enter') save(); });
     }
   }
 
-  // Fristående topplista-vy (från inställningar)
-  function openLeaderboard(){
+  function challengeRowHtml(c){
+    var modeLabel = c.mode === 'tilematch' ? 'Tile Match' : 'Klassisk par';
+    return '<div class="ch-row" data-code="'+esc(c.seed)+'">' +
+             '<div class="ch-main">' +
+               '<div class="ch-title">'+modeLabel+' · '+c.tiles+' brickor</div>' +
+               '<div class="ch-sub">🥇 '+esc(c.bestName)+' '+fmt(c.bestSeconds)+' · '+c.players+' spelare</div>' +
+             '</div>' +
+             '<button class="ch-play">Spela</button>' +
+           '</div>';
+  }
+  // Fristående topplista-vy (från inställningar/header): flikar mellan
+  // globala topplistor per brädstorlek och öppet bläddringsbara
+  // "Utmaningar" — delade givar som redan spelats av minst två personer.
+  function openLeaderboard(view){
+    view = (view === 'challenges') ? 'challenges' : 'global';
     var panel = document.getElementById('panel');
     var mode = (state && state.mode) || 'classic';
-    var counts = [];
-    Object.keys(LAYOUTS).forEach(function(sz){ LAYOUTS[sz].forEach(function(l){
-      var c = mode === 'tilematch' ? l.n3 : l.n2;
-      if(counts.indexOf(c) < 0) counts.push(c);
-    }); });
-    counts.sort(function(a,b){ return a-b; });
-    var startT = (state && N) ? N : counts[0];
-    var opts = counts.map(function(c){ return '<option value="'+c+'"'+(c===startT?' selected':'')+'>'+c+' brickor</option>'; }).join('');
-    panel.innerHTML =
-      '<h2>🏆 Topplista</h2>' +
-      '<div class="set-hint" style="text-align:center;margin:0 0 10px">'+(mode==='tilematch'?'Tile Match':'Klassisk par')+'</div>' +
-      '<select id="lbPick" class="wide-select">' + opts + '</select>' +
-      '<div id="lbView" class="lb-list">Laddar…</div>' +
-      '<button id="lbClose" class="ghost">Stäng</button>';
-    function load(){
-      var t = +document.getElementById('lbPick').value;
-      var el = document.getElementById('lbView'); el.textContent = 'Laddar…';
-      lbFetch(t, mode, function(err, list){
-        if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
-        lbRenderList(el, list, getName());
+    function tabsHtml(){
+      return '<div class="seg" id="lbTabs">' +
+               '<button data-view="global"'+(view==='global'?' class="on"':'')+'>🏆 Topplistor</button>' +
+               '<button data-view="challenges"'+(view==='challenges'?' class="on"':'')+'>🧩 Utmaningar</button>' +
+             '</div>';
+    }
+    function wireTabs(){
+      document.getElementById('lbTabs').addEventListener('click', function(e){
+        var b = e.target.closest('button'); if(!b || b.dataset.view === view) return;
+        openLeaderboard(b.dataset.view);
       });
     }
-    document.getElementById('lbPick').onchange = load;
-    document.getElementById('lbClose').onclick = hideOverlay;
-    load();
+    if(view === 'challenges'){
+      panel.innerHTML = tabsHtml() +
+        '<div id="chList" class="lb-list">Laddar…</div>' +
+        '<button id="lbClose" class="ghost">Stäng</button>';
+      wireTabs();
+      document.getElementById('lbClose').onclick = hideOverlay;
+      var el = document.getElementById('chList');
+      lbFetchChallenges(function(err, list){
+        if(err){ el.textContent = 'Kunde inte hämta utmaningar'; return; }
+        if(!list.length){ el.innerHTML = '<div class="lb-empty">Inga delade givar ännu — bli först med att dela en!</div>'; return; }
+        el.innerHTML = list.map(challengeRowHtml).join('');
+        el.querySelectorAll('.ch-play').forEach(function(btn){
+          btn.onclick = function(){
+            var code = btn.closest('.ch-row').dataset.code;
+            var info = parseSeedCode(code);
+            if(!info){ toast('Kunde inte läsa in utmaningen'); return; }
+            hideOverlay();
+            newGame({ seedInfo: info, fromShare: true });
+          };
+        });
+      });
+    } else {
+      var counts = [];
+      Object.keys(LAYOUTS).forEach(function(sz){ LAYOUTS[sz].forEach(function(l){
+        var c = mode === 'tilematch' ? l.n3 : l.n2;
+        if(counts.indexOf(c) < 0) counts.push(c);
+      }); });
+      counts.sort(function(a,b){ return a-b; });
+      var startT = (state && N) ? N : counts[0];
+      var opts = counts.map(function(c){ return '<option value="'+c+'"'+(c===startT?' selected':'')+'>'+c+' brickor</option>'; }).join('');
+      panel.innerHTML = tabsHtml() +
+        '<div class="set-hint" style="text-align:center;margin:8px 0 10px">'+(mode==='tilematch'?'Tile Match':'Klassisk par')+'</div>' +
+        '<select id="lbPick" class="wide-select">' + opts + '</select>' +
+        '<div id="lbView" class="lb-list">Laddar…</div>' +
+        '<button id="lbClose" class="ghost">Stäng</button>';
+      wireTabs();
+      function load(){
+        var t = +document.getElementById('lbPick').value;
+        var elv = document.getElementById('lbView'); elv.textContent = 'Laddar…';
+        lbFetch(t, mode, function(err, list){
+          if(err){ elv.textContent = 'Kunde inte hämta topplistan'; return; }
+          lbRenderList(elv, list, getName());
+        });
+      }
+      document.getElementById('lbPick').onchange = load;
+      document.getElementById('lbClose').onclick = hideOverlay;
+      load();
+    }
     document.getElementById('overlay').classList.add('show');
   }
   function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
@@ -1311,28 +1479,47 @@
   }
 
   /* ---------- Nytt spel ---------- */
-  function pickLayout(mode){
-    var list = LAYOUTS[cfg.size] || LAYOUTS.mellan, chosen = null;
-    if(cfg.pattern && cfg.pattern !== 'slumpa')
-      chosen = list.filter(function(l){ return l.id === cfg.pattern; })[0];
-    if(!chosen) chosen = list[(Math.random()*list.length)|0];
-    return trimTo(chosen.build(), mode === 'tilematch' ? 3 : 2);
-  }
   function applyModeUI(){
     var tm = state && state.mode === 'tilematch';
     document.getElementById('tray').style.display = tm ? 'flex' : 'none';
     document.getElementById('btnHint').style.display = tm ? 'none' : '';
     document.getElementById('statMidLabel').textContent = tm ? 'Kvar' : 'Par kvar';
   }
-  function newGame(){
-    var mode = cfg.mode === 'tilematch' ? 'tilematch' : 'classic';
-    var positions = pickLayout(mode);
+  // opts.seedInfo (från en delad länk/utmaning) → spela exakt den givan.
+  // Annars: en helt ny giv, men hela slumpsekvensen (mönstervalet vid
+  // "Slumpa mönster" + brickornas placering) drivs av ETT fräscht frö,
+  // vilket gör att ÄVEN en vanlig giv alltid går att dela i efterhand.
+  function newGame(opts){
+    opts = opts || {};
+    var mode, positions, layoutDef, rngSeed, fromShare = !!opts.fromShare;
+    if(opts.seedInfo){
+      var info = opts.seedInfo;
+      mode = info.mode; layoutDef = info.layoutDef; rngSeed = info.rngSeed;
+      seedRngFrom(rngSeed);
+      positions = trimTo(layoutDef.build(), mode === 'tilematch' ? 3 : 2);
+    } else {
+      mode = cfg.mode === 'tilematch' ? 'tilematch' : 'classic';
+      var list = LAYOUTS[cfg.size] || LAYOUTS.mellan;
+      layoutDef = (cfg.pattern && cfg.pattern !== 'slumpa') ? list.filter(function(l){ return l.id===cfg.pattern; })[0] : null;
+      // Mönstervalet (vid "Slumpa mönster") avgörs med oseedad slump INNAN
+      // rng() seedas, så att den seedade sekvensen (som styr brickornas
+      // placering) alltid börjar identiskt — annars skulle en delad giv
+      // med slumpat mönster inte gå att återskapa exakt vid delning.
+      if(!layoutDef) layoutDef = list[(Math.random()*list.length)|0];
+      rngSeed = (Math.random() * 0xFFFFFFFF) >>> 0;
+      seedRngFrom(rngSeed);
+      positions = trimTo(layoutDef.build(), mode === 'tilematch' ? 3 : 2);
+      clearGivParam();
+    }
     setLayout(positions);
     var assign = mode === 'tilematch' ? generateTriples(POS) : generate(POS);
+    unseedRng();
     if(!assign){ toast('Kunde inte skapa giv, försök igen'); return; }
+    var seedCode = makeSeedCode(layoutDef.id, mode, rngSeed);
     state = { positions: positions, faces: assign, removed: new Array(N).fill(false),
               tray: [], undo: [], moves: 0, seconds: 0, done: false, mode: mode,
-              tips: 0, shuffles: 0 };
+              tips: 0, shuffles: 0, seed: seedCode, fromShare: fromShare };
+    if(fromShare && seedCode) setGivParam(seedCode);
     selected = -1; clearHint();
     statStart(mode);
     applyModeUI();
@@ -1374,6 +1561,8 @@
           '<div class="set-label">Namn (topplista)</div>' +
           '<input id="setName" class="wide-select lb-input" maxlength="20" placeholder="Ditt namn" value="'+esc(getName())+'" autocomplete="off">'
         : '') +
+        '<div class="set-label">Dela</div>' +
+        '<button id="setShare" class="ghost lb-btn">🔗 Dela denna giv</button>' +
         '<button id="setStart">Starta nytt spel</button>' +
         '<button id="setClose" class="ghost">Stäng</button>';
       document.getElementById('segMode').addEventListener('click', function(e){
@@ -1391,6 +1580,7 @@
       });
       var setNameEl = document.getElementById('setName');
       if(setNameEl) setNameEl.addEventListener('input', function(){ setName(this.value.trim()); });
+      document.getElementById('setShare').onclick = shareCurrentGame;
       document.getElementById('setStart').onclick = function(){
         cfg.size = pending.size; cfg.pattern = pending.pattern; cfg.mode = pending.mode; saveCfg(); hideOverlay(); newGame();
       };
@@ -1418,17 +1608,45 @@
   }
 
   /* ---------- Init ---------- */
-  var saved = loadSave();
-  if(saved){
-    state = saved;
-    setLayout(state.positions);
-    applyModeUI();
+  function resumeSaved(s){
+    state = s; setLayout(state.positions); applyModeUI();
     paintFaces(); refresh(); renderTray();
     document.getElementById('statTime').textContent = fmt(state.seconds);
     startTimer();
-  } else {
-    newGame();
   }
+  (function initGame(){
+    var saved = loadSave();
+    var givCode = getGivParam();
+    if(!givCode){
+      if(saved) resumeSaved(saved); else newGame();
+      return;
+    }
+    var seedInfo = parseSeedCode(givCode);
+    if(!seedInfo){
+      clearGivParam();
+      toast('Kunde inte läsa in den delade giv-länken');
+      if(saved) resumeSaved(saved); else newGame();
+      return;
+    }
+    if(saved && saved.seed === givCode){
+      resumeSaved(saved); // samma utmaning redan pågående
+      return;
+    }
+    if(saved && saved.moves > 0){
+      // ett annat spel pågår — fråga innan det skrivs över
+      var panel = document.getElementById('panel');
+      panel.innerHTML =
+        '<div class="emoji">🧩</div><h2>Delad utmaning</h2>' +
+        '<p>Länken startar en delad giv. Ditt pågående spel skrivs över.</p>' +
+        '<button id="pShareYes">Spela utmaningen</button>' +
+        '<button id="pShareNo" class="ghost">Fortsätt mitt spel</button>';
+      document.getElementById('overlay').classList.add('show');
+      document.getElementById('pShareYes').onclick = function(){ hideOverlay(); newGame({ seedInfo: seedInfo, fromShare: true }); };
+      document.getElementById('pShareNo').onclick = function(){ hideOverlay(); clearGivParam(); resumeSaved(saved); };
+      return;
+    }
+    newGame({ seedInfo: seedInfo, fromShare: true });
+  })();
 
   boardEl.addEventListener('click', onBoardClick);
   document.getElementById('btnNew').onclick = confirmNew;
@@ -1437,7 +1655,7 @@
   document.getElementById('btnShuffle').onclick = shuffleRemaining;
   document.getElementById('btnSettings').onclick = openSettings;
   var btnLb = document.getElementById('btnLeaderboard');
-  if(hasLeaderboard()) btnLb.onclick = openLeaderboard; else btnLb.style.display = 'none';
+  if(hasLeaderboard()) btnLb.onclick = function(){ openLeaderboard('global'); }; else btnLb.style.display = 'none';
   document.getElementById('btnStats').onclick = openStats;
 
   // Fråga efter namn första gången (om topplista finns och namn saknas)
