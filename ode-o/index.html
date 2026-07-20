@@ -178,7 +178,7 @@
   <header>
     <a class="home" href="/" aria-label="Till startsidan">‹</a>
     <span class="title">🏝️ Öde ö</span>
-    <span class="day-chip" id="dayChip">Dag 1 / 10</span>
+    <span class="day-chip" id="dayChip">Dag 1</span>
     <label class="theme-ctl" style="margin-left:8px">
       <select data-theme-control aria-label="Tema">
         <option value="auto">Auto</option>
@@ -345,8 +345,9 @@
 "use strict";
 (function(){
   var REC_KEY = "nordhammer:ode-o:record";
-  var WIN_DAY = 10;         // överlev så här många dagar
+  var LEGACY_TIMEOUT_DAYS = 10; // används bara för att tolka gamla sparade rekord (pre-flotte-version)
   var ACTIONS_PER_DAY = 4;  // handlingar per dag
+  var SHIP_CHANCE = 0.16;   // sannolikhet per natt att ett skepp passerar
 
   var S = null;          // spelläge
   var sceneLast = null;  // senast renderad läger-nivå (för animation)
@@ -379,7 +380,7 @@
     var raftWrapEl = document.getElementById("raftWrap");
     if(raftWrapEl) raftWrapEl.classList.remove("pop", "ready");
     logDay(1);
-    add("Du vaknar på en öde strand. Vraket sjönk. Du har " + WIN_DAY + " dagar — men ingen kommer och räddar dig av sig själv.");
+    add("Du vaknar på en öde strand. Vraket sjönk. Ingen kommer och räddar dig av sig själv — du måste hålla dig vid liv och stå redo när ett skepp passerar.");
     render();
   }
 
@@ -468,8 +469,7 @@
       }
       // Lägret är fullt utbyggt — nu gäller flotten som ska ta dig hem
       if(S.raft >= 3){
-        add("⛵ Du sätter segel mot havet — äntligen på väg hem!", "good");
-        endGame(true, "raft");
+        add("🛟 Flotten ligger redo i vattnet. Nu gäller det att hålla ut tills ett skepp passerar.");
         return false;
       }
       if(S.raft === 1 && !S.raftMats.rep){ add("🛟 Du behöver rep för att resa masten. Utforska ön för att hitta mer."); return false; }
@@ -535,16 +535,20 @@
 
     // Ny dag
     S.day += 1;
-    if(S.day > WIN_DAY){
-      if(S.raft >= 3) endGame(true, "timeout-ready");
-      else endGame(false, "timeout-miss");
-      return;
-    }
-
     S.actionsLeft = ACTIONS_PER_DAY;
     rollWeather();
     logDay(S.day);
     add(weatherText());
+
+    // Skepp passerar med slumpade mellanrum — bara en klar flotte hjälper dig ombord
+    if(chance(SHIP_CHANCE)){
+      if(S.raft >= 3){
+        add("🚢 Ett skepp siktas vid horisonten — och den här gången ser de dig!", "good");
+        endGame(true, "ship");
+        return;
+      }
+      add("🚢 Ett skepp passerar långt ute vid horisonten — men utan en flotte att nå det med försvinner det igen.", "bad");
+    }
   }
 
   function rollWeather(){
@@ -573,7 +577,7 @@
 
   function endGame(won, reason){
     S.over = true;
-    var survived = reason === "raft" ? S.day : Math.min(S.day, WIN_DAY);
+    var survived = S.day;
     var rec = getRecord();
     var isNew = survived > rec.days || (survived === rec.days && won && !rec.won);
     if(isNew){ setRecord(survived, won); rec = { days: survived, won: won }; }
@@ -587,7 +591,7 @@
     if(!raw) return { days: 0, won: false };
     var parts = raw.split("|");
     var days = parseInt(parts[0], 10) || 0;
-    var won = parts.length > 1 ? parts[1] === "1" : days >= WIN_DAY;
+    var won = parts.length > 1 ? parts[1] === "1" : days >= LEGACY_TIMEOUT_DAYS;
     return { days: days, won: won };
   }
   function setRecord(days, won){ try { localStorage.setItem(REC_KEY, days + "|" + (won ? "1" : "0")); } catch(e){} }
@@ -605,7 +609,7 @@
     setBar("water", S.water, "var(--water)");
     setBar("energy", S.energy, "var(--energy)");
 
-    document.getElementById("dayChip").textContent = "Dag " + Math.min(S.day, WIN_DAY) + " / " + WIN_DAY;
+    document.getElementById("dayChip").textContent = "Dag " + S.day;
     document.getElementById("resActions").textContent = "Handlingar: " + S.actionsLeft;
     document.getElementById("resWood").textContent = "🪵 Ved " + S.wood;
     document.getElementById("resCamp").textContent = "⛺ Läger " + S.camp;
@@ -648,7 +652,7 @@
       else if(S.raft === 2 && !S.raftMats.segel) sub.textContent = "Kräver segelduk";
       else sub.textContent = "−ved";
     } else {
-      em.textContent = "⛵"; lbl.textContent = "Sätt segel"; sub.textContent = "Fly ön!";
+      em.textContent = "🛟"; lbl.textContent = "Flotte redo"; sub.textContent = "Vänta på skepp";
     }
   }
 
@@ -733,13 +737,13 @@
     document.getElementById("modal").innerHTML =
       '<div class="big">🏝️</div>' +
       '<h2>Öde ö</h2>' +
-      '<p>Ditt skepp har sjunkit. Du har <b>' + WIN_DAY + ' dagar</b> på dig — men ingen räddar dig av sig själv.</p>' +
+      '<p>Ditt skepp har sjunkit. Överlev så länge det krävs — du klarar dig bara genom att hålla dig vid liv och ha en flotte redo när räddningen väl passerar.</p>' +
       '<ul>' +
         '<li>Varje dag har du <b>' + ACTIONS_PER_DAY + ' handlingar</b>.</li>' +
         '<li>Håll mat, vatten och energi över noll — annars sjunker hälsan.</li>' +
         '<li>Bygg läger med ved för att klara nätterna.</li>' +
-        '<li>När lägret är klart — bygg en flotte av ved, rep och segelduk för att kunna fly.</li>' +
-        '<li>Utforska ön för att hitta källor, verktyg och flottdelar.</li>' +
+        '<li>När lägret är klart — bygg en flotte av ved, rep och segelduk.</li>' +
+        '<li>Skepp passerar med slumpade mellanrum. Utan flotte missar du dem — håll ut och var redo.</li>' +
       '</ul>' +
       recLine +
       '<button class="primary" id="startBtn">Skölj i land 🌊</button>';
@@ -750,12 +754,10 @@
     };
   }
   function showEnd(won, survived, rec, reason, isNew){
-    var icon = won ? "⛵" : (reason === "timeout-miss" ? "🚢" : "💀");
-    var title = won ? "Räddad!" : (reason === "timeout-miss" ? "Skeppet såg dig aldrig" : "Du klarade dig inte");
+    var icon = won ? "⛵" : "💀";
+    var title = won ? "Räddad!" : "Du klarade dig inte";
     var body;
-    if(reason === "raft") body = "Dag " + survived + " sätter du segel på din egen flotte och lämnar ön för gott!";
-    else if(reason === "timeout-ready") body = "Dag " + WIN_DAY + " syns ett skepp vid horisonten — och den här gången ser de dig. Du är räddad!";
-    else if(reason === "timeout-miss") body = "Dag " + WIN_DAY + " kom och gick. Ett skepp passerade långt ute — men utan en flotte att signalera med såg ingen dig. Du överlevde ön, men kom aldrig hem.";
+    if(reason === "ship") body = "Dag " + survived + " siktar du ett skepp vid horisonten — och med flotten redo tar du dig äntligen hem!";
     else body = "Du överlevde <b>" + survived + "</b> " + (survived === 1 ? "dag" : "dagar") + " på ön.";
     document.getElementById("modal").innerHTML =
       '<div class="big">' + icon + '</div>' +
