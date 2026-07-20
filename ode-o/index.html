@@ -293,6 +293,11 @@
         <path d="M183 125 C178 117 181 111 183 107 C186 112 188 118 183 125 Z" fill="#ff8a3d"/>
         <path d="M183 125 C180 120 182 116 183 113 C185 117 186 121 183 125 Z" fill="#ffd23e"/>
       </g>
+      <g id="fireOut" style="display:none">
+        <ellipse cx="183" cy="127" rx="11" ry="3" fill="#8a5a2f"/>
+        <ellipse cx="183" cy="124" rx="7" ry="2.5" fill="#9a9a92"/>
+        <path d="M183 123 Q186 115 183 108" fill="none" stroke="#b8b8b0" stroke-width="1.5" opacity="0.45"/>
+      </g>
       <circle cx="163" cy="108" r="4" fill="#e8b98a"/>
       <polygon points="159,113 167,113 166,120 160,120" fill="#d9534f"/>
 
@@ -348,6 +353,9 @@
   var LEGACY_TIMEOUT_DAYS = 10; // används bara för att tolka gamla sparade rekord (pre-flotte-version)
   var ACTIONS_PER_DAY = 4;  // handlingar per dag
   var SHIP_CHANCE = 0.16;   // sannolikhet per natt att ett skepp passerar
+  var FIRE_FUEL_COST = 2;   // ved elden förbrukar varje natt för att hållas vid liv
+  var ANIMAL_CHANCE = 0.25; // sannolikhet för rovdjursangrepp en natt utan eld
+  var DIRTY_WATER_CHANCE = 0.30; // risk att bli sjuk av okokt vatten
 
   var S = null;          // spelläge
   var sceneLast = null;  // senast renderad läger-nivå (för animation)
@@ -363,7 +371,7 @@
       day: 1,
       actionsLeft: ACTIONS_PER_DAY,
       health: 100, food: 80, water: 80, energy: 90,
-      wood: 0, camp: 0, raft: 0,
+      wood: 0, camp: 0, raft: 0, fireLit: false,
       gear: { spjut: false, flaska: false, kniv: false },
       raftMats: { rep: false, segel: false },
       waterFound: false,   // hittad färskvattenkälla → effektivare vatten
@@ -394,9 +402,9 @@
       S.energy = clamp(S.energy - 12);
       var p = 0.55 + (S.gear.spjut ? 0.25 : 0);
       if(chance(p)){
-        var g = rint(14, 24) + (S.camp >= 1 ? 10 : 0); // eld = tillagning
+        var g = rint(14, 24) + (S.fireLit ? 10 : 0); // eld = tillagning
         S.food = clamp(S.food + g);
-        add("🎣 Du fångade en fisk" + (S.camp >= 1 ? " och grillade den över elden" : "") +
+        add("🎣 Du fångade en fisk" + (S.fireLit ? " och grillade den över elden" : " och åt den rå") +
             ". <small>Mat +" + g + "</small>", "good");
       } else {
         add("🎣 Fisken nappade inte. Tom hand denna gång.");
@@ -408,8 +416,18 @@
       if(S.weather === "regn") base += 10;
       if(S.gear.flaska) base += 8; // kan bära hem mer
       S.water = clamp(S.water + base);
-      add("💧 Du drack och fyllde på vatten" + (S.waterFound ? " vid källan" : "") +
-          ". <small>Vatten +" + base + "</small>", "good");
+      if(S.fireLit){
+        add("💧 Du kokade vattnet över elden" + (S.waterFound ? " vid källan" : "") +
+            ". <small>Vatten +" + base + "</small>", "good");
+      } else {
+        add("💧 Du drack vattnet obehandlat" + (S.waterFound ? " vid källan" : "") +
+            ". <small>Vatten +" + base + "</small>");
+        if(chance(DIRTY_WATER_CHANCE)){
+          var sick = rint(8, 16);
+          S.health = clamp(S.health - sick);
+          add("🤢 Vattnet var förorenat. <small>Hälsa −" + sick + "</small>", "bad");
+        }
+      }
     },
     forest: function(){
       S.energy = clamp(S.energy - 12);
@@ -463,8 +481,9 @@
         S.wood -= cost;
         S.energy = clamp(S.energy - 10);
         S.camp += 1;
+        S.fireLit = true; // elden tänds när du bygger/bygger om lägret
         var lvl = ["", "enkelt vindskydd med lägereld", "stabil hydda", "rejält läger med förråd"][S.camp];
-        add("🔥 Du byggde ett " + lvl + ". <small>Läger nivå " + S.camp + "</small>", "good");
+        add("🔥 Du byggde ett " + lvl + " och tände elden. <small>Läger nivå " + S.camp + "</small>", "good");
         return;
       }
       // Lägret är fullt utbyggt — nu gäller flotten som ska ta dig hem
@@ -510,12 +529,31 @@
     S.food = clamp(S.food - foodUse);
     S.water = clamp(S.water - waterUse);
 
+    // Underhåll av elden — kräver ved varje natt, annars slocknar den
+    if(S.camp >= 1 && S.wood >= FIRE_FUEL_COST){
+      S.wood -= FIRE_FUEL_COST;
+      S.fireLit = true;
+      add("🔥 Du matade elden med ved. <small>Ved −" + FIRE_FUEL_COST + "</small>");
+    } else if(S.camp >= 1 && S.fireLit){
+      S.fireLit = false;
+      add("🔥 Ingen ved kvar — elden slocknade i natt.", "bad");
+    } else {
+      S.fireLit = false;
+    }
+
     // Skydd mot kylan
     if(S.camp === 0){
       S.energy = clamp(S.energy - 12);
       add("Utan skydd frös du genom natten. <small>Energi −12</small>", "bad");
     } else {
       add("Lägret höll dig varm genom natten.");
+    }
+
+    // Rovdjur smyger fram om elden inte brinner
+    if(!S.fireLit && chance(ANIMAL_CHANCE)){
+      var bite = rint(10, 18);
+      S.health = clamp(S.health - bite);
+      add("🐾 Utan eld att hålla dem borta smög sig ett rovdjur fram och skadade dig i mörkret. <small>Hälsa −" + bite + "</small>", "bad");
     }
 
     // Skador av brist
@@ -560,6 +598,7 @@
       S.camp -= 1;
       S.weather = "storm";
       S.stormFlash = true; // dramatisk blixt-animation vid dagens första rendering
+      if(S.camp === 0) S.fireLit = false; // eldstaden försvann med lägret
     }
   }
   function weatherText(){
@@ -662,7 +701,8 @@
     show("camp-l1", c === 1);
     show("camp-l2", c === 2);
     show("camp-l3", c >= 3);
-    show("fire", c >= 1);
+    show("fire", S.fireLit);
+    show("fireOut", c >= 1 && !S.fireLit);
 
     var logs = document.querySelectorAll("#woodpile .woodlog");
     var n = Math.min(logs.length, S.wood);
@@ -742,6 +782,8 @@
         '<li>Varje dag har du <b>' + ACTIONS_PER_DAY + ' handlingar</b>.</li>' +
         '<li>Håll mat, vatten och energi över noll — annars sjunker hälsan.</li>' +
         '<li>Bygg läger med ved för att klara nätterna.</li>' +
+        '<li>Elden kräver ved varje natt. Slocknar den blir du sårbar för rovdjur.</li>' +
+        '<li>Koka vatten över elden — okokt vatten kan göra dig sjuk.</li>' +
         '<li>När lägret är klart — bygg en flotte av ved, rep och segelduk.</li>' +
         '<li>Skepp passerar med slumpade mellanrum. Utan flotte missar du dem — håll ut och var redo.</li>' +
       '</ul>' +
