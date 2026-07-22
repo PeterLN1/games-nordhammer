@@ -389,9 +389,7 @@
 
   <div class="actions" id="actions">
     <button class="act" data-act="fish"><span class="em">🎣</span><span class="lbl">Fiska<small>Mat · −energi</small></span></button>
-    <button class="act" data-act="water"><span class="em">💧</span><span class="lbl">Hämta vatten<small>Vatten</small></span></button>
-    <button class="act" data-act="forest"><span class="em">🌴</span><span class="lbl">Skogen<small>Ved · frukt</small></span></button>
-    <button class="act" data-act="explore"><span class="em">🧭</span><span class="lbl">Utforska<small>Öppna karta</small></span></button>
+    <button class="act" data-act="explore"><span class="em">🧭</span><span class="lbl">Utforska<small>Ved · vatten · mat</small></span></button>
     <button class="act" data-act="build"><span class="em" id="buildEm">🔥</span><span class="lbl"><span id="buildLbl">Bygg läger</span><small id="buildSub">−ved</small></span></button>
     <button class="act" data-act="rest"><span class="em">😴</span><span class="lbl">Vila<small>+energi</small></span></button>
     <button class="act act-wide" data-act="signal" id="signalBtn" style="display:none"><span class="em">🔥</span><span class="lbl">Signaleld<small id="signalSub">Utsiktspunkten · −ved</small></span></button>
@@ -432,7 +430,6 @@
   var SIGNAL_ENERGY = 12;         // energi det kostar att gå upp och tända den
   var FIRE_FUEL_COST = 2;   // ved elden förbrukar varje natt för att hållas vid liv
   var ANIMAL_CHANCE = 0.25; // sannolikhet för rovdjursangrepp en natt utan eld
-  var DIRTY_WATER_CHANCE = 0.30; // risk att bli sjuk av okokt vatten
   var MAP_COLS = 5, MAP_ROWS = 5, MAP_START = 22; // 5×5-karta, start nederst i mitten (rad 4, kol 2)
   var TERRAIN = {
     strand:  { icon: "🏖️", cls: "t-strand" },
@@ -548,37 +545,6 @@
         add("🎣 Fisken nappade inte. Tom hand denna gång.");
       }
     },
-    water: function(){
-      S.energy = clamp(S.energy - 6);
-      var base = S.waterFound ? rint(30, 40) : rint(18, 26);
-      if(S.weather === "regn") base += 10;
-      if(S.gear.flaska) base += 8; // kan bära hem mer
-      S.water = clamp(S.water + base);
-      if(S.fireLit){
-        add("💧 Du kokade vattnet över elden" + (S.waterFound ? " vid källan" : "") +
-            ". <small>Vatten +" + base + "</small>", "good");
-      } else {
-        add("💧 Du drack vattnet obehandlat" + (S.waterFound ? " vid källan" : "") +
-            ". <small>Vatten +" + base + "</small>");
-        if(chance(DIRTY_WATER_CHANCE)){
-          var sick = rint(8, 16);
-          S.health = clamp(S.health - sick);
-          add("🤢 Vattnet var förorenat. <small>Hälsa −" + sick + "</small>", "bad");
-        }
-      }
-    },
-    forest: function(){
-      S.energy = clamp(S.energy - 12);
-      var w = rint(2, 3) + (S.gear.kniv ? 1 : 0);
-      S.wood += w;
-      var msg = "🌴 Du samlade ved. <small>Ved +" + w + "</small>";
-      if(chance(0.5)){
-        var f = rint(12, 20);
-        S.food = clamp(S.food + f);
-        msg += " Du hittade också frukt. <small>Mat +" + f + "</small>";
-      }
-      add(msg, "good");
-    },
     build: function(){
       if(S.camp < 3){
         var cost = 3 + S.camp; // dyrare för varje nivå
@@ -655,6 +621,15 @@
   function giveItem(item){
     if(item === "rep" || item === "segel") S.raftMats[item] = true; else S.gear[item] = true;
   }
+  // Samlar vatten med bonusar för regn, flaska och känd källa
+  function waterGain(min, max){
+    var w = rint(min, max);
+    if(S.weather === "regn") w += 6;
+    if(S.gear.flaska) w += 6;
+    if(S.waterFound) w += 5;
+    S.water = clamp(S.water + w);
+    return w;
+  }
 
   // Löser ut vad en ruta ger. Returnerar dagbokstext (utan energi-noten).
   function tileYield(t, first){
@@ -664,7 +639,8 @@
         var w = t.rich > 0 ? rint(2, 4) : rint(0, 1);
         if(t.rich > 0) t.rich--;
         S.wood += w;
-        var msg = lead + "Längs stranden samlade du drivved. <small>Ved +" + w + "</small>";
+        var sw = waterGain(9, 15);
+        var msg = lead + "Längs stranden samlade du drivved och drack ur kokosnötter. <small>Ved +" + w + " · Vatten +" + sw + "</small>";
         var tools = missingTools();
         if(tools.length && chance(0.35)){
           var tool = tools[rint(0, tools.length - 1)];
@@ -680,7 +656,8 @@
         var wv = t.rich > 0 ? rint(2, 3) + (S.gear.kniv ? 1 : 0) : rint(0, 1);
         if(t.rich > 0) t.rich--;
         S.wood += wv;
-        var m2 = lead + "I skogen samlade du ved. <small>Ved +" + wv + "</small>";
+        var fw = waterGain(13, 19);
+        var m2 = lead + "I skogen samlade du ved och drack ur en bäck. <small>Ved +" + wv + " · Vatten +" + fw + "</small>";
         if(chance(0.55)){ var f = rint(12, 20); S.food = clamp(S.food + f); m2 += " Du plockade frukt. <small>Mat +" + f + "</small>"; }
         return { text: m2, cls: "good" };
       }
@@ -695,10 +672,10 @@
         return { text: lead + "Karg klipphäll — inget av värde här." };
       }
       case "kalla": {
-        var wa = rint(28, 40); S.water = clamp(S.water + wa);
+        var wa = waterGain(24, 34);
         if(first){
           S.waterFound = true;
-          return { text: lead + "Du hittade en <b>färskvattenkälla</b>! Vatten blir lättare härefter. <small>Vatten +" + wa + "</small>", cls: "good" };
+          return { text: lead + "Du hittade en <b>färskvattenkälla</b>! Vatten blir lättare att samla överallt härefter. <small>Vatten +" + wa + "</small>", cls: "good" };
         }
         return { text: lead + "Du drack dig otörstig vid källan. <small>Vatten +" + wa + "</small>", cls: "good" };
       }
@@ -1082,10 +1059,9 @@
       '<ul>' +
         '<li>Varje dag har du <b>' + ACTIONS_PER_DAY + ' handlingar</b>.</li>' +
         '<li>Håll mat, vatten och energi över noll — annars sjunker hälsan.</li>' +
-        '<li>Bygg läger med ved för att klara nätterna.</li>' +
-        '<li>Elden kräver ved varje natt. Slocknar den blir du sårbar för rovdjur.</li>' +
-        '<li>Koka vatten över elden — okokt vatten kan göra dig sjuk.</li>' +
-        '<li>Utforska ön via kartan — hitta vrakfältet för flottdelar och en utsiktspunkt där du kan tända en signaleld som lockar skepp.</li>' +
+        '<li>Fiska efter mat, och utforska öns rutor på kartan för ved, vatten och mer mat.</li>' +
+        '<li>Bygg läger med ved för att klara nätterna. Elden kräver ved varje natt — slocknar den blir du sårbar för rovdjur.</li>' +
+        '<li>Kartan: 🌴 skog och 🏖️ strand ger ved och vatten, 💧 källa ger mest, ⚓ vrakfält har flottdelar, 🔭 utsikt låter dig tända en signaleld som lockar skepp.</li>' +
         '<li>När lägret är klart — bygg en flotte av ved, rep och segelduk.</li>' +
         '<li>Skepp passerar med slumpade mellanrum. Utan flotte missar du dem — håll ut och var redo.</li>' +
       '</ul>' +
