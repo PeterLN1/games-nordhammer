@@ -241,6 +241,7 @@
     color: var(--ink); font-size: 14px; font-weight: 600; box-shadow: none;
   }
   .panel .seg button.on { background: var(--accent); color: #1a1200; border-color: #e7bf00; }
+  .panel .seg.seg-3 button { font-size: 12px; padding: 11px 3px; }
   .panel select.wide-select {
     width: 100%; font-size: 15px; padding: 13px 34px 13px 12px; border-radius: 11px;
     background-color: rgba(255,255,255,.1); background-position: right 12px center;
@@ -1059,7 +1060,7 @@
     s = s || {};
     s.started = s.started||0; s.wins = s.wins||0; s.streak = s.streak||0; s.bestStreak = s.bestStreak||0;
     s.bestCombo = s.bestCombo||0; s.byMode = s.byMode||{}; s.badges = s.badges||{};
-    s.fastWin = !!s.fastWin; s.big144 = !!s.big144;
+    s.fastWin = !!s.fastWin; s.big144 = !!s.big144; s.dailyDates = s.dailyDates||{};
     return s;
   })();
   function saveStats(){ try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch(e){} }
@@ -1078,6 +1079,7 @@
       if(stats.streak > stats.bestStreak) stats.bestStreak = stats.streak;
       if(ctx.seconds && ctx.seconds < 60) stats.fastWin = true;
       if(ctx.tiles === 144) stats.big144 = true;
+      if(ctx.isDaily && ctx.dateStr) stats.dailyDates[ctx.dateStr] = true;
     } else {
       stats.streak = 0;
     }
@@ -1092,7 +1094,9 @@
     { id:'combo8',    icon:'⚡', name:'Combo-mästare', desc:'Nå combo ×8',                test:function(){ return stats.bestCombo >= 8; } },
     { id:'fast',      icon:'⏱️', name:'Blixtsnabb',    desc:'Vinn på under 1 minut',      test:function(){ return stats.fastWin; } },
     { id:'big',       icon:'🐢', name:'Sköldpaddan',   desc:'Vinn ett Stor-spel (144)',   test:function(){ return stats.big144; } },
-    { id:'tilematch', icon:'🀄', name:'Tre lika',      desc:'Vinn ett Tile Match-spel',   test:function(){ return stats.byMode.tilematch && stats.byMode.tilematch.wins >= 1; } }
+    { id:'tilematch', icon:'🀄', name:'Tre lika',      desc:'Vinn ett Tile Match-spel',   test:function(){ return stats.byMode.tilematch && stats.byMode.tilematch.wins >= 1; } },
+    { id:'daily1',    icon:'🗓️', name:'Dagens utmaning', desc:'Klara en daglig utmaning', test:function(){ return Object.keys(stats.dailyDates||{}).length >= 1; } },
+    { id:'daily7',    icon:'📅', name:'Vardagshjälte',  desc:'Klara 7 dagliga utmaningar', test:function(){ return Object.keys(stats.dailyDates||{}).length >= 7; } }
   ];
   function checkBadges(){
     var newly = [];
@@ -1142,6 +1146,38 @@
       if(!layoutDef) return null;
       return { layoutDef: layoutDef, mode: obj.m, rngSeed: obj.r };
     } catch(e){ return null; }
+  }
+  /* ---------- Daglig utmaning ----------
+     Samma giv för alla, varje dag — helt deterministisk och beräknad
+     lokalt hos varje spelare (inget backend-stöd behövs för själva
+     givet). Eftersom alla spelare räknar fram exakt samma seed-kod för
+     dagens UTC-datum hamnar allas resultat automatiskt i samma
+     per-seed-topplista via det befintliga systemet. */
+  function hashStr(str){
+    var h = 2166136261 >>> 0; // FNV-1a
+    for(var i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return h >>> 0;
+  }
+  function todayIso(){ return new Date().toISOString().slice(0,10); } // UTC, samma dygnsgräns för alla
+  function dailyChallengeInfo(dateStr){
+    dateStr = dateStr || todayIso();
+    var pick = hashStr('mahjong-daily-pick:' + dateStr);
+    var seedNum = hashStr('mahjong-daily-seed:' + dateStr);
+    var sizes = ['liten','mellan','stor'];
+    var size = sizes[pick % 3];
+    var mode = ((pick >>> 4) % 2 === 0) ? 'classic' : 'tilematch';
+    var list = LAYOUTS[size];
+    var layoutDef = list[(pick >>> 8) % list.length];
+    return { layoutDef: layoutDef, mode: mode, rngSeed: seedNum, dateStr: dateStr };
+  }
+  function dailySeedCode(dateStr){
+    var info = dailyChallengeInfo(dateStr);
+    return makeSeedCode(info.layoutDef.id, info.mode, info.rngSeed);
+  }
+  var SV_MONTHS = ['januari','februari','mars','april','maj','juni','juli','augusti','september','oktober','november','december'];
+  function formatDateSv(iso){
+    var p = iso.split('-'); var d = +p[2], m = +p[1];
+    return d + ' ' + (SV_MONTHS[m-1] || '') ;
   }
   function getGivParam(){ try { return new URLSearchParams(location.search).get('giv'); } catch(e){ return null; } }
   function setGivParam(code){
@@ -1234,7 +1270,8 @@
   }
   function setupSeedLeaderboard(area, seed){
     if(!area) return;
-    area.innerHTML = '<div class="lb-title">🧩 Topplista för denna giv</div><div class="lb-list">Laddar…</div>';
+    var icon = (seed === dailySeedCode()) ? '🗓️' : '🧩';
+    area.innerHTML = '<div class="lb-title">'+icon+' Topplista för denna giv</div><div class="lb-list">Laddar…</div>';
     lbFetchBySeed(seed, function(err, list){
       var el = area.querySelector('.lb-list');
       if(!el) return;
@@ -1253,21 +1290,24 @@
     challengeTarget = null;
     updateChallengeStat();
     if(!state || !state.fromShare || !hasLeaderboard()){ bar.style.display = 'none'; return; }
+    var isDaily = state.seed === dailySeedCode();
+    var icon = isDaily ? '🗓️' : '🧩';
+    var label = isDaily ? 'Dagens utmaning' : 'Du spelar en utmaning';
     bar.style.display = 'flex';
-    bar.innerHTML = '🧩 Du spelar en utmaning · Laddar motståndare…';
+    bar.innerHTML = icon + ' ' + label + ' · Laddar motståndare…';
     var forSeed = state.seed;
     lbFetchBySeed(forSeed, function(err, list){
       if(!state || !state.fromShare || state.seed !== forSeed) return; // spelet hann bytas medan vi väntade
-      if(err){ bar.innerHTML = '🧩 Du spelar en utmaning'; return; }
+      if(err){ bar.innerHTML = icon + ' ' + label; return; }
       var myName = getName();
       var others = (list || []).filter(function(s){ return s.name !== myName; });
       if(!others.length){
-        bar.innerHTML = '🧩 Du spelar en utmaning · Bli först att klara den!';
+        bar.innerHTML = icon + ' ' + label + ' · Bli först att klara den!';
         return;
       }
       challengeTarget = others[0].seconds; // snabbast, listan är redan sorterad
       var names = others.slice(0,4).map(function(s){ return esc(s.name) + ' <b>' + fmt(s.seconds) + '</b>'; }).join(' · ');
-      bar.innerHTML = '🧩 Utmaning mot: ' + names + (others.length > 4 ? ' …' : '');
+      bar.innerHTML = icon + ' ' + (isDaily ? 'Dagens utmaning mot' : 'Utmaning mot') + ': ' + names + (others.length > 4 ? ' …' : '');
       updateChallengeStat();
     });
   }
@@ -1303,12 +1343,13 @@
     var best = getBest(state.mode, N);
     var isBest = (best === 0 || finalSeconds < best);
     if(isBest) setBest(state.mode, N, finalSeconds);
-    recordStat(state.mode, true, { seconds: finalSeconds, tiles: N });
+    var isDailyWin = state.fromShare && state.seed === dailySeedCode();
+    recordStat(state.mode, true, { seconds: finalSeconds, tiles: N, isDaily: isDailyWin, dateStr: todayIso() });
     var panel = document.getElementById('panel');
     panel.innerHTML =
-      '<div class="emoji">🀄</div>' +
+      '<div class="emoji">' + (isDailyWin ? '🗓️' : '🀄') + '</div>' +
       '<h2>Klart!</h2>' +
-      '<p>Du rensade hela brädet.</p>' +
+      '<p>' + (isDailyWin ? 'Du klarade dagens utmaning!' : 'Du rensade hela brädet.') + '</p>' +
       '<div class="big-stat">' + fmt(finalSeconds) + '</div>' +
       (pen > 0 ? '<div class="pen-note">⏱️ ' + fmt(state.seconds) + ' + ' + pen + ' s straff (' + penBreakdown() + ')</div>' : '') +
       '<div class="best">' + (isBest ? '🏆 Nytt rekord!' : 'Bästa tid: ' + fmt(best)) + '</div>' +
@@ -1398,11 +1439,12 @@
   // globala topplistor per brädstorlek och öppet bläddringsbara
   // "Utmaningar" — delade givar som redan spelats av minst två personer.
   function openLeaderboard(view){
-    view = (view === 'challenges') ? 'challenges' : 'global';
+    view = (view === 'challenges' || view === 'daily') ? view : 'global';
     var panel = document.getElementById('panel');
     var mode = (state && state.mode) || 'classic';
     function tabsHtml(){
-      return '<div class="seg" id="lbTabs">' +
+      return '<div class="seg seg-3" id="lbTabs">' +
+               '<button data-view="daily"'+(view==='daily'?' class="on"':'')+'>🗓️ Dagens</button>' +
                '<button data-view="global"'+(view==='global'?' class="on"':'')+'>🏆 Topplistor</button>' +
                '<button data-view="challenges"'+(view==='challenges'?' class="on"':'')+'>🧩 Utmaningar</button>' +
              '</div>';
@@ -1413,7 +1455,29 @@
         openLeaderboard(b.dataset.view);
       });
     }
-    if(view === 'challenges'){
+    if(view === 'daily'){
+      var info = dailyChallengeInfo();
+      var code = makeSeedCode(info.layoutDef.id, info.mode, info.rngSeed);
+      var dModeLabel = info.mode === 'tilematch' ? 'Tile Match' : 'Klassisk par';
+      var dTiles = info.mode === 'tilematch' ? info.layoutDef.n3 : info.layoutDef.n2;
+      panel.innerHTML = tabsHtml() +
+        '<div class="set-hint" style="text-align:center;margin:8px 0 2px">🗓️ '+formatDateSv(info.dateStr)+'</div>' +
+        '<div class="set-hint" style="text-align:center;margin:0 0 10px">'+dModeLabel+' · '+dTiles+' brickor</div>' +
+        '<div id="dailyList" class="lb-list">Laddar…</div>' +
+        '<button id="dailyPlay">Spela dagens utmaning</button>' +
+        '<button id="lbClose" class="ghost">Stäng</button>';
+      wireTabs();
+      document.getElementById('lbClose').onclick = hideOverlay;
+      var dEl = document.getElementById('dailyList');
+      lbFetchBySeed(code, function(err, list){
+        if(err){ dEl.textContent = 'Kunde inte hämta topplistan'; return; }
+        lbRenderList(dEl, list, getName());
+      });
+      document.getElementById('dailyPlay').onclick = function(){
+        hideOverlay();
+        newGame({ seedInfo: info, fromShare: true });
+      };
+    } else if(view === 'challenges'){
       panel.innerHTML = tabsHtml() +
         '<div id="chList" class="lb-list">Laddar…</div>' +
         '<button id="lbClose" class="ghost">Stäng</button>';
@@ -1493,6 +1557,7 @@
         '<div class="stat-cell"><b>'+stats.bestStreak+'</b><span>Bästa svit</span></div>' +
         '<div class="stat-cell"><b>×'+stats.bestCombo+'</b><span>Bästa combo</span></div>' +
         '<div class="stat-cell"><b>'+stats.streak+'</b><span>Svit nu</span></div>' +
+        '<div class="stat-cell"><b>'+Object.keys(stats.dailyDates||{}).length+'</b><span>Dagliga klarade</span></div>' +
       '</div>' +
       '<div class="set-label">Märken ('+unlocked+' / '+BADGES.length+')</div>' +
       '<div class="badge-list">'+badgeHtml+'</div>' +
@@ -1529,6 +1594,11 @@
      Lägg till en ny post ÖVERST i CHANGELOG vid varje uppdatering du vill
      notifiera spelarna om. v = kort unik id (datum funkar bra). */
   var CHANGELOG = [
+    { v:'2026-07-21', items:[
+      'Daglig utmaning — samma giv för alla varje dag, med egen topplista',
+      'Klicka på en utmaning i listan för att se topplistan innan du spelar',
+      'Ny banner visar vem du tävlar mot, med live-jämförelse mot bästa tiden'
+    ] },
     { v:'2026-07-20', items:[
       'Dela en giv — vänner spelar exakt samma bräde via en länk',
       'Öppen Utmaningar-lista och live-jämförelse mot motståndares tid',
