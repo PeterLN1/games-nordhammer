@@ -1361,7 +1361,7 @@
     document.getElementById('pNew').onclick = function(){ hideOverlay(); newGame(); };
     var pShare = document.getElementById('pShare');
     if(pShare) pShare.onclick = function(){ shareCurrentGame(pShare); };
-    setupWinLeaderboard(document.getElementById('lbArea'), N, state.mode, finalSeconds, state.moves, state.seed, function(){
+    setupWinLeaderboard(document.getElementById('lbArea'), N, state.mode, finalSeconds, state.moves, state.seed, state.fromShare, function(){
       if(state.fromShare) setupSeedLeaderboard(document.getElementById('lbSeedArea'), state.seed);
     });
     sfx('win');
@@ -1369,9 +1369,15 @@
   }
 
   // Topplista i vinstpanelen: skicka in tid (om namn finns) annars fråga efter namn
-  function setupWinLeaderboard(area, tiles, mode, seconds, moves, seed, onDone){
+  // Giv-resultat (fromShare) räknas INTE med i den vanliga topplistan —
+  // annars kunde man öva in en memorerad körning på en känd giv (delad
+  // länk eller daglig utmaning) och få en orättvist bra "färsk bräde"-tid.
+  // Giv-specifika topplistor (setupSeedLeaderboard m.fl.) påverkas inte,
+  // där är övning helt legitimt eftersom alla har samma möjlighet.
+  function setupWinLeaderboard(area, tiles, mode, seconds, moves, seed, fromShare, onDone){
     if(!hasLeaderboard()){ area.innerHTML = ''; if(onDone) onDone(); return; }
     function showList(){
+      if(fromShare){ area.innerHTML = ''; return; } // se istället giv-topplistan
       area.innerHTML = '<div class="lb-title">🏆 Topplista — ' + tiles + ' brickor</div>' +
                        '<div class="lb-list">Laddar…</div>';
       lbFetch(tiles, mode, function(err, list){
@@ -1382,7 +1388,7 @@
     }
     var name = getName();
     if(name){
-      lbSubmit({ name:name, mode:mode, tiles:tiles, seconds:seconds, moves:moves, seed:seed }, function(){ showList(); if(onDone) onDone(); });
+      lbSubmit({ name:name, mode:mode, tiles:tiles, seconds:seconds, moves:moves, seed:seed, fromShare:fromShare }, function(){ showList(); if(onDone) onDone(); });
       showList();
     } else {
       area.innerHTML =
@@ -1395,7 +1401,7 @@
         var v = (area.querySelector('#lbName').value || '').trim();
         if(!v) return;
         setName(v);
-        lbSubmit({ name:v, mode:mode, tiles:tiles, seconds:seconds, moves:moves, seed:seed }, function(){ showList(); if(onDone) onDone(); });
+        lbSubmit({ name:v, mode:mode, tiles:tiles, seconds:seconds, moves:moves, seed:seed, fromShare:fromShare }, function(){ showList(); if(onDone) onDone(); });
       };
       area.querySelector('#lbSave').onclick = save;
       area.querySelector('#lbName').addEventListener('keydown', function(e){ if(e.key === 'Enter') save(); });
@@ -1594,6 +1600,9 @@
      Lägg till en ny post ÖVERST i CHANGELOG vid varje uppdatering du vill
      notifiera spelarna om. v = kort unik id (datum funkar bra). */
   var CHANGELOG = [
+    { v:'2026-07-22', items:[
+      'Resultat från utmaningar (delade givar och dagens utmaning) räknas inte längre med i den vanliga topplistan — den visar nu bara tider från färska, aldrig tidigare spelade bräden'
+    ] },
     { v:'2026-07-21', items:[
       'Daglig utmaning — samma giv för alla varje dag, med egen topplista',
       'Klicka på en utmaning i listan för att se topplistan innan du spelar',

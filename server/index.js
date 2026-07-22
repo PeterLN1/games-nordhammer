@@ -48,23 +48,29 @@ if (DATABASE_URL) {
     );`);
   // migrering: seed-kolumn för delade givar (fanns inte i äldre tabeller)
   await pool.query(`alter table scores add column if not exists seed text;`);
+  // migrering: from_share markerar resultat spelade via en känd/upprepningsbar
+  // giv (delad länk eller daglig utmaning) — sådana ska INTE räknas in i den
+  // vanliga topplistan (annars kan man öva in en memorerad körning och få en
+  // orättvist bra tid där). Giv-specifika topplistor påverkas inte.
+  await pool.query(`alter table scores add column if not exists from_share boolean not null default false;`);
   await pool.query(`create index if not exists scores_board_idx on scores (mode, tiles, seconds);`);
   await pool.query(`create index if not exists scores_seed_idx on scores (seed, seconds);`);
   store = {
     async insert(s) {
       await pool.query(
-        'insert into scores (name, mode, tiles, seconds, moves, seed) values ($1,$2,$3,$4,$5,$6)',
-        [s.name, s.mode, s.tiles, s.seconds, s.moves, s.seed]
+        'insert into scores (name, mode, tiles, seconds, moves, seed, from_share) values ($1,$2,$3,$4,$5,$6,$7)',
+        [s.name, s.mode, s.tiles, s.seconds, s.moves, s.seed, !!s.fromShare]
       );
+      if (s.fromShare) return null; // ingen global rank är meningsfull för ett giv-resultat
       const r = await pool.query(
-        'select count(*)::int as c from scores where mode=$1 and tiles=$2 and seconds<$3',
+        'select count(*)::int as c from scores where mode=$1 and tiles=$2 and seconds<$3 and from_share=false',
         [s.mode, s.tiles, s.seconds]
       );
       return r.rows[0].c + 1;
     },
     async top(mode, tiles, limit) {
       const r = await pool.query(
-        'select name, min(seconds) as seconds from scores where mode=$1 and tiles=$2 group by name order by seconds asc limit $3',
+        'select name, min(seconds) as seconds from scores where mode=$1 and tiles=$2 and from_share=false group by name order by seconds asc limit $3',
         [mode, tiles, limit]
       );
       return r.rows;
@@ -106,12 +112,13 @@ if (DATABASE_URL) {
   const mem = [];
   store = {
     async insert(s) {
-      mem.push(Object.assign({}, s, { createdAt: Date.now() }));
-      return mem.filter(x => x.mode === s.mode && x.tiles === s.tiles && x.seconds < s.seconds).length + 1;
+      mem.push(Object.assign({}, s, { fromShare: !!s.fromShare, createdAt: Date.now() }));
+      if (s.fromShare) return null; // ingen global rank är meningsfull för ett giv-resultat
+      return mem.filter(x => !x.fromShare && x.mode === s.mode && x.tiles === s.tiles && x.seconds < s.seconds).length + 1;
     },
     async top(mode, tiles, limit) {
       const best = {};
-      mem.filter(x => x.mode === mode && x.tiles === tiles).forEach(x => {
+      mem.filter(x => !x.fromShare && x.mode === mode && x.tiles === tiles).forEach(x => {
         if (best[x.name] == null || x.seconds < best[x.name]) best[x.name] = x.seconds;
       });
       return Object.keys(best).map(name => ({ name, seconds: best[name] }))
@@ -212,12 +219,13 @@ app.post('/api/scores', async (req, res) => {
   const seconds = parseInt(b.seconds, 10);
   const moves = Number.isFinite(+b.moves) ? parseInt(b.moves, 10) : null;
   const seed = (typeof b.seed === 'string' && b.seed.length > 0 && b.seed.length <= 300) ? b.seed : null;
+  const fromShare = b.fromShare === true;
   if (!name) return res.status(400).json({ error: 'namn kravs' });
   if (isBadName(name)) return res.status(400).json({ error: 'olampligt namn' });
   if (!(tiles >= 4 && tiles <= 400)) return res.status(400).json({ error: 'ogiltigt antal brickor' });
   if (!(seconds >= 1 && seconds <= 86400)) return res.status(400).json({ error: 'ogiltig tid' });
   try {
-    const rank = await store.insert({ name, mode, tiles, seconds, moves, seed });
+    const rank = await store.insert({ name, mode, tiles, seconds, moves, seed, fromShare });
     res.json({ ok: true, rank });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'databasfel' });
