@@ -1165,7 +1165,7 @@
     var seedNum = hashStr('mahjong-daily-seed:' + dateStr);
     var sizes = ['liten','mellan','stor'];
     var size = sizes[pick % 3];
-    var mode = ((pick >>> 4) % 2 === 0) ? 'classic' : 'tilematch';
+    var mode = 'classic'; // dagens utmaning kör alltid klassiskt läge
     var list = LAYOUTS[size];
     var layoutDef = list[(pick >>> 8) % list.length];
     return { layoutDef: layoutDef, mode: mode, rngSeed: seedNum, dateStr: dateStr };
