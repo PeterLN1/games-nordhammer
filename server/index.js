@@ -53,6 +53,11 @@ if (DATABASE_URL) {
   // vanliga topplistan (annars kan man öva in en memorerad körning och få en
   // orättvist bra tid där). Giv-specifika topplistor påverkas inte.
   await pool.query(`alter table scores add column if not exists from_share boolean not null default false;`);
+  // Supabase exponerar automatiskt en publik REST-API för varje tabell,
+  // skyddad enbart av Row-Level Security. Slå på RLS utan policyer så den
+  // vägen stängs helt — enda avsedda ingången är detta API. Påverkar inte
+  // den här anslutningen (superuser-roller kringgår alltid RLS).
+  await pool.query(`alter table scores enable row level security;`);
   await pool.query(`create index if not exists scores_board_idx on scores (mode, tiles, seconds);`);
   await pool.query(`create index if not exists scores_seed_idx on scores (seed, seconds);`);
   store = {
