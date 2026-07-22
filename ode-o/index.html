@@ -214,6 +214,19 @@
   .t-vrak { background: #b08a5a; } .t-grotta { background: #6b5a48; }
   .t-utsikt { background: #c39a5c; } .t-karg { background: #cdbf9a; }
   .map-legend { margin-top: 12px; font-size: 11.5px; line-height: 1.6; color: var(--ink-soft); }
+  .map-toast {
+    margin-top: 10px; padding: 8px 11px; border-radius: 10px;
+    font-size: 12.5px; line-height: 1.45; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--panel-brd);
+  }
+  .map-toast.hidden { display: none; }
+  .map-toast.good { border-color: rgba(107,191,89,.55); }
+  .map-toast.bad { border-color: rgba(224,92,92,.55); }
+  .map-toast small { color: var(--ink-soft); font-weight: 700; }
+  .map-toast.pop { animation: toastpop .3s ease; }
+  @keyframes toastpop { 0% { transform: scale(.96); opacity: .35; } 100% { transform: none; opacity: 1; } }
+
+  button.act.act-wide { grid-column: 1 / -1; }
 </style>
 </head>
 <body>
@@ -381,6 +394,7 @@
     <button class="act" data-act="explore"><span class="em">🧭</span><span class="lbl">Utforska<small>Öppna karta</small></span></button>
     <button class="act" data-act="build"><span class="em" id="buildEm">🔥</span><span class="lbl"><span id="buildLbl">Bygg läger</span><small id="buildSub">−ved</small></span></button>
     <button class="act" data-act="rest"><span class="em">😴</span><span class="lbl">Vila<small>+energi</small></span></button>
+    <button class="act act-wide" data-act="signal" id="signalBtn" style="display:none"><span class="em">🔥</span><span class="lbl">Signaleld<small id="signalSub">Utsiktspunkten · −ved</small></span></button>
   </div>
 </div>
 
@@ -398,6 +412,7 @@
     </div>
     <div class="map-energy" id="mapEnergy"></div>
     <div class="map-grid" id="mapGrid"></div>
+    <div class="map-toast hidden" id="mapToast"></div>
     <div class="map-legend">
       Tryck på en <b>?</b>-ruta för att utforska ny mark, eller på en känd ruta för att söka igen. ⚓ vrakfält = flottdelar · 💧 källa · 🔭 utsikt = lättare att bli sedd.
     </div>
@@ -412,6 +427,9 @@
   var ACTIONS_PER_DAY = 4;  // handlingar per dag
   var SHIP_CHANCE = 0.16;   // sannolikhet per natt att ett skepp passerar
   var LOOKOUT_SHIP_CHANCE = 0.30; // höjd chans när utsiktspunkten är upptäckt
+  var SIGNAL_SHIP_CHANCE = 0.55;  // chans natten efter att en signaleld tänts
+  var SIGNAL_WOOD_COST = 3;       // ved en signaleld kräver
+  var SIGNAL_ENERGY = 12;         // energi det kostar att gå upp och tända den
   var FIRE_FUEL_COST = 2;   // ved elden förbrukar varje natt för att hållas vid liv
   var ANIMAL_CHANCE = 0.25; // sannolikhet för rovdjursangrepp en natt utan eld
   var DIRTY_WATER_CHANCE = 0.30; // risk att bli sjuk av okokt vatten
@@ -492,6 +510,7 @@
       raftMats: { rep: false, segel: false },
       waterFound: false,   // hittad färskvattenkälla → effektivare vatten
       lookout: false,      // upptäckt utsiktspunkt → höjd skepp-chans
+      signalNights: 0,     // kvarvarande nätter en tänd signaleld lyser
       map: genMap(),
       weather: "sol", stormFlash: false,
       over: false, log: []
@@ -593,6 +612,14 @@
       var g = 24 + S.camp * 10;
       S.energy = clamp(S.energy + g);
       add("😴 Du vilade" + (S.camp >= 1 ? " i skydd" : " på stranden") + ". <small>Energi +" + g + "</small>", "good");
+    },
+    signal: function(){
+      if(!S.lookout){ add("🔭 Du måste först hitta utsiktspunkten på ön."); return false; }
+      if(S.wood < SIGNAL_WOOD_COST){ add("🔥 Du behöver " + SIGNAL_WOOD_COST + " ved för en signaleld (har " + S.wood + ")."); return false; }
+      S.wood -= SIGNAL_WOOD_COST;
+      S.energy = clamp(S.energy - SIGNAL_ENERGY);
+      S.signalNights = 1;
+      add("🔥 Du gick upp till utsiktspunkten och tände en väldig signaleld. I natt lyser den mot havet — ett skepp kan knappast missa den. <small>Ved −" + SIGNAL_WOOD_COST + "</small>", "good");
     }
   };
 
@@ -700,9 +727,9 @@
       case "utsikt": {
         if(first || !S.lookout){
           S.lookout = true;
-          return { text: lead + "Från utsiktspunkten kan du speja efter skepp och tända en <b>signaleld</b> — nu ser fartyg dig lättare.", cls: "good" };
+          return { text: lead + "Du fann en <b>utsiktspunkt</b>! Härifrån ser fartyg dig lättare — och nu kan du tända en <b>signaleld</b> med knappen nere till höger.", cls: "good" };
         }
-        return { text: lead + "Du spanade mot horisonten från utsiktspunkten." };
+        return { text: lead + "Du spanade mot horisonten. Tänd en signaleld med Signaleld-knappen för att locka skepp." };
       }
       default:
         return { text: lead + "Karg, stenig mark — inget av värde." };
@@ -721,13 +748,21 @@
     var eCost = tileEnergyCost(t);
     S.energy = clamp(S.energy - eCost);
     var res = tileYield(t, first);
-    add(res.text + " <small>Energi −" + eCost + "</small>", res.cls || "");
+    var fullText = res.text + " <small>Energi −" + eCost + "</small>";
+    add(fullText, res.cls || "");
 
-    closeMap();
+    var endedDay = (S.actionsLeft - 1) <= 0;
     S.actionsLeft -= 1;
     if(S.actionsLeft <= 0) nightfall();
     checkEnd();
     render();
+
+    if(S.over || endedDay){
+      closeMap(); // dagen (eller spelet) är slut — dagboken visar nattens händelser
+    } else {
+      renderMap();                       // uppdatera kartan så den utforskade rutan syns
+      showMapToast(fullText, res.cls || ""); // och visa utfallet direkt
+    }
   }
 
   // ---- Natten ----
@@ -791,8 +826,10 @@
     add(weatherText());
 
     // Skepp passerar med slumpade mellanrum — bara en klar flotte hjälper dig ombord
-    // Utsiktspunkten (signaleld) höjer chansen att bli sedd
-    if(chance(S.lookout ? LOOKOUT_SHIP_CHANCE : SHIP_CHANCE)){
+    // En tänd signaleld ger störst chans, utsiktspunkten en måttlig, annars grundchansen
+    var shipP = S.signalNights > 0 ? SIGNAL_SHIP_CHANCE : (S.lookout ? LOOKOUT_SHIP_CHANCE : SHIP_CHANCE);
+    if(S.signalNights > 0) S.signalNights--;
+    if(chance(shipP)){
       if(S.raft >= 3){
         add("🚢 Ett skepp siktas vid horisonten — och den här gången ser de dig!", "good");
         endGame(true, "ship");
@@ -875,6 +912,14 @@
     if(S.raftMats.segel) g.push("⛵");
     document.getElementById("resGear").textContent = "🎒 " + (g.length ? g.join(" ") : "—");
 
+    var sigBtn = document.getElementById("signalBtn");
+    if(S.lookout){
+      sigBtn.style.display = "";
+      document.getElementById("signalSub").textContent = S.signalNights > 0 ? "Brinner i natt 🔥" : "Utsiktspunkten · −ved";
+    } else {
+      sigBtn.style.display = "none";
+    }
+
     updateBuildButton();
     renderScene();
     renderLog();
@@ -897,9 +942,18 @@
   function openMap(){
     if(S.over || S.actionsLeft <= 0) return;
     renderMap();
+    document.getElementById("mapToast").className = "map-toast hidden";
     document.getElementById("mapOverlay").classList.remove("hidden");
   }
   function closeMap(){ document.getElementById("mapOverlay").classList.add("hidden"); }
+  function showMapToast(html, cls){
+    var el = document.getElementById("mapToast");
+    el.innerHTML = html;
+    el.classList.remove("hidden", "good", "bad", "pop");
+    if(cls) el.classList.add(cls);
+    void el.offsetWidth;         // tvinga omflöde så pop-animationen kan startas om
+    el.classList.add("pop");
+  }
   function renderMap(){
     document.getElementById("mapEnergy").textContent = "⚡ Energi: " + S.energy + "  ·  längre bort = mer energi";
     var grid = document.getElementById("mapGrid");
@@ -1031,7 +1085,7 @@
         '<li>Bygg läger med ved för att klara nätterna.</li>' +
         '<li>Elden kräver ved varje natt. Slocknar den blir du sårbar för rovdjur.</li>' +
         '<li>Koka vatten över elden — okokt vatten kan göra dig sjuk.</li>' +
-        '<li>Utforska ön via kartan — hitta vrakfältet för flottdelar och en utsiktspunkt som gör dig lättare att se.</li>' +
+        '<li>Utforska ön via kartan — hitta vrakfältet för flottdelar och en utsiktspunkt där du kan tända en signaleld som lockar skepp.</li>' +
         '<li>När lägret är klart — bygg en flotte av ved, rep och segelduk.</li>' +
         '<li>Skepp passerar med slumpade mellanrum. Utan flotte missar du dem — håll ut och var redo.</li>' +
       '</ul>' +
