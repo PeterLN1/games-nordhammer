@@ -171,6 +171,49 @@
   }
   button.primary:active { transform: scale(.97); }
   .modal ul { text-align: left; font-size: 13px; line-height: 1.6; color: var(--ink-soft); margin: 12px 0 0; padding-left: 20px; }
+
+  /* Utforska-karta */
+  .map-modal {
+    background: var(--bg); background-attachment: fixed;
+    border: 1px solid var(--panel-brd); border-radius: 22px;
+    padding: 18px; max-width: 420px; width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  }
+  .map-head { display: flex; align-items: center; margin-bottom: 8px; }
+  .map-title { font-weight: 800; font-size: 17px; color: var(--ink); }
+  .map-close {
+    margin-left: auto; font: inherit; font-size: 15px; font-weight: 800; color: var(--ink);
+    background: var(--panel); border: 1px solid var(--panel-brd); border-radius: 10px;
+    width: 34px; height: 34px; cursor: pointer;
+  }
+  .map-close:active { transform: scale(.94); }
+  .map-energy { font-size: 12px; font-weight: 700; color: var(--ink-soft); margin-bottom: 10px; }
+  .map-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .map-cell {
+    position: relative; aspect-ratio: 1 / 1; border-radius: 10px;
+    border: 1px solid var(--panel-brd);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; line-height: 1;
+  }
+  .map-cell.fog { background: rgba(120,130,140,.28); border-color: transparent; }
+  .map-cell.explorable {
+    background: rgba(255,255,255,.16); border: 1.5px dashed var(--sea);
+    color: var(--ink); font-size: 18px; font-weight: 800; cursor: pointer;
+  }
+  .map-cell.harvest { cursor: pointer; }
+  .map-cell.explorable:active, .map-cell.harvest:active { transform: scale(.93); }
+  .map-cell.start { outline: 2px solid var(--sea); outline-offset: -2px; }
+  .map-cost {
+    position: absolute; bottom: 2px; right: 3px;
+    font-size: 9px; font-weight: 800; color: #1b2a38;
+    background: rgba(255,255,255,.7); border-radius: 5px; padding: 0 2px; line-height: 1.3;
+  }
+  .map-cell.explorable .map-cost { background: rgba(255,255,255,.55); }
+  .t-strand { background: #efdca6; } .t-skog { background: #6cae54; }
+  .t-klippor { background: #9aa7a0; } .t-kalla { background: #5aa7d6; }
+  .t-vrak { background: #b08a5a; } .t-grotta { background: #6b5a48; }
+  .t-utsikt { background: #c39a5c; } .t-karg { background: #cdbf9a; }
+  .map-legend { margin-top: 12px; font-size: 11.5px; line-height: 1.6; color: var(--ink-soft); }
 </style>
 </head>
 <body>
@@ -335,7 +378,7 @@
     <button class="act" data-act="fish"><span class="em">🎣</span><span class="lbl">Fiska<small>Mat · −energi</small></span></button>
     <button class="act" data-act="water"><span class="em">💧</span><span class="lbl">Hämta vatten<small>Vatten</small></span></button>
     <button class="act" data-act="forest"><span class="em">🌴</span><span class="lbl">Skogen<small>Ved · frukt</small></span></button>
-    <button class="act" data-act="explore"><span class="em">🔍</span><span class="lbl">Utforska<small>Slump</small></span></button>
+    <button class="act" data-act="explore"><span class="em">🧭</span><span class="lbl">Utforska<small>Öppna karta</small></span></button>
     <button class="act" data-act="build"><span class="em" id="buildEm">🔥</span><span class="lbl"><span id="buildLbl">Bygg läger</span><small id="buildSub">−ved</small></span></button>
     <button class="act" data-act="rest"><span class="em">😴</span><span class="lbl">Vila<small>+energi</small></span></button>
   </div>
@@ -346,6 +389,21 @@
   <div class="modal" id="modal"></div>
 </div>
 
+<!-- Utforska-karta -->
+<div class="overlay hidden" id="mapOverlay">
+  <div class="map-modal">
+    <div class="map-head">
+      <span class="map-title">🧭 Utforska ön</span>
+      <button class="map-close" id="mapClose" aria-label="Stäng karta">✕</button>
+    </div>
+    <div class="map-energy" id="mapEnergy"></div>
+    <div class="map-grid" id="mapGrid"></div>
+    <div class="map-legend">
+      Tryck på en <b>?</b>-ruta för att utforska ny mark, eller på en känd ruta för att söka igen. ⚓ vrakfält = flottdelar · 💧 källa · 🔭 utsikt = lättare att bli sedd.
+    </div>
+  </div>
+</div>
+
 <script>
 "use strict";
 (function(){
@@ -353,9 +411,21 @@
   var LEGACY_TIMEOUT_DAYS = 10; // används bara för att tolka gamla sparade rekord (pre-flotte-version)
   var ACTIONS_PER_DAY = 4;  // handlingar per dag
   var SHIP_CHANCE = 0.16;   // sannolikhet per natt att ett skepp passerar
+  var LOOKOUT_SHIP_CHANCE = 0.30; // höjd chans när utsiktspunkten är upptäckt
   var FIRE_FUEL_COST = 2;   // ved elden förbrukar varje natt för att hållas vid liv
   var ANIMAL_CHANCE = 0.25; // sannolikhet för rovdjursangrepp en natt utan eld
   var DIRTY_WATER_CHANCE = 0.30; // risk att bli sjuk av okokt vatten
+  var MAP_COLS = 5, MAP_ROWS = 5, MAP_START = 22; // 5×5-karta, start nederst i mitten (rad 4, kol 2)
+  var TERRAIN = {
+    strand:  { icon: "🏖️", cls: "t-strand" },
+    skog:    { icon: "🌴", cls: "t-skog" },
+    klippor: { icon: "🪨", cls: "t-klippor" },
+    kalla:   { icon: "💧", cls: "t-kalla" },
+    vrak:    { icon: "⚓", cls: "t-vrak" },
+    grotta:  { icon: "🕳️", cls: "t-grotta" },
+    utsikt:  { icon: "🔭", cls: "t-utsikt" },
+    karg:    { icon: "🏜️", cls: "t-karg" }
+  };
 
   var S = null;          // spelläge
   var sceneLast = null;  // senast renderad läger-nivå (för animation)
@@ -366,6 +436,52 @@
   function chance(p){ return Math.random() < p; }
   function clamp(v){ return Math.max(0, Math.min(100, v)); }
 
+  // ---- Karta ----
+  function shuffle(arr){
+    for(var i = arr.length - 1; i > 0; i--){ var j = rint(0, i); var t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
+    return arr;
+  }
+  function genMap(){
+    var startR = Math.floor(MAP_START / MAP_COLS), startC = MAP_START % MAP_COLS;
+    var map = [];
+    for(var i = 0; i < MAP_COLS * MAP_ROWS; i++){
+      var r = Math.floor(i / MAP_COLS), c = i % MAP_COLS;
+      map.push({ terrain: null, revealed: false, dist: Math.abs(r - startR) + Math.abs(c - startC), rich: 3, looted: false });
+    }
+    map[MAP_START].terrain = "strand";
+    map[MAP_START].revealed = true;
+    map[MAP_START].isStart = true;
+
+    // Placera de fyra landmärkena på slumpade, distinkta rutor (aldrig startrutan)
+    var idxs = [];
+    for(var j = 0; j < map.length; j++) if(j !== MAP_START) idxs.push(j);
+    shuffle(idxs);
+    var landmarks = ["kalla", "vrak", "grotta", "utsikt"];
+    for(var k = 0; k < landmarks.length; k++) map[idxs[k]].terrain = landmarks[k];
+
+    // Fyll resten: kanten mest strand, inlandet mest skog/klippor
+    for(var m = 0; m < map.length; m++){
+      if(map[m].terrain) continue;
+      var mr = Math.floor(m / MAP_COLS), mc = m % MAP_COLS;
+      var edge = (mr === 0 || mr === MAP_ROWS - 1 || mc === 0 || mc === MAP_COLS - 1);
+      var roll = Math.random();
+      if(edge) map[m].terrain = roll < 0.55 ? "strand" : roll < 0.80 ? "skog" : roll < 0.95 ? "klippor" : "karg";
+      else     map[m].terrain = roll < 0.50 ? "skog" : roll < 0.75 ? "klippor" : roll < 0.90 ? "strand" : "karg";
+    }
+    return map;
+  }
+  function hasRevealedNeighbor(idx){
+    var r = Math.floor(idx / MAP_COLS), c = idx % MAP_COLS;
+    var nb = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
+    for(var i = 0; i < nb.length; i++){
+      var nr = nb[i][0], nc = nb[i][1];
+      if(nr < 0 || nr >= MAP_ROWS || nc < 0 || nc >= MAP_COLS) continue;
+      if(S.map[nr * MAP_COLS + nc].revealed) return true;
+    }
+    return false;
+  }
+  function tileEnergyCost(t){ return 6 + t.dist * 2; }
+
   function newGame(){
     S = {
       day: 1,
@@ -375,6 +491,8 @@
       gear: { spjut: false, flaska: false, kniv: false },
       raftMats: { rep: false, segel: false },
       waterFound: false,   // hittad färskvattenkälla → effektivare vatten
+      lookout: false,      // upptäckt utsiktspunkt → höjd skepp-chans
+      map: genMap(),
       weather: "sol", stormFlash: false,
       over: false, log: []
     };
@@ -387,6 +505,7 @@
     if(boltEl) boltEl.classList.remove("flash");
     var raftWrapEl = document.getElementById("raftWrap");
     if(raftWrapEl) raftWrapEl.classList.remove("pop", "ready");
+    closeMap();
     logDay(1);
     add("Du vaknar på en öde strand. Vraket sjönk. Ingen kommer och räddar dig av sig själv — du måste hålla dig vid liv och stå redo när ett skepp passerar.");
     render();
@@ -441,39 +560,6 @@
       }
       add(msg, "good");
     },
-    explore: function(){
-      S.energy = clamp(S.energy - 15);
-      var roll = Math.random();
-      // Hitta föremål (om något återstår) — annars resurser eller otur
-      var missing = [];
-      if(!S.gear.spjut) missing.push("spjut");
-      if(!S.gear.flaska) missing.push("flaska");
-      if(!S.gear.kniv) missing.push("kniv");
-      if(!S.raftMats.rep && S.raft < 2) missing.push("rep");     // redan använt förbi masten? inget mer att hitta
-      if(!S.raftMats.segel && S.raft < 3) missing.push("segel"); // redan använt förbi seglet? inget mer att hitta
-
-      if(!S.waterFound && roll < 0.20){
-        S.waterFound = true;
-        add("🔍 Du upptäckte en <b>färskvattenkälla</b> inne på ön! Vatten blir lättare härefter.", "good");
-      } else if(missing.length && roll < 0.48){
-        var item = missing[rint(0, missing.length - 1)];
-        var names = { spjut: "ett fiskespjut 🔱 (bättre fiske)", flaska: "en flaska 🧴 (bär mer vatten)", kniv: "en kniv 🔪 (mer ved)", rep: "ett rep 🪢 (för flottens mast)", segel: "en bit segelduk ⛵ (för flottens segel)" };
-        if(item === "rep" || item === "segel") S.raftMats[item] = true; else S.gear[item] = true;
-        add("🔍 Bland vrakspillrorna hittade du " + names[item] + ".", "good");
-      } else if(roll < 0.72){
-        var w = rint(2, 4);
-        S.wood += w;
-        add("🔍 Du hittade uppspolat drivved. <small>Ved +" + w + "</small>", "good");
-      } else if(roll < 0.88){
-        var b = rint(14, 22);
-        S.food = clamp(S.food + b);
-        add("🔍 Du fann ett bärsnår. <small>Mat +" + b + "</small>", "good");
-      } else {
-        var d = rint(6, 12);
-        S.health = clamp(S.health - d);
-        add("🔍 Du snubblade på klipporna och skadade dig. <small>Hälsa −" + d + "</small>", "bad");
-      }
-    },
     build: function(){
       if(S.camp < 3){
         var cost = 3 + S.camp; // dyrare för varje nivå
@@ -514,6 +600,130 @@
     if(S.over || S.actionsLeft <= 0) return;
     var res = ACT[name]();
     if(res === false) { render(); return; } // ogiltig handling, ingen tid förbrukas
+    S.actionsLeft -= 1;
+    if(S.actionsLeft <= 0) nightfall();
+    checkEnd();
+    render();
+  }
+
+  // ---- Utforska via karta ----
+  var ITEM_NAMES = {
+    spjut: "ett fiskespjut 🔱 (bättre fiske)", flaska: "en flaska 🧴 (bär mer vatten)",
+    kniv: "en kniv 🔪 (mer ved)", rep: "ett rep 🪢 (för flottens mast)",
+    segel: "en bit segelduk ⛵ (för flottens segel)"
+  };
+  function missingTools(){
+    var m = [];
+    if(!S.gear.spjut) m.push("spjut");
+    if(!S.gear.flaska) m.push("flaska");
+    if(!S.gear.kniv) m.push("kniv");
+    return m;
+  }
+  function neededRaftParts(){
+    var m = [];
+    if(!S.raftMats.rep && S.raft < 2) m.push("rep");     // förbi masten? behövs inte mer
+    if(!S.raftMats.segel && S.raft < 3) m.push("segel"); // förbi seglet? behövs inte mer
+    return m;
+  }
+  function giveItem(item){
+    if(item === "rep" || item === "segel") S.raftMats[item] = true; else S.gear[item] = true;
+  }
+
+  // Löser ut vad en ruta ger. Returnerar dagbokstext (utan energi-noten).
+  function tileYield(t, first){
+    var lead = first ? "🧭 Du utforskade ny mark. " : "🧭 Du återvände dit. ";
+    switch(t.terrain){
+      case "strand": {
+        var w = t.rich > 0 ? rint(2, 4) : rint(0, 1);
+        if(t.rich > 0) t.rich--;
+        S.wood += w;
+        var msg = lead + "Längs stranden samlade du drivved. <small>Ved +" + w + "</small>";
+        var tools = missingTools();
+        if(tools.length && chance(0.35)){
+          var tool = tools[rint(0, tools.length - 1)];
+          giveItem(tool);
+          msg += " Bland vrakspillrorna låg " + ITEM_NAMES[tool] + ".";
+        } else if(chance(0.45)){
+          var b = rint(12, 20); S.food = clamp(S.food + b);
+          msg += " Du hittade också ett bärsnår. <small>Mat +" + b + "</small>";
+        }
+        return { text: msg, cls: "good" };
+      }
+      case "skog": {
+        var wv = t.rich > 0 ? rint(2, 3) + (S.gear.kniv ? 1 : 0) : rint(0, 1);
+        if(t.rich > 0) t.rich--;
+        S.wood += wv;
+        var m2 = lead + "I skogen samlade du ved. <small>Ved +" + wv + "</small>";
+        if(chance(0.55)){ var f = rint(12, 20); S.food = clamp(S.food + f); m2 += " Du plockade frukt. <small>Mat +" + f + "</small>"; }
+        return { text: m2, cls: "good" };
+      }
+      case "klippor": {
+        if(chance(0.45)){
+          var d = rint(6, 12); S.health = clamp(S.health - d);
+          return { text: lead + "Du halkade på de vassa klipporna. <small>Hälsa −" + d + "</small>", cls: "bad" };
+        } else if(chance(0.5)){
+          var eg = rint(10, 16); S.food = clamp(S.food + eg);
+          return { text: lead + "Bland klipporna fann du fågelägg. <small>Mat +" + eg + "</small>", cls: "good" };
+        }
+        return { text: lead + "Karg klipphäll — inget av värde här." };
+      }
+      case "kalla": {
+        var wa = rint(28, 40); S.water = clamp(S.water + wa);
+        if(first){
+          S.waterFound = true;
+          return { text: lead + "Du hittade en <b>färskvattenkälla</b>! Vatten blir lättare härefter. <small>Vatten +" + wa + "</small>", cls: "good" };
+        }
+        return { text: lead + "Du drack dig otörstig vid källan. <small>Vatten +" + wa + "</small>", cls: "good" };
+      }
+      case "vrak": {
+        var dw = rint(3, 5); S.wood += dw;
+        var m3 = lead + "I vrakfältet bärgade du drivved. <small>Ved +" + dw + "</small>";
+        var parts = neededRaftParts();
+        if(parts.length){
+          giveItem(parts[0]);
+          m3 += " Du bärgade också " + ITEM_NAMES[parts[0]] + ".";
+        } else {
+          var tls = missingTools();
+          if(tls.length){ var tl = tls[rint(0, tls.length - 1)]; giveItem(tl); m3 += " Du bärgade också " + ITEM_NAMES[tl] + "."; }
+        }
+        return { text: m3, cls: "good" };
+      }
+      case "grotta": {
+        if(first || !t.looted){
+          t.looted = true;
+          var fc = rint(20, 35), wc = rint(2, 4);
+          S.food = clamp(S.food + fc); S.wood += wc;
+          return { text: lead + "I grottan fann du ett gammalt förråd. <small>Mat +" + fc + " · Ved +" + wc + "</small>", cls: "good" };
+        }
+        return { text: lead + "Grottan är tömd, men ger skydd en stund." };
+      }
+      case "utsikt": {
+        if(first || !S.lookout){
+          S.lookout = true;
+          return { text: lead + "Från utsiktspunkten kan du speja efter skepp och tända en <b>signaleld</b> — nu ser fartyg dig lättare.", cls: "good" };
+        }
+        return { text: lead + "Du spanade mot horisonten från utsiktspunkten." };
+      }
+      default:
+        return { text: lead + "Karg, stenig mark — inget av värde." };
+    }
+  }
+
+  function exploreTile(idx){
+    if(S.over || S.actionsLeft <= 0) return;
+    var t = S.map[idx];
+    var explorable = !t.revealed && hasRevealedNeighbor(idx);
+    var harvestable = t.revealed && !t.isStart;
+    if(!explorable && !harvestable) return;
+
+    var first = !t.revealed;
+    t.revealed = true;
+    var eCost = tileEnergyCost(t);
+    S.energy = clamp(S.energy - eCost);
+    var res = tileYield(t, first);
+    add(res.text + " <small>Energi −" + eCost + "</small>", res.cls || "");
+
+    closeMap();
     S.actionsLeft -= 1;
     if(S.actionsLeft <= 0) nightfall();
     checkEnd();
@@ -581,7 +791,8 @@
     add(weatherText());
 
     // Skepp passerar med slumpade mellanrum — bara en klar flotte hjälper dig ombord
-    if(chance(SHIP_CHANCE)){
+    // Utsiktspunkten (signaleld) höjer chansen att bli sedd
+    if(chance(S.lookout ? LOOKOUT_SHIP_CHANCE : SHIP_CHANCE)){
       if(S.raft >= 3){
         add("🚢 Ett skepp siktas vid horisonten — och den här gången ser de dig!", "good");
         endGame(true, "ship");
@@ -681,6 +892,38 @@
     }
     box.innerHTML = html;
     box.scrollTop = box.scrollHeight;
+  }
+
+  function openMap(){
+    if(S.over || S.actionsLeft <= 0) return;
+    renderMap();
+    document.getElementById("mapOverlay").classList.remove("hidden");
+  }
+  function closeMap(){ document.getElementById("mapOverlay").classList.add("hidden"); }
+  function renderMap(){
+    document.getElementById("mapEnergy").textContent = "⚡ Energi: " + S.energy + "  ·  längre bort = mer energi";
+    var grid = document.getElementById("mapGrid");
+    var html = "";
+    for(var i = 0; i < S.map.length; i++){
+      var t = S.map[i];
+      var explorable = !t.revealed && hasRevealedNeighbor(i);
+      var harvestable = t.revealed && !t.isStart;
+      var tappable = explorable || harvestable;
+      var cls = "map-cell", content = "", cost = "";
+      if(t.isStart){
+        cls += " " + TERRAIN.strand.cls + " start"; content = "⛺";
+      } else if(t.revealed){
+        cls += " " + TERRAIN[t.terrain].cls + (harvestable ? " harvest" : ""); content = TERRAIN[t.terrain].icon;
+      } else if(explorable){
+        cls += " explorable"; content = "?";
+      } else {
+        cls += " fog";
+      }
+      if(tappable) cost = '<span class="map-cost">⚡' + tileEnergyCost(t) + '</span>';
+      var attr = tappable ? ' data-idx="' + i + '"' : '';
+      html += '<div class="' + cls + '"' + attr + '>' + content + cost + '</div>';
+    }
+    grid.innerHTML = html;
   }
 
   function updateBuildButton(){
@@ -788,6 +1031,7 @@
         '<li>Bygg läger med ved för att klara nätterna.</li>' +
         '<li>Elden kräver ved varje natt. Slocknar den blir du sårbar för rovdjur.</li>' +
         '<li>Koka vatten över elden — okokt vatten kan göra dig sjuk.</li>' +
+        '<li>Utforska ön via kartan — hitta vrakfältet för flottdelar och en utsiktspunkt som gör dig lättare att se.</li>' +
         '<li>När lägret är klart — bygg en flotte av ved, rep och segelduk.</li>' +
         '<li>Skepp passerar med slumpade mellanrum. Utan flotte missar du dem — håll ut och var redo.</li>' +
       '</ul>' +
@@ -821,7 +1065,18 @@
   // ---- Koppling ----
   document.getElementById("actions").addEventListener("click", function(ev){
     var b = ev.target.closest("button.act");
-    if(b && !b.disabled) doAct(b.getAttribute("data-act"));
+    if(!b || b.disabled) return;
+    var act = b.getAttribute("data-act");
+    if(act === "explore") openMap();
+    else doAct(act);
+  });
+  document.getElementById("mapGrid").addEventListener("click", function(ev){
+    var cell = ev.target.closest(".map-cell[data-idx]");
+    if(cell) exploreTile(parseInt(cell.getAttribute("data-idx"), 10));
+  });
+  document.getElementById("mapClose").addEventListener("click", closeMap);
+  document.getElementById("mapOverlay").addEventListener("click", function(ev){
+    if(ev.target === this) closeMap(); // klick utanför kort-rutan stänger
   });
 
   showStart();
