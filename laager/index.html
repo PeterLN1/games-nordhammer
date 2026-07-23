@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#140d24">
+<title>Läger — 3D-demo</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+    background: #140d24; color: #f2eee0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; touch-action: none; }
+
+  .hud {
+    position: fixed; left: 0; right: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: max(14px, env(safe-area-inset-top)) 16px 0;
+    pointer-events: none;
+  }
+  .hud a {
+    pointer-events: auto;
+    text-decoration: none; color: #f2eee0; font-size: 13px; font-weight: 600;
+    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
+    padding: 8px 13px; border-radius: 999px; backdrop-filter: blur(6px);
+  }
+  .hud h1 {
+    margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .3px;
+    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
+    padding: 8px 13px; border-radius: 999px; backdrop-filter: blur(6px);
+  }
+
+  .hint {
+    position: fixed; left: 50%; bottom: max(22px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    font-size: 12.5px; color: rgba(242,238,224,.75);
+    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
+    padding: 7px 14px; border-radius: 999px; backdrop-filter: blur(6px);
+    z-index: 5; transition: opacity .6s ease; pointer-events: none;
+  }
+  .hint.hidden { opacity: 0; }
+
+  .fps {
+    position: fixed; right: 10px; bottom: 10px; z-index: 5;
+    font-size: 10px; color: rgba(242,238,224,.4); font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div class="hud">
+    <a href="/">← Spel</a>
+    <h1>Läger · 3D-demo</h1>
+  </div>
+  <div class="hint" id="hint">Dra för att rotera · nyp för att zooma</div>
+  <div class="fps" id="fps"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+/* ---------------------------------------------------------------------
+   Läger — stiliserad low-poly 3D-demo
+   Mål: snyggt & levande men billigt att rendera på mobil.
+   Knep: flat shading istället för texturer, inga realtids-skuggor
+   (falska "blob"-skuggor dekaler istället), instancing för upprepade
+   objekt (träd/stenar), enda dynamiska ljuset är en flimrande eld.
+--------------------------------------------------------------------- */
+
+const container = document.getElementById("app");
+const hint = document.getElementById("hint");
+const fpsEl = document.getElementById("fps");
+
+const PALETTE = {
+  skyTop: new THREE.Color(0x150c2c),
+  skyHorizon: new THREE.Color(0xdd7a4a),
+  ground: 0x3c5c3a,
+  clearing: 0x8a6b4a,
+  trunk: 0x4a3524,
+  leaves: [0x2f4a34, 0x35553c, 0x3c5c3f],
+  rock: 0x77786f,
+  stoneBuilt: 0x8f8f83,
+  fence: 0x5b4430,
+  logs: 0x33210f,
+  moon: 0xf3ecd6,
+};
+
+// ---------- renderer / scene / camera ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = PALETTE.skyTop.clone();
+scene.fog = new THREE.FogExp2(PALETTE.skyTop.getHex(), 0.028);
+
+const BASE_FOV = 42; // desired *horizontal* field of view
+const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 100);
+camera.position.set(11, 6.5, 12);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 9;
+controls.maxDistance = 24;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.6;
+controls.addEventListener("start", () => {
+  controls.autoRotate = false;
+  hint.classList.add("hidden");
+});
+
+// ---------- sky dome (vertex-color gradient, no texture) ----------
+function buildSky() {
+  const geo = new THREE.SphereGeometry(45, 24, 16);
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i) / 45; // -1..1
+    const t = THREE.MathUtils.clamp(y * 0.7 + 0.35, 0, 1);
+    c.copy(PALETTE.skyHorizon).lerp(PALETTE.skyTop, t);
+    colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false });
+  return new THREE.Mesh(geo, mat);
+}
+scene.add(buildSky());
+
+// ---------- stars ----------
+function buildStars() {
+  const count = 260;
+  const pos = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const r = 42;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * Math.PI * 0.42; // upper sky only
+    pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    pos[i * 3 + 1] = r * Math.cos(phi) * 0.9 + 6;
+    pos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({ color: 0xfff6dd, size: 0.35, sizeAttenuation: false, transparent: true, opacity: 0.8, fog: false });
+  return new THREE.Points(geo, mat);
+}
+scene.add(buildStars());
+
+// moon (unlit disc, doubles as the directional light's visual source)
+const moonDir = new THREE.Vector3(-14, 16, -8).normalize();
+const moon = new THREE.Mesh(
+  new THREE.CircleGeometry(1.4, 16),
+  new THREE.MeshBasicMaterial({ color: PALETTE.moon, fog: false })
+);
+moon.position.copy(moonDir).multiplyScalar(40);
+moon.lookAt(0, moon.position.y, 0);
+scene.add(moon);
+
+// ---------- lights (cheap: no shadow maps) ----------
+const hemi = new THREE.HemisphereLight(0x8fa0c9, 0x2a2116, 0.65);
+scene.add(hemi);
+
+const moonLight = new THREE.DirectionalLight(0xb9c6ff, 0.55);
+moonLight.position.copy(moonDir).multiplyScalar(20);
+scene.add(moonLight);
+
+const fireLight = new THREE.PointLight(0xff7b2e, 2.2, 9, 2);
+fireLight.position.set(0, 0.9, 0);
+scene.add(fireLight);
+
+// ---------- fake shadow decals (cheap alternative to real shadow maps) ----------
+const shadowTex = (() => {
+  const size = 128;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, "rgba(0,0,0,0.55)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+})();
+const shadowMat = new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, fog: false });
+function addShadowBlob(x, z, radius) {
+  const m = new THREE.Mesh(new THREE.CircleGeometry(radius, 12), shadowMat);
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(x, 0.015, z);
+  scene.add(m);
+}
+
+// ---------- terrain ----------
+function buildGround() {
+  const size = 46, seg = 40;
+  const geo = new THREE.PlaneGeometry(size, size, seg, seg);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const distFromCamp = Math.hypot(x, z);
+    let h = (Math.sin(x * 0.35) + Math.cos(z * 0.3)) * 0.22 + (Math.sin(x * 0.9 + z * 0.6) * 0.08);
+    const clearing = THREE.MathUtils.smoothstep(distFromCamp, 4.2, 7.5);
+    h *= clearing;
+    pos.setY(i, h);
+  }
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ color: PALETTE.ground, flatShading: true, roughness: 1 });
+  const mesh = new THREE.Mesh(geo, mat);
+  scene.add(mesh);
+
+  const clearing = new THREE.Mesh(
+    new THREE.CircleGeometry(4.6, 10),
+    new THREE.MeshStandardMaterial({ color: PALETTE.clearing, flatShading: true, roughness: 1 })
+  );
+  clearing.rotation.x = -Math.PI / 2;
+  clearing.position.y = 0.01;
+  scene.add(clearing);
+}
+buildGround();
+
+// ---------- shelter: log lean-to on a cut-stone foundation ----------
+function buildShelter() {
+  const w = 2.6, d = 3.2, h = 1.9, baseH = 0.18;
+  const group = new THREE.Group();
+  group.position.set(-2.6, 0, -1.6);
+  group.rotation.y = 0.5;
+  scene.add(group);
+
+  const stoneMat = new THREE.MeshStandardMaterial({ color: PALETTE.stoneBuilt, flatShading: true, roughness: 1 });
+  const logMat = new THREE.MeshStandardMaterial({ color: PALETTE.trunk, flatShading: true, roughness: 1 });
+
+  // stone foundation slab
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, baseH, d + 0.3), stoneMat);
+  base.position.y = baseH / 2;
+  group.add(base);
+
+  // a few stacked stones flanking the open front, for a "built" accent
+  const accentGeo = new THREE.IcosahedronGeometry(0.22, 0);
+  [[-w / 2 - 0.15, -d / 2 + 0.2], [w / 2 + 0.15, -d / 2 + 0.2]].forEach(([ax, az]) => {
+    for (let s = 0; s < 2; s++) {
+      const stone = new THREE.Mesh(accentGeo, stoneMat);
+      stone.position.set(ax + (Math.random() - 0.5) * 0.1, baseH + 0.15 + s * 0.28, az);
+      stone.rotation.set(Math.random(), Math.random(), Math.random());
+      group.add(stone);
+    }
+  });
+
+  // ridge beam
+  const ridgeLen = d;
+  const ridge = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, ridgeLen, 6), logMat);
+  ridge.rotation.x = Math.PI / 2;
+  ridge.position.set(0, h, 0);
+  group.add(ridge);
+
+  // vertical corner posts holding the ridge ends
+  [-d / 2, d / 2].forEach((z) => {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, h - baseH, 6), logMat);
+    post.position.set(0, (baseH + h) / 2, z);
+    group.add(post);
+  });
+
+  // sloped roof slats (parallel logs), instanced per side
+  const dir = { left: new THREE.Vector3(-w / 2, baseH - h, 0), right: new THREE.Vector3(w / 2, baseH - h, 0) };
+  const slatCount = 6, inset = 0.3;
+  Object.values(dir).forEach((v) => {
+    const len = v.length();
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.clone().normalize());
+    const mid = v.clone().multiplyScalar(0.5).setY((h + baseH) / 2);
+    const slatGeo = new THREE.CylinderGeometry(0.045, 0.055, len, 5);
+    const slats = new THREE.InstancedMesh(slatGeo, logMat, slatCount);
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < slatCount; i++) {
+      const z = -d / 2 + inset + (i / (slatCount - 1)) * (d - inset * 2);
+      m.compose(new THREE.Vector3(mid.x, mid.y, z), quat, new THREE.Vector3(1, 1, 1));
+      slats.setMatrixAt(i, m);
+    }
+    group.add(slats);
+  });
+
+  addShadowBlob(group.position.x, group.position.z, 2.3);
+}
+buildShelter();
+
+// ---------- campfire (logs + embers) ----------
+function buildFire() {
+  const logGeo = new THREE.CylinderGeometry(0.09, 0.11, 1.5, 5);
+  const logMat = new THREE.MeshStandardMaterial({ color: PALETTE.logs, flatShading: true, roughness: 1 });
+  const n = 5;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const log = new THREE.Mesh(logGeo, logMat);
+    log.position.set(Math.cos(a) * 0.12, 0.35, Math.sin(a) * 0.12);
+    log.rotation.z = Math.PI / 2.35;
+    log.rotation.y = a;
+    scene.add(log);
+  }
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.55, 0.08, 5, 10),
+    new THREE.MeshStandardMaterial({ color: PALETTE.rock, flatShading: true, roughness: 1 })
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.05;
+  scene.add(ring);
+  addShadowBlob(0, 0, 1.6);
+}
+buildFire();
+
+// ---------- ember particles (custom shader, additive, cheap) ----------
+function buildEmbers() {
+  const count = 70;
+  const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const alphas = new Float32Array(count);
+  const state = [];
+  for (let i = 0; i < count; i++) {
+    state.push({
+      life: Math.random(), maxLife: 0.9 + Math.random() * 1.1,
+      speed: 0.7 + Math.random() * 0.9,
+      x0: (Math.random() - 0.5) * 0.5, z0: (Math.random() - 0.5) * 0.5,
+      drift: (Math.random() - 0.5) * 0.4,
+    });
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
+
+  const dotTex = (() => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 32;
+    const ctx = c.getContext("2d");
+    const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    g.addColorStop(0, "rgba(255,255,255,1)");
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 32, 32);
+    return new THREE.CanvasTexture(c);
+  })();
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uMap: { value: dotTex }, uColor: { value: new THREE.Color(0xff9a3c) } },
+    vertexShader: `
+      attribute float aSize;
+      attribute float aAlpha;
+      varying float vAlpha;
+      void main() {
+        vAlpha = aAlpha;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = aSize * (150.0 / -mv.z);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uMap;
+      uniform vec3 uColor;
+      varying float vAlpha;
+      void main() {
+        vec4 tex = texture2D(uMap, gl_PointCoord);
+        gl_FragColor = vec4(uColor, tex.a * vAlpha);
+      }
+    `,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+  });
+
+  const points = new THREE.Points(geo, mat);
+  scene.add(points);
+
+  return {
+    update(dt) {
+      const posAttr = geo.attributes.position, sizeAttr = geo.attributes.aSize, alphaAttr = geo.attributes.aAlpha;
+      for (let i = 0; i < count; i++) {
+        const s = state[i];
+        s.life += dt;
+        const t = s.life / s.maxLife;
+        if (t >= 1) {
+          s.life = 0; s.x0 = (Math.random() - 0.5) * 0.5; s.z0 = (Math.random() - 0.5) * 0.5;
+          s.speed = 0.7 + Math.random() * 0.9; s.maxLife = 0.9 + Math.random() * 1.1;
+          s.drift = (Math.random() - 0.5) * 0.4;
+        }
+        const tt = s.life / s.maxLife;
+        posAttr.setXYZ(i, s.x0 + Math.sin(tt * 6 + i) * 0.12 + s.drift * tt, 0.5 + tt * s.speed * 1.6, s.z0 + Math.cos(tt * 6 + i) * 0.12);
+        sizeAttr.setX(i, THREE.MathUtils.lerp(5.5, 1, tt));
+        alphaAttr.setX(i, Math.sin(tt * Math.PI) * 0.75);
+      }
+      posAttr.needsUpdate = true; sizeAttr.needsUpdate = true; alphaAttr.needsUpdate = true;
+    },
+  };
+}
+const embers = buildEmbers();
+
+// ---------- helper: scatter positions on a ring, avoiding the clearing ----------
+function scatter(count, minR, maxR, seedOffset = 0) {
+  const items = [];
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2 + Math.sin(i * 12.9 + seedOffset) * 0.3;
+    const r = minR + Math.random() * (maxR - minR);
+    items.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, rot: Math.random() * Math.PI * 2, scale: 0.75 + Math.random() * 0.6 });
+  }
+  return items;
+}
+
+// ---------- trees (instanced: trunk + 2 cone tiers) ----------
+function buildTrees() {
+  const items = scatter(46, 8, 20, 1);
+  const trunkGeo = new THREE.CylinderGeometry(0.09, 0.13, 0.7, 5);
+  const coneGeo1 = new THREE.ConeGeometry(0.85, 1.3, 6);
+  const coneGeo2 = new THREE.ConeGeometry(0.6, 1.1, 6);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: PALETTE.trunk, flatShading: true, roughness: 1 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 });
+
+  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, items.length);
+  const cones1 = new THREE.InstancedMesh(coneGeo1, leafMat, items.length);
+  const cones2 = new THREE.InstancedMesh(coneGeo2, leafMat, items.length);
+  const shadowBlobs = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 8), shadowMat, items.length);
+  shadowBlobs.rotateX(-Math.PI / 2);
+
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  const up = new THREE.Vector3(0, 1, 0);
+  const color = new THREE.Color();
+
+  items.forEach((it, i) => {
+    const s = it.scale;
+    q.setFromAxisAngle(up, it.rot);
+
+    sc.set(s, s, s);
+    m.compose(new THREE.Vector3(it.x, 0.35 * s, it.z), q, sc);
+    trunks.setMatrixAt(i, m);
+
+    m.compose(new THREE.Vector3(it.x, 1.05 * s, it.z), q, sc);
+    cones1.setMatrixAt(i, m);
+    color.set(PALETTE.leaves[i % PALETTE.leaves.length]);
+    cones1.setColorAt(i, color);
+
+    m.compose(new THREE.Vector3(it.x, 1.75 * s, it.z), q, sc);
+    cones2.setMatrixAt(i, m);
+    cones2.setColorAt(i, color);
+
+    const sm = new THREE.Matrix4().compose(new THREE.Vector3(it.x, 0.02, it.z), new THREE.Quaternion(), new THREE.Vector3(0.9 * s, 0.9 * s, 1));
+    shadowBlobs.setMatrixAt(i, sm);
+  });
+
+  scene.add(trunks, cones1, cones2, shadowBlobs);
+}
+buildTrees();
+
+// ---------- rocks (instanced icosahedra) ----------
+function buildRocks() {
+  const items = scatter(16, 5.2, 18, 7);
+  const geo = new THREE.IcosahedronGeometry(0.4, 0);
+  const mat = new THREE.MeshStandardMaterial({ color: PALETTE.rock, flatShading: true, roughness: 1 });
+  const mesh = new THREE.InstancedMesh(geo, mat, items.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), euler = new THREE.Euler();
+  items.forEach((it, i) => {
+    euler.set(Math.random() * Math.PI, it.rot, Math.random() * Math.PI);
+    q.setFromEuler(euler);
+    const sy = it.scale * (0.5 + Math.random() * 0.4);
+    m.compose(new THREE.Vector3(it.x, sy * 0.4, it.z), q, new THREE.Vector3(it.scale, sy, it.scale));
+    mesh.setMatrixAt(i, m);
+  });
+  scene.add(mesh);
+}
+buildRocks();
+
+// ---------- palisade fence arc (hints at "build to protect") ----------
+function buildFence() {
+  const postGeo = new THREE.CylinderGeometry(0.07, 0.09, 1.3, 5);
+  const postMat = new THREE.MeshStandardMaterial({ color: PALETTE.fence, flatShading: true, roughness: 1 });
+  const count = 14;
+  const mesh = new THREE.InstancedMesh(postGeo, postMat, count);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  const radius = 5.4;
+  const startA = Math.PI * 0.55, endA = Math.PI * 1.55;
+  for (let i = 0; i < count; i++) {
+    const a = startA + (i / (count - 1)) * (endA - startA);
+    const x = Math.cos(a) * radius, z = Math.sin(a) * radius;
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -a + Math.random() * 0.15);
+    const lean = (Math.random() - 0.5) * 0.1;
+    m.compose(new THREE.Vector3(x, 0.6, z), q, new THREE.Vector3(1, 1 + Math.random() * 0.25, 1));
+    mesh.setMatrixAt(i, m);
+  }
+  scene.add(mesh);
+}
+buildFence();
+
+// ---------- resize ----------
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  // BASE_FOV is meant as a *horizontal* fov; three.js fov is vertical, so on
+  // narrow portrait screens we widen the vertical fov to keep the camp fully
+  // framed instead of the fire/tent filling the whole width.
+  const vFov = camera.aspect < 1
+    ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_FOV) / 2) / camera.aspect))
+    : BASE_FOV;
+  camera.fov = Math.min(vFov, 80);
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+// ---------- render loop ----------
+const clock = new THREE.Clock();
+let fpsAccum = 0, fpsFrames = 0, fpsTimer = 0;
+setTimeout(() => hint.classList.add("hidden"), 6000);
+
+function tick() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  fireLight.intensity = 2.0 + Math.sin(clock.elapsedTime * 9) * 0.25 + Math.sin(clock.elapsedTime * 23.7) * 0.15 + (Math.random() - 0.5) * 0.2;
+  embers.update(dt);
+
+  controls.update();
+  renderer.render(scene, camera);
+
+  fpsAccum += dt; fpsFrames++; fpsTimer += dt;
+  if (fpsTimer > 0.5) {
+    fpsEl.textContent = Math.round(fpsFrames / fpsAccum) + " fps";
+    fpsAccum = 0; fpsFrames = 0; fpsTimer = 0;
+  }
+
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>
