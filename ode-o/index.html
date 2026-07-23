@@ -441,7 +441,7 @@
   var SIGNAL_WOOD_COST = 3;       // ved en signaleld kräver
   var SIGNAL_ENERGY = 12;         // energi det kostar att gå upp och tända den
   var FIRE_FUEL_COST = 2;   // ved elden förbrukar varje natt för att hållas vid liv
-  var ANIMAL_CHANCE = 0.25; // sannolikhet för rovdjursangrepp en natt utan eld
+  var ANIMAL_CHANCE = 0.32; // sannolikhet för rovdjursangrepp en natt utan eld
   var MAP_COLS = 5, MAP_ROWS = 5, MAP_START = 22; // 5×5-karta, start nederst i mitten (rad 4, kol 2)
   var TERRAIN = {
     strand:  { icon: "🏖️", cls: "t-strand" },
@@ -474,7 +474,7 @@
     var map = [];
     for(var i = 0; i < MAP_COLS * MAP_ROWS; i++){
       var r = Math.floor(i / MAP_COLS), c = i % MAP_COLS;
-      map.push({ terrain: null, revealed: false, dist: Math.abs(r - startR) + Math.abs(c - startC), rich: 3, looted: false });
+      map.push({ terrain: null, revealed: false, dist: Math.abs(r - startR) + Math.abs(c - startC), rich: 2, looted: false });
     }
     map[MAP_START].terrain = "strand";
     map[MAP_START].revealed = true;
@@ -501,8 +501,8 @@
     for(var n = 0; n < map.length; n++){
       var terr = map[n].terrain;
       if(terr === "skog" || terr === "strand"){
-        map[n].hasWater = chance(0.5);
-        map[n].hasFood = chance(0.5);
+        map[n].hasWater = chance(0.35);
+        map[n].hasFood = chance(0.35);
       }
     }
     return map;
