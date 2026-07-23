@@ -19,6 +19,8 @@
     --soon-face: linear-gradient(135deg, #ccd4ec, #bcc6e2);
     --badge-soon-bg: rgba(0,0,0,.10);
     --badge-soon-ink: #3a4266;
+    --badge-dev-bg: rgba(255,140,0,.16);
+    --badge-dev-ink: #8a5300;
     --ctl-bg: rgba(0,0,0,.06);
     --ctl-border: rgba(0,0,0,.16);
   }
@@ -33,6 +35,8 @@
       --soon-face: linear-gradient(135deg, #2a3352, #1c2440);
       --badge-soon-bg: rgba(255,255,255,.14);
       --badge-soon-ink: #cdd6f4;
+      --badge-dev-bg: rgba(255,170,60,.18);
+      --badge-dev-ink: #ffbf6b;
       --ctl-bg: rgba(255,255,255,.10);
       --ctl-border: rgba(255,255,255,.18);
     }
@@ -99,6 +103,7 @@
   .art.spider { background: linear-gradient(135deg, #0a5024, #0b6b2e); }
   .art.island { background: linear-gradient(135deg, #1c7fb8, #6cc6e0 60%, #f3e2b3); }
   .art.mahjong { background: linear-gradient(135deg, #123b34, #1c5a4e 65%, #0d2b26); }
+  .art.laager { background: linear-gradient(135deg, #1c1230, #6b3f2a 65%, #e08a4a); }
   .art.soon { background: var(--soon-face); filter: grayscale(.3); }
   .card h2 { margin: 0 0 6px; font-size: 19px; }
   .card p { margin: 0; font-size: 13.5px; line-height: 1.45; opacity: .7; }
@@ -108,6 +113,7 @@
     padding: 4px 9px; border-radius: 999px;
   }
   .badge.play { background: #ffd200; color: #111; }
+  .badge.dev { background: var(--badge-dev-bg); color: var(--badge-dev-ink); }
   .badge.soon { background: var(--badge-soon-bg); color: var(--badge-soon-ink); }
   .card.soon { opacity: .62; cursor: default; }
 
@@ -144,6 +150,13 @@
         <div class="art island">🏝️</div>
         <h2>Öde ö</h2>
         <p>Överlevnadsspel. Utforska ön via kartan, bygg läger och flotte, och håll ut tills ett skepp räddar dig.</p>
+      </a>
+
+      <a class="card playable" href="/laager/">
+        <span class="badge dev">UNDER UTVECKLING</span>
+        <div class="art laager">🏕️</div>
+        <h2>Läger</h2>
+        <p>3D-prototyp. Bygg och stärk ditt läger av trä och sten för att stå emot faror utifrån.</p>
       </a>
 
       <a class="card playable" href="/mahjong/">
