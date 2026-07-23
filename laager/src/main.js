@@ -13,6 +13,9 @@ import { Player } from "./player/player.js";
 import { createTouchControls } from "./player/controls.js";
 import { createMoveMarker } from "./player/moveMarker.js";
 import { FollowCamera } from "./camera/followCamera.js";
+import { createResources } from "./core/resources.js";
+import { createBuildMode } from "./build/buildMode.js";
+import { STRUCTURES } from "./build/structures.js";
 
 /* ---------------------------------------------------------------------
    Läger — stiliserad low-poly 3D-prototyp
@@ -25,6 +28,13 @@ import { FollowCamera } from "./camera/followCamera.js";
 const container = document.getElementById("app");
 const hint = document.getElementById("hint");
 const fpsEl = document.getElementById("fps");
+const buildToggleBtn = document.getElementById("buildToggle");
+const buildPanel = document.getElementById("buildPanel");
+const structureList = document.getElementById("structureList");
+const buildCancelBtn = document.getElementById("buildCancel");
+const buildConfirmBtn = document.getElementById("buildConfirm");
+const resWoodEl = document.getElementById("resWood");
+const resStoneEl = document.getElementById("resStone");
 
 const PLAY_RADIUS = 17; // how far from camp the player is allowed to walk
 
@@ -59,8 +69,58 @@ buildFence(scene, PALETTE);
 const player = new Player(scene, PALETTE, shadowMat, terrainHeight);
 const marker = createMoveMarker(scene);
 
+// ---------- build system ----------
+const resources = createResources();
+const buildMode = createBuildMode({ scene, palette: PALETTE, shadowMat, resources, terrainHeight });
+
+resources.subscribe(({ wood, stone }) => {
+  resWoodEl.textContent = wood;
+  resStoneEl.textContent = stone;
+});
+
+Object.values(STRUCTURES).forEach((s) => {
+  const btn = document.createElement("button");
+  btn.className = "struct-btn";
+  btn.dataset.id = s.id;
+  btn.innerHTML = `<span class="ic">${s.icon}</span><span>${s.label}</span><span class="cost">${s.cost.wood ? `🪵${s.cost.wood}` : `🪨${s.cost.stone}`}</span>`;
+  btn.addEventListener("click", () => {
+    buildMode.selectStructure(s.id);
+    [...structureList.children].forEach((c) => c.classList.toggle("selected", c === btn));
+    buildConfirmBtn.disabled = !buildMode.canConfirm;
+  });
+  structureList.appendChild(btn);
+});
+
+buildToggleBtn.addEventListener("click", () => {
+  const active = buildMode.toggle();
+  buildToggleBtn.classList.toggle("on", active);
+  buildPanel.classList.toggle("hidden", !active);
+  if (active) {
+    [...structureList.children].forEach((c) => c.classList.remove("selected"));
+    buildConfirmBtn.disabled = true;
+    hint.textContent = "Tryck på marken för att placera · ✓ för att bygga";
+    hint.classList.remove("hidden");
+  } else {
+    hint.classList.add("hidden");
+  }
+});
+
+buildCancelBtn.addEventListener("click", () => {
+  buildMode.cancelGhost();
+  buildConfirmBtn.disabled = true;
+});
+
+buildConfirmBtn.addEventListener("click", () => {
+  if (buildMode.confirm()) buildConfirmBtn.disabled = !buildMode.canConfirm;
+});
+
 createTouchControls(renderer, camera, [ground, clearing], {
   onTap(point) {
+    if (buildMode.active) {
+      buildMode.handleTap(point);
+      buildConfirmBtn.disabled = !buildMode.canConfirm;
+      return;
+    }
     const len = Math.hypot(point.x, point.z);
     const p = len > PLAY_RADIUS ? point.clone().multiplyScalar(PLAY_RADIUS / len) : point;
     player.moveTo(p.x, p.z);

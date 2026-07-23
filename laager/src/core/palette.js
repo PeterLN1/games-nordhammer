@@ -9,6 +9,7 @@ export const PALETTE = {
   leaves: [0x2f4a34, 0x35553c, 0x3c5c3f],
   rock: 0x77786f,
   stoneBuilt: 0x8f8f83,
+  plank: 0x6b4a30,
   fence: 0x5b4430,
   logs: 0x33210f,
   moon: 0xf3ecd6,

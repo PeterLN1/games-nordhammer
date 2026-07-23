@@ -50,6 +50,46 @@
     font-size: 10px; color: rgba(242,238,224,.4); font-variant-numeric: tabular-nums;
     pointer-events: none;
   }
+
+  .fab {
+    position: fixed; right: 16px; bottom: max(22px, env(safe-area-inset-bottom));
+    z-index: 6; width: 52px; height: 52px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+    background: rgba(20,13,36,.7); border: 1px solid rgba(255,255,255,.18);
+    color: #f2eee0; backdrop-filter: blur(6px);
+  }
+  .fab.on { background: #ffb14a; color: #241505; border-color: transparent; }
+
+  .build-panel {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+    padding: 12px 16px max(14px, env(safe-area-inset-bottom));
+    background: rgba(16,11,26,.82); backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(255,255,255,.12);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .build-panel.hidden { display: none; }
+
+  .resources { display: flex; gap: 14px; font-size: 13px; font-weight: 600; }
+
+  .structures { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+  .struct-btn {
+    flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 11px; font-weight: 600; color: #f2eee0;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14);
+    border-radius: 12px; padding: 8px 12px; min-width: 62px;
+  }
+  .struct-btn .ic { font-size: 18px; }
+  .struct-btn.selected { border-color: #ffb14a; background: rgba(255,177,74,.16); }
+  .struct-btn .cost { opacity: .6; font-weight: 500; }
+
+  .build-actions { display: flex; gap: 10px; }
+  .build-actions button {
+    flex: 1; padding: 10px; border-radius: 12px; font-size: 14px; font-weight: 700;
+    border: 1px solid rgba(255,255,255,.14);
+  }
+  #buildCancel { background: rgba(255,255,255,.06); color: #f2eee0; }
+  #buildConfirm { background: #ffb14a; color: #241505; border-color: transparent; }
+  #buildConfirm:disabled { background: rgba(255,255,255,.1); color: rgba(242,238,224,.4); }
 </style>
 </head>
 <body>
@@ -61,6 +101,19 @@
   </div>
   <div class="hint" id="hint">Tryck på marken för att gå dit · nyp för att zooma</div>
   <div class="fps" id="fps"></div>
+
+  <button class="fab" id="buildToggle" aria-label="Bygg-läge">🔨</button>
+  <div class="build-panel hidden" id="buildPanel">
+    <div class="resources">
+      <span>🪵 <span id="resWood">0</span></span>
+      <span>🪨 <span id="resStone">0</span></span>
+    </div>
+    <div class="structures" id="structureList"></div>
+    <div class="build-actions">
+      <button id="buildCancel">✕ Avbryt</button>
+      <button id="buildConfirm" disabled>✓ Bygg</button>
+    </div>
+  </div>
 
 <script type="importmap">
 {
