@@ -202,8 +202,11 @@
   }
   .map-cell.harvest { cursor: pointer; }
   .map-cell.explorable:active, .map-cell.harvest:active { transform: scale(.93); }
-  .map-cell.start { outline: 2px solid var(--sea); outline-offset: -2px; }
+  .map-cell.start { outline: 2px solid var(--sea); outline-offset: -2px; cursor: pointer; }
+  .map-cell.start:active { transform: scale(.93); }
   .map-cell.depleted { filter: grayscale(60%); opacity: .55; }
+  .map-grid.locked .map-cell.explorable,
+  .map-grid.locked .map-cell.harvest { opacity: .4; cursor: default; pointer-events: none; }
   .map-cost {
     position: absolute; bottom: 2px; right: 3px;
     font-size: 9px; font-weight: 800; color: #1b2a38;
@@ -455,6 +458,7 @@
   var sceneLast = null;  // senast renderad läger-nivå (för animation)
   var raftLast = null;   // senast renderad flotte-nivå (för animation)
   var stormTimer = null; // timeout-id för pågående stormblixt
+  var mapLocked = false; // true efter dagens sista handling — måste stänga kartan innan man kan fortsätta
 
   function rint(a, b){ return a + Math.floor(Math.random() * (b - a + 1)); } // inkl. b
   function chance(p){ return Math.random() < p; }
@@ -532,6 +536,7 @@
     };
     sceneLast = null;
     raftLast = null;
+    mapLocked = false;
     if(stormTimer){ clearTimeout(stormTimer); stormTimer = null; }
     var sceneEl = document.getElementById("scene");
     if(sceneEl) sceneEl.classList.remove("storm-shake");
@@ -761,6 +766,7 @@
     if(S.over){
       closeMap(); // spelet är slut — visa vinst/förlust-rutan
     } else {
+      if(endedDay) mapLocked = true; // måste stänga kartan innan man kan fortsätta
       renderMap(); // uppdatera kartan så den senast utforskade rutan syns
       var toastText = fullText;
       if(endedDay) toastText += '<div class="map-toast-night">🌙 Natten föll. Stäng kartan och se vad som hände i lägret.</div>';
@@ -942,6 +948,7 @@
 
   function openMap(){
     if(S.over || S.actionsLeft <= 0) return;
+    mapLocked = false; // ny dag, nya handlingar -> kartan är olåst igen
     renderMap();
     document.getElementById("mapToast").className = "map-toast hidden";
     document.getElementById("mapOverlay").classList.remove("hidden");
@@ -982,10 +989,11 @@
         cls += " fog";
       }
       if(tappable) cost = '<span class="map-cost">⚡' + tileEnergyCost(t) + '</span>';
-      var attr = tappable ? ' data-idx="' + i + '"' : '';
+      var attr = tappable ? ' data-idx="' + i + '"' : (t.isStart ? ' data-camp="1"' : '');
       html += '<div class="' + cls + '"' + attr + '>' + content + cost + '</div>';
     }
     grid.innerHTML = html;
+    grid.classList.toggle("locked", mapLocked);
   }
 
   function updateBuildButton(){
@@ -1132,6 +1140,8 @@
     else doAct(act);
   });
   document.getElementById("mapGrid").addEventListener("click", function(ev){
+    if(ev.target.closest(".map-cell[data-camp]")){ closeMap(); return; } // lägret på kartan -> stäng alltid
+    if(mapLocked) return; // dagen är slut — måste stänga kartan innan man kan fortsätta
     var cell = ev.target.closest(".map-cell[data-idx]");
     if(cell) exploreTile(parseInt(cell.getAttribute("data-idx"), 10));
   });
