@@ -210,9 +210,12 @@
     background: rgba(255,255,255,.7); border-radius: 5px; padding: 0 2px; line-height: 1.3;
   }
   .map-cell.explorable .map-cost { background: rgba(255,255,255,.55); }
-  .map-depleted {
-    position: absolute; top: 1px; left: 2px; font-size: 11px; line-height: 1;
+  .map-badge-water, .map-badge-food, .map-badge-depleted {
+    position: absolute; font-size: 11px; line-height: 1;
   }
+  .map-badge-water { top: 1px; left: 2px; }
+  .map-badge-food { top: 1px; right: 3px; }
+  .map-badge-depleted { bottom: 2px; left: 3px; }
   .t-strand { background: #efdca6; } .t-skog { background: #6cae54; }
   .t-klippor { background: #9aa7a0; } .t-kalla { background: #5aa7d6; }
   .t-vrak { background: #b08a5a; } .t-grotta { background: #6b5a48; }
@@ -416,7 +419,7 @@
     <div class="map-grid" id="mapGrid"></div>
     <div class="map-toast hidden" id="mapToast"></div>
     <div class="map-legend">
-      Tryck på en <b>?</b>-ruta för att utforska ny mark, eller på en känd ruta för att söka igen. ⚓ vrakfält = flottdelar · 💧 källa · 🔭 utsikt = lättare att bli sedd.
+      Tryck på en <b>?</b>-ruta för att utforska ny mark, eller på en känd ruta för att söka igen. Inte alla skogar/stränder har vatten eller mat — badges på rutan visar det: 💧 vatten · 🍓 mat · 🥀 veden tömd. ⚓ vrakfält = flottdelar · 💧 källa = bäst vatten · 🔭 utsikt = lättare att bli sedd.
     </div>
   </div>
 </div>
@@ -486,6 +489,15 @@
       var roll = Math.random();
       if(edge) map[m].terrain = roll < 0.55 ? "strand" : roll < 0.80 ? "skog" : roll < 0.95 ? "klippor" : "karg";
       else     map[m].terrain = roll < 0.50 ? "skog" : roll < 0.75 ? "klippor" : roll < 0.90 ? "strand" : "karg";
+    }
+
+    // Inte alla skogar har en bäck, inte alla stränder har kokosnötter — slumpas per ruta
+    for(var n = 0; n < map.length; n++){
+      var terr = map[n].terrain;
+      if(terr === "skog" || terr === "strand"){
+        map[n].hasWater = chance(0.5);
+        map[n].hasFood = chance(0.5);
+      }
     }
     return map;
   }
@@ -643,16 +655,19 @@
         var w = t.rich > 0 ? rint(2, 4) : rint(0, 1);
         if(t.rich > 0) t.rich--;
         S.wood += w;
-        var sw = waterGain(9, 15);
-        var msg = lead + "Längs stranden samlade du drivved och drack ur kokosnötter. <small>Ved +" + w + " · Vatten +" + sw + "</small>";
+        var msg = lead + "Längs stranden samlade du drivved. <small>Ved +" + w + "</small>";
+        if(t.hasWater){
+          var sw = waterGain(9, 15);
+          msg += " Du hittade kokosnötter att dricka ur. <small>Vatten +" + sw + "</small>";
+        }
         var tools = missingTools();
         if(tools.length && chance(0.35)){
           var tool = tools[rint(0, tools.length - 1)];
           giveItem(tool);
           msg += " Bland vrakspillrorna låg " + ITEM_NAMES[tool] + ".";
-        } else if(chance(0.45)){
+        } else if(t.hasFood && chance(0.6)){
           var b = rint(12, 20); S.food = clamp(S.food + b);
-          msg += " Du hittade också ett bärsnår. <small>Mat +" + b + "</small>";
+          msg += " Du hittade ett bärsnår. <small>Mat +" + b + "</small>";
         }
         return { text: msg, cls: "good" };
       }
@@ -660,9 +675,12 @@
         var wv = t.rich > 0 ? rint(2, 3) + (S.gear.kniv ? 1 : 0) : rint(0, 1);
         if(t.rich > 0) t.rich--;
         S.wood += wv;
-        var fw = waterGain(13, 19);
-        var m2 = lead + "I skogen samlade du ved och drack ur en bäck. <small>Ved +" + wv + " · Vatten +" + fw + "</small>";
-        if(chance(0.55)){ var f = rint(12, 20); S.food = clamp(S.food + f); m2 += " Du plockade frukt. <small>Mat +" + f + "</small>"; }
+        var m2 = lead + "I skogen samlade du ved. <small>Ved +" + wv + "</small>";
+        if(t.hasWater){
+          var fw = waterGain(13, 19);
+          m2 += " Du drack ur en bäck. <small>Vatten +" + fw + "</small>";
+        }
+        if(t.hasFood && chance(0.6)){ var f = rint(12, 20); S.food = clamp(S.food + f); m2 += " Du plockade frukt. <small>Mat +" + f + "</small>"; }
         return { text: m2, cls: "good" };
       }
       case "klippor": {
@@ -951,7 +969,11 @@
         cls += " " + TERRAIN[t.terrain].cls + (harvestable ? " harvest" : "");
         var depleted = harvestable && (t.terrain === "skog" || t.terrain === "strand") && t.rich <= 0;
         if(depleted) cls += " depleted";
-        content = TERRAIN[t.terrain].icon + (depleted ? '<span class="map-depleted" title="Tömd">🥀</span>' : "");
+        var badges = "";
+        if(t.hasWater) badges += '<span class="map-badge-water" title="Vatten finns här">💧</span>';
+        if(t.hasFood) badges += '<span class="map-badge-food" title="Mat finns här">🍓</span>';
+        if(depleted) badges += '<span class="map-badge-depleted" title="Ved uttömd">🥀</span>';
+        content = TERRAIN[t.terrain].icon + badges;
       } else if(explorable){
         cls += " explorable"; content = "?";
       } else {
@@ -1068,7 +1090,7 @@
         '<li>Håll mat, vatten och energi över noll — annars sjunker hälsan.</li>' +
         '<li>Fiska efter mat, och utforska öns rutor på kartan för ved, vatten och mer mat.</li>' +
         '<li>Bygg läger med ved för att klara nätterna. Elden kräver ved varje natt — slocknar den blir du sårbar för rovdjur.</li>' +
-        '<li>Kartan: 🌴 skog och 🏖️ strand ger ved och vatten, 💧 källa ger mest, ⚓ vrakfält har flottdelar, 🔭 utsikt låter dig tända en signaleld som lockar skepp.</li>' +
+        '<li>Kartan: 🌴 skog och 🏖️ strand ger ved, men bara vissa rutor har vatten (💧) eller mat (🍓) — synligt som badges. 💧 källa ger mest vatten, ⚓ vrakfält har flottdelar, 🔭 utsikt låter dig tända en signaleld som lockar skepp.</li>' +
         '<li>När lägret är klart — bygg en flotte av ved, rep och segelduk.</li>' +
         '<li>Skepp passerar med slumpade mellanrum. Utan flotte missar du dem — håll ut och var redo.</li>' +
       '</ul>' +
