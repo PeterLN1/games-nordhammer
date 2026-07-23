@@ -501,8 +501,8 @@
     for(var n = 0; n < map.length; n++){
       var terr = map[n].terrain;
       if(terr === "skog" || terr === "strand"){
-        map[n].hasWater = chance(0.35);
-        map[n].hasFood = chance(0.35);
+        map[n].hasWater = chance(0.6);  // vatten saknar en tillförlitlig backup — hålls högt
+        map[n].hasFood = chance(0.35);  // mat kan man alltid fiska till, så låg chans är ok
       }
     }
     return map;
