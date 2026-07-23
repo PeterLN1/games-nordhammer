@@ -91,8 +91,8 @@ Object.values(STRUCTURES).forEach((s) => {
   structureList.appendChild(btn);
 });
 
-buildToggleBtn.addEventListener("click", () => {
-  const active = buildMode.toggle();
+function setBuildActive(active) {
+  buildMode.toggle(active);
   buildToggleBtn.classList.toggle("on", active);
   buildPanel.classList.toggle("hidden", !active);
   if (active) {
@@ -103,12 +103,14 @@ buildToggleBtn.addEventListener("click", () => {
   } else {
     hint.classList.add("hidden");
   }
-});
+}
 
-buildCancelBtn.addEventListener("click", () => {
-  buildMode.cancelGhost();
-  buildConfirmBtn.disabled = true;
-});
+buildToggleBtn.addEventListener("click", () => setBuildActive(!buildMode.active));
+
+// Avbryt always backs all the way out of build mode — a partial "just clear
+// the ghost but stay in the panel" state read as broken (tapping it seemed
+// to do nothing whenever no ghost happened to be showing).
+buildCancelBtn.addEventListener("click", () => setBuildActive(false));
 
 buildConfirmBtn.addEventListener("click", () => {
   if (buildMode.confirm()) buildConfirmBtn.disabled = !buildMode.canConfirm;

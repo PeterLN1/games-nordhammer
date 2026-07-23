@@ -64,11 +64,5 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       ghost.hide();
       return true;
     },
-
-    cancelGhost() {
-      pending = null;
-      ghost.clear();
-      if (selected) ghost.setShape(selected);
-    },
   };
 }
