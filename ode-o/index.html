@@ -231,6 +231,10 @@
   .map-toast.bad { border-color: rgba(224,92,92,.55); }
   .map-toast small { color: var(--ink-soft); font-weight: 700; }
   .map-toast.pop { animation: toastpop .3s ease; }
+  .map-toast-night {
+    margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--panel-brd);
+    font-weight: 700; color: var(--ink);
+  }
   @keyframes toastpop { 0% { transform: scale(.96); opacity: .35; } 100% { transform: none; opacity: 1; } }
 
   button.act.act-wide { grid-column: 1 / -1; }
@@ -261,8 +265,6 @@
   <div class="resbar">
     <span class="res actions" id="resActions">Handlingar: 4</span>
     <span class="res" id="resWood">🪵 Ved 0</span>
-    <span class="res" id="resCamp">⛺ Läger 0</span>
-    <span class="res" id="resRaft">🛟 Flotte 0/3</span>
     <span class="res" id="resGear">🎒 —</span>
   </div>
 
@@ -756,11 +758,13 @@
     checkEnd();
     render();
 
-    if(S.over || endedDay){
-      closeMap(); // dagen (eller spelet) är slut — dagboken visar nattens händelser
+    if(S.over){
+      closeMap(); // spelet är slut — visa vinst/förlust-rutan
     } else {
-      renderMap();                       // uppdatera kartan så den utforskade rutan syns
-      showMapToast(fullText, res.cls || ""); // och visa utfallet direkt
+      renderMap(); // uppdatera kartan så den senast utforskade rutan syns
+      var toastText = fullText;
+      if(endedDay) toastText += '<div class="map-toast-night">🌙 Natten föll. Stäng kartan och se vad som hände i lägret.</div>';
+      showMapToast(toastText, res.cls || "");
     }
   }
 
@@ -900,8 +904,6 @@
     document.getElementById("dayChip").textContent = "Dag " + S.day;
     document.getElementById("resActions").textContent = "Handlingar: " + S.actionsLeft;
     document.getElementById("resWood").textContent = "🪵 Ved " + S.wood;
-    document.getElementById("resCamp").textContent = "⛺ Läger " + S.camp;
-    document.getElementById("resRaft").textContent = "🛟 Flotte " + S.raft + "/3";
 
     var g = [];
     if(S.gear.spjut) g.push("🔱");
