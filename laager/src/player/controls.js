@@ -1,13 +1,20 @@
 import * as THREE from "three";
 
+// A single finger down doesn't commit to "walk here" immediately — it
+// waits this long for a second finger to show up and turn the gesture into
+// a pinch instead. Long enough to catch a real pinch's second finger,
+// short enough that a normal tap doesn't feel delayed.
+const TAP_DELAY_MS = 140;
+
 // One finger taps the ground to walk there (raycast against the ground
-// meshes). Two fingers pinch to zoom the follow camera in/out. The two
-// gestures are told apart by how many pointers are active at once.
+// meshes). Two fingers pinch to zoom the follow camera in/out.
 export function createTouchControls(renderer, camera, groundMeshes, { onTap, onPinchZoom }) {
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const pointers = new Map(); // pointerId -> {x, y}
   let prevPinchDist = null;
+  let tapTimer = null;
+  let tapPos = null;
 
   function pick(clientX, clientY) {
     const rect = renderer.domElement.getBoundingClientRect();
@@ -23,13 +30,24 @@ export function createTouchControls(renderer, camera, groundMeshes, { onTap, onP
     return Math.hypot(a.x - b.x, a.y - b.y);
   }
 
+  function cancelPendingTap() {
+    clearTimeout(tapTimer);
+    tapTimer = null;
+  }
+
   const el = renderer.domElement;
 
   el.addEventListener("pointerdown", (e) => {
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.size === 1) {
-      pick(e.clientX, e.clientY);
+      tapPos = { x: e.clientX, y: e.clientY };
+      cancelPendingTap();
+      tapTimer = setTimeout(() => {
+        tapTimer = null;
+        if (pointers.size < 2) pick(tapPos.x, tapPos.y);
+      }, TAP_DELAY_MS);
     } else if (pointers.size === 2) {
+      cancelPendingTap(); // a second finger arrived — this is a pinch, not a tap
       prevPinchDist = pinchDistance();
     }
   });
