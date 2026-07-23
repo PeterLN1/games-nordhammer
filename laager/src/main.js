@@ -10,7 +10,7 @@ import { buildTrees } from "./world/trees.js";
 import { buildRocks } from "./world/rocks.js";
 import { buildFence } from "./world/fence.js";
 import { Player } from "./player/player.js";
-import { createTapToMoveControls } from "./player/controls.js";
+import { createTouchControls } from "./player/controls.js";
 import { createMoveMarker } from "./player/moveMarker.js";
 import { FollowCamera } from "./camera/followCamera.js";
 
@@ -59,12 +59,17 @@ buildFence(scene, PALETTE);
 const player = new Player(scene, PALETTE, shadowMat, terrainHeight);
 const marker = createMoveMarker(scene);
 
-createTapToMoveControls(renderer, camera, [ground, clearing], (point) => {
-  const len = Math.hypot(point.x, point.z);
-  const p = len > PLAY_RADIUS ? point.clone().multiplyScalar(PLAY_RADIUS / len) : point;
-  player.moveTo(p.x, p.z);
-  marker.show(p.x, terrainHeight(p.x, p.z), p.z);
-  hint.classList.add("hidden");
+createTouchControls(renderer, camera, [ground, clearing], {
+  onTap(point) {
+    const len = Math.hypot(point.x, point.z);
+    const p = len > PLAY_RADIUS ? point.clone().multiplyScalar(PLAY_RADIUS / len) : point;
+    player.moveTo(p.x, p.z);
+    marker.show(p.x, terrainHeight(p.x, p.z), p.z);
+    hint.classList.add("hidden");
+  },
+  onPinchZoom(deltaPx) {
+    followCam.zoomBy(deltaPx);
+  },
 });
 
 // ---------- resize ----------
