@@ -13,7 +13,7 @@ import { createTouchControls } from "./player/controls.js";
 import { createMoveMarker } from "./player/moveMarker.js";
 import { FollowCamera } from "./camera/followCamera.js";
 import { createResources } from "./core/resources.js";
-import { createBuildMode } from "./build/buildMode.js";
+import { createBuildMode, platformSurfaceAt } from "./build/buildMode.js";
 import { STRUCTURES } from "./build/structures.js";
 import { createGridGuide } from "./build/gridGuide.js";
 import { createCutaway } from "./build/cutaway.js";
@@ -71,15 +71,19 @@ buildTrees(scene, PALETTE, shadowMat);
 buildRocks(scene, PALETTE);
 buildFence(scene, PALETTE);
 
-// ---------- player ----------
-const player = new Player(scene, PALETTE, shadowMat, terrainHeight);
-const marker = createMoveMarker(scene);
-
 // ---------- build system ----------
 const resources = createResources();
 const buildMode = createBuildMode({ scene, palette: PALETTE, shadowMat, resources, terrainHeight });
 const gridGuide = createGridGuide(scene);
 const cutaway = createCutaway();
+
+// ---------- player ----------
+// stand on a platform's surface if there is one, otherwise the ground
+function groundOrPlatformHeight(x, z) {
+  return platformSurfaceAt(x, z, buildMode.placed) ?? terrainHeight(x, z);
+}
+const player = new Player(scene, PALETTE, shadowMat, groundOrPlatformHeight);
+const marker = createMoveMarker(scene);
 
 resources.subscribe(({ wood, stone, grass }) => {
   resWoodEl.textContent = wood;
@@ -166,7 +170,7 @@ createTouchControls(renderer, camera, [ground, clearing], {
     const len = Math.hypot(point.x, point.z);
     const p = len > PLAY_RADIUS ? point.clone().multiplyScalar(PLAY_RADIUS / len) : point;
     player.moveTo(p.x, p.z);
-    marker.show(p.x, terrainHeight(p.x, p.z), p.z);
+    marker.show(p.x, groundOrPlatformHeight(p.x, p.z), p.z);
     hint.classList.add("hidden");
   },
   onPinchZoom(deltaPx) {

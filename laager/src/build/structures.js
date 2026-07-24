@@ -1,7 +1,6 @@
 import * as THREE from "three";
 
 export const SNAP_SIZE = 1.2; // grid cell size, matches the wall segment width
-export const DEFAULT_PLATFORM_HEIGHT = 1.3; // used when a platform isn't snapped onto a post
 
 // transparent:true (at opacity 1, visually identical to opaque) so the
 // cutaway system can fade walls/roofs in place without ever recompiling
@@ -10,20 +9,20 @@ function mat(palette, key, extra = {}) {
   return new THREE.MeshStandardMaterial({ color: palette[key], flatShading: true, roughness: 0.9, transparent: true, ...extra });
 }
 
-// A dry-stone wall built from staggered courses of irregular blocks
-// (instanced, so it's still ~1 draw call) instead of one smooth slab —
-// varied block size/depth/rotation and a jagged top course read as
-// hand-stacked stone rather than poured concrete.
+// A dry-stone wall built from staggered courses of irregular boulders —
+// the same low-poly icosahedron primitive as the scattered natural rocks
+// elsewhere in the scene, so a built wall reads as piled fieldstone
+// instead of cut/poured blocks. Still one InstancedMesh (~1 draw call).
 function buildStoneWall(palette) {
-  const W = 1.15, D = 0.26;
+  const W = 1.15, D = 0.28;
   const rows = [
-    { y0: 0, h: 0.24, count: 3 },
-    { y0: 0.24, h: 0.24, count: 4 },
-    { y0: 0.48, h: 0.3, count: 3 },
+    { y0: 0, h: 0.26, count: 4 },
+    { y0: 0.24, h: 0.26, count: 5 },
+    { y0: 0.48, h: 0.3, count: 4 },
   ];
   const stoneMat = mat(palette, "stoneBuilt");
   const total = rows.reduce((s, r) => s + r.count, 0);
-  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), stoneMat, total);
+  const mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.5, 0), stoneMat, total);
 
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), color = new THREE.Color();
   let i = 0;
@@ -32,13 +31,13 @@ function buildStoneWall(palette) {
     const stagger = rowIndex % 2 === 1 ? cellW * 0.4 : 0;
     for (let c = 0; c < row.count; c++) {
       const cx = -W / 2 + cellW * (c + 0.5) + stagger + (Math.random() - 0.5) * cellW * 0.15;
-      const stoneW = cellW * (1.05 + Math.random() * 0.15); // slight overlap: no see-through mortar gaps
-      const stoneH = row.h * (0.8 + Math.random() * 0.35);
-      const stoneD = D * (0.7 + Math.random() * 0.55);
-      const cy = row.y0 + stoneH / 2 + (Math.random() - 0.5) * 0.02;
-      const cz = (Math.random() - 0.5) * 0.03;
-      q.setFromEuler(new THREE.Euler((Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.14, (Math.random() - 0.5) * 0.08));
-      m.compose(new THREE.Vector3(cx, cy, cz), q, new THREE.Vector3(stoneW, stoneH, stoneD));
+      const sx = cellW * (0.55 + Math.random() * 0.2);
+      const sy = row.h * (0.5 + Math.random() * 0.35);
+      const sz = D * (0.45 + Math.random() * 0.3);
+      const cy = row.y0 + sy * 0.55;
+      const cz = (Math.random() - 0.5) * 0.04;
+      q.setFromEuler(new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI));
+      m.compose(new THREE.Vector3(cx, cy, cz), q, new THREE.Vector3(sx, sy, sz));
       mesh.setMatrixAt(i, m);
       color.set(palette.stoneBuilt).multiplyScalar(0.8 + Math.random() * 0.35);
       mesh.setColorAt(i, color);
@@ -108,6 +107,30 @@ function buildPlatform(palette) {
   return group;
 }
 
+// A fixed-height ladder (roughly a post's height, since that's the usual
+// platform clearance) leaning against a platform's edge.
+function buildLadder(palette) {
+  const group = new THREE.Group();
+  const woodMat = mat(palette, "trunk");
+  const H = 1.35, W = 0.46;
+
+  const railGeo = new THREE.CylinderGeometry(0.035, 0.035, H, 5);
+  [-W / 2, W / 2].forEach((x) => {
+    const rail = new THREE.Mesh(railGeo, woodMat);
+    rail.position.set(x, H / 2, 0);
+    group.add(rail);
+  });
+
+  const rungGeo = new THREE.CylinderGeometry(0.03, 0.03, W, 5);
+  for (let i = 0; i < 5; i++) {
+    const rung = new THREE.Mesh(rungGeo, woodMat);
+    rung.rotation.z = Math.PI / 2;
+    rung.position.set(0, 0.15 + i * ((H - 0.3) / 4), 0);
+    group.add(rung);
+  }
+  return group;
+}
+
 export const STRUCTURES = {
   wallWood: {
     id: "wallWood",
@@ -158,7 +181,7 @@ export const STRUCTURES = {
     shadowRadius: 0.35,
     width: 0.2,
     height: 1.3,
-    snapMode: "edge",
+    snapMode: "free", // plain grid placement — posts don't chain end-to-end like walls
     build(palette) {
       const postMat = mat(palette, "fence");
       const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.3, 6), postMat);
@@ -174,7 +197,7 @@ export const STRUCTURES = {
     cost: { wood: 2, stone: 0, grass: 3 },
     shadowRadius: 0.9,
     width: 1.15,
-    snapMode: "top", // snaps onto the top of any nearby wall/post
+    snapMode: "top", // snaps onto the top of a nearby wall/post — never floats
     build(palette) {
       return buildRoof(palette);
     },
@@ -183,13 +206,27 @@ export const STRUCTURES = {
   platform: {
     id: "platform",
     label: "Plattform",
-    icon: "🪜",
+    icon: "🪵",
     cost: { wood: 4, stone: 0, grass: 0 },
     shadowRadius: 1.0,
     width: 1.3,
-    snapMode: "topPost", // snaps onto the top of a post specifically
+    height: 0.1, // its walkable surface, for a wall/roof/ladder resting on it
+    snapMode: "topPost", // snaps onto the top of a post — never floats unsupported
     build(palette) {
       return buildPlatform(palette);
+    },
+  },
+
+  ladder: {
+    id: "ladder",
+    label: "Stege",
+    icon: "🪜",
+    cost: { wood: 2, stone: 0 },
+    shadowRadius: 0.4,
+    width: 0.46,
+    snapMode: "ladder", // snaps to the ground at the edge of a nearby platform
+    build(palette) {
+      return buildLadder(palette);
     },
   },
 };

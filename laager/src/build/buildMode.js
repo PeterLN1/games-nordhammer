@@ -1,10 +1,11 @@
-import { STRUCTURES, SNAP_SIZE, DEFAULT_PLATFORM_HEIGHT } from "./structures.js";
+import { STRUCTURES, SNAP_SIZE } from "./structures.js";
 import { createPlacementGhost } from "./placementGhost.js";
 import { addShadowBlob } from "../core/shadowDecals.js";
 
 const BUILD_RADIUS = 6.5; // how far from camp you can place structures
 const NEIGHBOR_SEARCH_RADIUS = 2.2; // how close a tap must be to an existing edge to snap onto it
 const TOP_SEARCH_RADIUS = 1.6; // how close a tap must be to snap a roof/platform onto a top
+const LADDER_SEARCH_RADIUS = 2.0; // how close a tap must be to a platform to attach a ladder
 
 function snap(v) {
   return Math.round(v / SNAP_SIZE) * SNAP_SIZE;
@@ -28,13 +29,14 @@ function forward(rotY) {
 }
 
 // The two open ends of a placed structure, in world space, each carrying
-// the structure's own facing as the "continue straight from here" default.
+// the structure's own facing and base height as the "continue straight
+// from here" default.
 function endPoints(p) {
   const dir = forward(p.rotY);
   const half = p.structure.width / 2;
   return [
-    { x: p.x + dir.x * half, z: p.z + dir.z * half, rotY: p.rotY },
-    { x: p.x - dir.x * half, z: p.z - dir.z * half, rotY: p.rotY },
+    { x: p.x + dir.x * half, z: p.z + dir.z * half, y: p.y, rotY: p.rotY },
+    { x: p.x - dir.x * half, z: p.z - dir.z * half, y: p.y, rotY: p.rotY },
   ];
 }
 
@@ -71,6 +73,44 @@ function findNearestTop(point, placed, filterFn) {
   return best;
 }
 
+// If (x,z) is over a placed platform, the height of its walkable surface —
+// so a wall/post built there sits on the platform instead of at ground
+// level, and the player standing on it doesn't sink to the ground.
+export function platformSurfaceAt(x, z, placed) {
+  let best = null;
+  for (const p of placed) {
+    if (p.structure.id !== "platform") continue;
+    if (Math.hypot(p.x - x, p.z - z) < p.structure.width / 2) {
+      const y = p.y + p.structure.height;
+      if (best === null || y > best) best = y;
+    }
+  }
+  return best;
+}
+
+// Nearest point on a nearby platform's (approximated circular) edge,
+// facing outward — where a ladder plants its feet on the ground.
+function findLadderAnchor(point, placed) {
+  let best = null, bestDist = Infinity;
+  for (const p of placed) {
+    if (p.structure.id !== "platform") continue;
+    const d = Math.hypot(p.x - point.x, p.z - point.z);
+    if (d > LADDER_SEARCH_RADIUS) continue;
+    const away = { x: point.x - p.x, z: point.z - p.z };
+    const len = Math.hypot(away.x, away.z) || 1;
+    const nx = away.x / len, nz = away.z / len;
+    const half = p.structure.width / 2;
+    const anchorX = p.x + nx * half;
+    const anchorZ = p.z + nz * half;
+    const dd = Math.hypot(anchorX - point.x, anchorZ - point.z);
+    if (dd < bestDist) {
+      bestDist = dd;
+      best = { x: anchorX, z: anchorZ, rotY: Math.atan2(nx, nz) };
+    }
+  }
+  return best;
+}
+
 export function createBuildMode({ scene, palette, shadowMat, resources, terrainHeight }) {
   const ghost = createPlacementGhost(scene, palette);
   const placed = []; // {x, y, z, rotY, structure, mesh, shadowMesh}
@@ -83,25 +123,26 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
   // - "edge" + pivot set: locked onto a neighbor's corner — rotating swings
   //   the piece around that point (lets you turn a 90° corner).
   // - "edge" + no pivot: free grid cell — rotating spins the piece in place.
-  // - "top"/"topPost": resting on top of a wall/post (or a fixed default
-  //   height if nothing to rest on) — rotating spins it in place there.
+  // - "free"/"top"/"topPost"/"ladder": resting at a fixed anchor point
+  //   (ground, or on top of/against something) — rotating spins in place.
   let mode = "edge";
   let pivot = null;
   let freeCenter = null;
   let anchorY = 0;
   let currentRotY = 0;
 
+  function clearPending() {
+    pending = null;
+    ghost.hide();
+  }
+
   function commitGhost() {
     let x, z, y;
-    if (mode === "edge") {
-      if (pivot) {
-        const dir = forward(currentRotY);
-        x = pivot.x + dir.x * (selected.width / 2);
-        z = pivot.z + dir.z * (selected.width / 2);
-      } else {
-        x = freeCenter.x; z = freeCenter.z;
-      }
-      y = terrainHeight(x, z);
+    if (mode === "edge" && pivot) {
+      const dir = forward(currentRotY);
+      x = pivot.x + dir.x * (selected.width / 2);
+      z = pivot.z + dir.z * (selected.width / 2);
+      y = pivot.y;
     } else {
       x = freeCenter.x; z = freeCenter.z; y = anchorY;
     }
@@ -147,33 +188,56 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
     handleTap(point) {
       if (!active || !selected) return;
       const clamped = clampToBuildRadius(point);
-      mode = selected.snapMode === "edge" ? "edge" : selected.snapMode;
+      mode = selected.snapMode;
 
       if (mode === "edge") {
         const corner = findNearestCorner(clamped, placed);
         if (corner) {
-          pivot = { x: corner.x, z: corner.z };
+          pivot = { x: corner.x, z: corner.z, y: corner.y };
           currentRotY = corner.rotY; // default: continue straight from this end
         } else {
           pivot = null;
-          freeCenter = { x: snap(clamped.x), z: snap(clamped.z) };
-          currentRotY = tangentRotation(freeCenter.x, freeCenter.z);
+          const gx = snap(clamped.x), gz = snap(clamped.z);
+          freeCenter = { x: gx, z: gz };
+          anchorY = platformSurfaceAt(gx, gz, placed) ?? terrainHeight(gx, gz);
+          currentRotY = tangentRotation(gx, gz);
         }
-      } else {
+        commitGhost();
+        return;
+      }
+
+      if (mode === "free") {
         pivot = null;
+        const gx = snap(clamped.x), gz = snap(clamped.z);
+        freeCenter = { x: gx, z: gz };
+        anchorY = platformSurfaceAt(gx, gz, placed) ?? terrainHeight(gx, gz);
+        currentRotY = tangentRotation(gx, gz);
+        commitGhost();
+        return;
+      }
+
+      if (mode === "top" || mode === "topPost") {
         const filter = mode === "topPost" ? (p) => p.structure.id === "post" : null;
         const anchor = findNearestTop(clamped, placed, filter);
-        if (anchor) {
-          freeCenter = { x: anchor.x, z: anchor.z };
-          anchorY = anchor.y;
-          currentRotY = anchor.rotY;
-        } else {
-          freeCenter = { x: snap(clamped.x), z: snap(clamped.z) };
-          anchorY = mode === "topPost" ? DEFAULT_PLATFORM_HEIGHT : terrainHeight(freeCenter.x, freeCenter.z);
-          currentRotY = tangentRotation(freeCenter.x, freeCenter.z);
-        }
+        if (!anchor) { clearPending(); return; } // nothing to rest on — refuse rather than float
+        pivot = null;
+        freeCenter = { x: anchor.x, z: anchor.z };
+        anchorY = anchor.y;
+        currentRotY = anchor.rotY;
+        commitGhost();
+        return;
       }
-      commitGhost();
+
+      if (mode === "ladder") {
+        const anchor = findLadderAnchor(clamped, placed);
+        if (!anchor) { clearPending(); return; } // no platform nearby to lean against
+        pivot = null;
+        freeCenter = { x: anchor.x, z: anchor.z };
+        anchorY = terrainHeight(anchor.x, anchor.z);
+        currentRotY = anchor.rotY;
+        commitGhost();
+        return;
+      }
     },
 
     // Nudges the pending piece's angle. With an edge-pivot locked (built
