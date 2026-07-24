@@ -3,8 +3,11 @@ import * as THREE from "three";
 export const SNAP_SIZE = 1.2; // grid cell size, matches the wall segment width
 export const DEFAULT_PLATFORM_HEIGHT = 1.3; // used when a platform isn't snapped onto a post
 
+// transparent:true (at opacity 1, visually identical to opaque) so the
+// cutaway system can fade walls/roofs in place without ever recompiling
+// the material — only cheap while there are just a handful of structures.
 function mat(palette, key, extra = {}) {
-  return new THREE.MeshStandardMaterial({ color: palette[key], flatShading: true, roughness: 0.9, ...extra });
+  return new THREE.MeshStandardMaterial({ color: palette[key], flatShading: true, roughness: 0.9, transparent: true, ...extra });
 }
 
 // A dry-stone wall built from staggered courses of irregular blocks

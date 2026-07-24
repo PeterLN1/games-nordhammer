@@ -16,6 +16,7 @@ import { createResources } from "./core/resources.js";
 import { createBuildMode } from "./build/buildMode.js";
 import { STRUCTURES } from "./build/structures.js";
 import { createGridGuide } from "./build/gridGuide.js";
+import { createCutaway } from "./build/cutaway.js";
 
 const ROTATE_STEP = Math.PI / 4; // 45° per tap — two taps makes a clean 90° corner
 const CAMERA_DRAG_SPEED = 0.008; // radians per pixel of drag
@@ -78,6 +79,7 @@ const marker = createMoveMarker(scene);
 const resources = createResources();
 const buildMode = createBuildMode({ scene, palette: PALETTE, shadowMat, resources, terrainHeight });
 const gridGuide = createGridGuide(scene);
+const cutaway = createCutaway();
 
 resources.subscribe(({ wood, stone, grass }) => {
   resWoodEl.textContent = wood;
@@ -197,7 +199,7 @@ function tick() {
   player.update(dt);
   marker.update(dt);
   followCam.update(player.group.position, dt);
-
+  cutaway.update(buildMode.placed, player.group.position, camera, dt);
   renderer.render(scene, camera);
 
   fpsAccum += dt; fpsFrames++; fpsTimer += dt;

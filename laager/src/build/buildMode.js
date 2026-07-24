@@ -116,6 +116,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
     get demolishActive() { return demolish; },
     get selectedId() { return selected ? selected.id : null; },
     get canConfirm() { return !!(pending && pending.affordable); },
+    get placed() { return placed; },
 
     toggle(force) {
       active = force !== undefined ? force : !active;
