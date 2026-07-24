@@ -59,6 +59,8 @@
     color: #f2eee0; backdrop-filter: blur(6px);
   }
   .fab.on { background: #ffb14a; color: #241505; border-color: transparent; }
+  .fab.demolish { bottom: max(84px, calc(env(safe-area-inset-bottom) + 84px)); }
+  .fab.demolish.on { background: #e0665a; color: #2a0d0a; }
 
   .build-panel {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
@@ -87,7 +89,8 @@
     flex: 1; padding: 10px; border-radius: 12px; font-size: 14px; font-weight: 700;
     border: 1px solid rgba(255,255,255,.14);
   }
-  #buildCancel { background: rgba(255,255,255,.06); color: #f2eee0; }
+  #buildCancel, #buildRotate { background: rgba(255,255,255,.06); color: #f2eee0; }
+  #buildRotate { flex: 0 0 auto; padding: 10px 16px; }
   #buildConfirm { background: #ffb14a; color: #241505; border-color: transparent; }
   #buildConfirm:disabled { background: rgba(255,255,255,.1); color: rgba(242,238,224,.4); }
 </style>
@@ -102,6 +105,7 @@
   <div class="hint" id="hint">Tryck på marken för att gå dit · nyp för att zooma</div>
   <div class="fps" id="fps"></div>
 
+  <button class="fab demolish" id="demolishToggle" aria-label="Riv-läge">🗑</button>
   <button class="fab" id="buildToggle" aria-label="Bygg-läge">🔨</button>
   <div class="build-panel hidden" id="buildPanel">
     <div class="resources">
@@ -111,6 +115,7 @@
     <div class="structures" id="structureList"></div>
     <div class="build-actions">
       <button id="buildCancel">✕ Avbryt</button>
+      <button id="buildRotate">↻ Rotera</button>
       <button id="buildConfirm" disabled>✓ Bygg</button>
     </div>
   </div>

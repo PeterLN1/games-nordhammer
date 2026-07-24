@@ -19,6 +19,11 @@ export function createResources(initial = { wood: 20, stone: 10 }) {
       state.stone -= cost.stone || 0;
       notify();
     },
+    refund(cost) {
+      state.wood += cost.wood || 0;
+      state.stone += cost.stone || 0;
+      notify();
+    },
     subscribe(fn) {
       listeners.add(fn);
       fn({ ...state });

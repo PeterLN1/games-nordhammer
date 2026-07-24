@@ -16,6 +16,9 @@ import { FollowCamera } from "./camera/followCamera.js";
 import { createResources } from "./core/resources.js";
 import { createBuildMode } from "./build/buildMode.js";
 import { STRUCTURES } from "./build/structures.js";
+import { createGridGuide } from "./build/gridGuide.js";
+
+const ROTATE_STEP = Math.PI / 8; // 22.5° per tap of the rotate button
 
 /* ---------------------------------------------------------------------
    Läger — stiliserad low-poly 3D-prototyp
@@ -29,9 +32,11 @@ const container = document.getElementById("app");
 const hint = document.getElementById("hint");
 const fpsEl = document.getElementById("fps");
 const buildToggleBtn = document.getElementById("buildToggle");
+const demolishToggleBtn = document.getElementById("demolishToggle");
 const buildPanel = document.getElementById("buildPanel");
 const structureList = document.getElementById("structureList");
 const buildCancelBtn = document.getElementById("buildCancel");
+const buildRotateBtn = document.getElementById("buildRotate");
 const buildConfirmBtn = document.getElementById("buildConfirm");
 const resWoodEl = document.getElementById("resWood");
 const resStoneEl = document.getElementById("resStone");
@@ -72,6 +77,7 @@ const marker = createMoveMarker(scene);
 // ---------- build system ----------
 const resources = createResources();
 const buildMode = createBuildMode({ scene, palette: PALETTE, shadowMat, resources, terrainHeight });
+const gridGuide = createGridGuide(scene);
 
 resources.subscribe(({ wood, stone }) => {
   resWoodEl.textContent = wood;
@@ -95,22 +101,41 @@ function setBuildActive(active) {
   buildMode.toggle(active);
   buildToggleBtn.classList.toggle("on", active);
   buildPanel.classList.toggle("hidden", !active);
+  demolishToggleBtn.classList.toggle("on", buildMode.demolishActive);
   if (active) {
     [...structureList.children].forEach((c) => c.classList.remove("selected"));
     buildConfirmBtn.disabled = true;
     hint.textContent = "Tryck på marken för att placera · ✓ för att bygga";
     hint.classList.remove("hidden");
+    gridGuide.show();
   } else {
     hint.classList.add("hidden");
+    gridGuide.hide();
   }
 }
 
+function setDemolishActive(active) {
+  buildMode.toggleDemolish(active);
+  demolishToggleBtn.classList.toggle("on", active);
+  buildToggleBtn.classList.toggle("on", buildMode.active);
+  buildPanel.classList.toggle("hidden", !buildMode.active);
+  gridGuide.hide();
+  hint.textContent = "Tryck på en byggnad för att riva den";
+  hint.classList.toggle("hidden", !active);
+}
+
 buildToggleBtn.addEventListener("click", () => setBuildActive(!buildMode.active));
+demolishToggleBtn.addEventListener("click", () => setDemolishActive(!buildMode.demolishActive));
 
 // Avbryt always backs all the way out of build mode — a partial "just clear
 // the ghost but stay in the panel" state read as broken (tapping it seemed
 // to do nothing whenever no ghost happened to be showing).
 buildCancelBtn.addEventListener("click", () => setBuildActive(false));
+
+buildRotateBtn.addEventListener("click", () => {
+  buildMode.rotate(ROTATE_STEP);
+  buildConfirmBtn.disabled = !buildMode.canConfirm;
+});
 
 buildConfirmBtn.addEventListener("click", () => {
   if (buildMode.confirm()) buildConfirmBtn.disabled = !buildMode.canConfirm;
@@ -118,6 +143,10 @@ buildConfirmBtn.addEventListener("click", () => {
 
 createTouchControls(renderer, camera, [ground, clearing], {
   onTap(point) {
+    if (buildMode.demolishActive) {
+      buildMode.tryDemolish(point);
+      return;
+    }
     if (buildMode.active) {
       buildMode.handleTap(point);
       buildConfirmBtn.disabled = !buildMode.canConfirm;

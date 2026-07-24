@@ -13,6 +13,7 @@ export const STRUCTURES = {
     icon: "🪵",
     cost: { wood: 3, stone: 0 },
     shadowRadius: 0.85,
+    width: 1.15, // used to snap flush edge-to-edge against a neighboring structure
     build(palette) {
       const group = new THREE.Group();
       const plankMat = mat(palette, "plank");
@@ -37,6 +38,7 @@ export const STRUCTURES = {
     icon: "🪨",
     cost: { wood: 0, stone: 3 },
     shadowRadius: 0.9,
+    width: 1.15,
     build(palette) {
       const group = new THREE.Group();
       const stoneMat = mat(palette, "stoneBuilt");
@@ -62,6 +64,7 @@ export const STRUCTURES = {
     icon: "🪵",
     cost: { wood: 1, stone: 0 },
     shadowRadius: 0.35,
+    width: 0.2,
     build(palette) {
       const postMat = mat(palette, "fence");
       const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.3, 6), postMat);
