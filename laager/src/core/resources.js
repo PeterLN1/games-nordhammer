@@ -1,7 +1,8 @@
 // Simple resource pool (wood/stone/grass). No gathering yet — that's phase
-// 3 — so this just starts with a fixed stock and lets the build system
-// spend it.
-export function createResources(initial = { wood: 20, stone: 10, grass: 15 }) {
+// 3 — so this just starts with a generous fixed stock (there's no economy
+// to balance yet, so testing the build system shouldn't be bottlenecked
+// by running out) and lets the build system spend it.
+export function createResources(initial = { wood: 300, stone: 300, grass: 300 }) {
   const state = { ...initial };
   const listeners = new Set();
 
