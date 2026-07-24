@@ -18,7 +18,7 @@ import { createBuildMode } from "./build/buildMode.js";
 import { STRUCTURES } from "./build/structures.js";
 import { createGridGuide } from "./build/gridGuide.js";
 
-const ROTATE_STEP = Math.PI / 8; // 22.5° per tap of the rotate button
+const ROTATE_STEP = Math.PI / 4; // 45° per tap — two taps makes a clean 90° corner
 
 /* ---------------------------------------------------------------------
    Läger — stiliserad low-poly 3D-prototyp

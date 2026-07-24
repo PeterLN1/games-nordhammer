@@ -3,7 +3,7 @@ import { createPlacementGhost } from "./placementGhost.js";
 import { addShadowBlob } from "../core/shadowDecals.js";
 
 const BUILD_RADIUS = 6.5; // how far from camp you can place structures
-const NEIGHBOR_SEARCH_RADIUS = 2.2; // how close a tap must be to an existing edge to snap onto it
+const NEIGHBOR_SEARCH_RADIUS = 2.2; // how close a tap must be to an existing corner to snap onto it
 
 function snap(v) {
   return Math.round(v / SNAP_SIZE) * SNAP_SIZE;
@@ -22,22 +22,31 @@ function clampToBuildRadius(point) {
   return { x: point.x * s, z: point.z * s };
 }
 
-// Looks for the nearest open end of an already-placed structure and, if one
-// is close enough to the tap, returns the position+rotation that continues
-// flush from it — this is what makes a row of walls actually line up
-// instead of relying on the tap landing on the exact right grid cell.
-function findNeighborAttachment(point, width, placed) {
+function forward(rotY) {
+  return { x: Math.cos(rotY), z: -Math.sin(rotY) };
+}
+
+// The two open ends of a placed structure, in world space, each carrying
+// the structure's own facing as the "continue straight from here" default.
+function endPoints(p) {
+  const dir = forward(p.rotY);
+  const half = p.structure.width / 2;
+  return [
+    { x: p.x + dir.x * half, z: p.z + dir.z * half, rotY: p.rotY },
+    { x: p.x - dir.x * half, z: p.z - dir.z * half, rotY: p.rotY },
+  ];
+}
+
+// Nearest open end of any placed structure to the tap point, if close
+// enough to count as "aiming at that corner" rather than free placement.
+function findNearestCorner(point, placed) {
   let best = null, bestDist = Infinity;
   for (const p of placed) {
-    const dirX = Math.cos(p.rotY), dirZ = -Math.sin(p.rotY); // local +X axis in world space
-    const half = p.structure.width / 2 + width / 2;
-    for (const sign of [1, -1]) {
-      const ax = p.x + dirX * half * sign;
-      const az = p.z + dirZ * half * sign;
-      const d = Math.hypot(ax - point.x, az - point.z);
+    for (const end of endPoints(p)) {
+      const d = Math.hypot(end.x - point.x, end.z - point.z);
       if (d < NEIGHBOR_SEARCH_RADIUS && d < bestDist) {
         bestDist = d;
-        best = { x: ax, z: az, rotY: p.rotY };
+        best = end;
       }
     }
   }
@@ -51,8 +60,30 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
   let demolish = false;
   let selected = null;
   let pending = null; // {x, y, z, rotY, structure, affordable}
-  let rotationOverride = null;
-  let lastRotY = 0;
+
+  // Where the current placement is anchored: either a fixed world corner
+  // (pivot set — rotating swings the piece around that point, so you can
+  // turn a corner) or a fixed grid cell (pivot null — rotating spins the
+  // piece in place, for free-standing pieces with no neighbor to snap to).
+  let pivot = null;
+  let freeCenter = null;
+  let currentRotY = 0;
+
+  function commitGhost() {
+    let x, z;
+    if (pivot) {
+      const dir = forward(currentRotY);
+      x = pivot.x + dir.x * (selected.width / 2);
+      z = pivot.z + dir.z * (selected.width / 2);
+    } else {
+      x = freeCenter.x; z = freeCenter.z;
+    }
+    const y = terrainHeight(x, z);
+    ghost.moveTo(x, y, z, currentRotY);
+    const affordable = resources.canAfford(selected.cost);
+    ghost.setValid(affordable);
+    pending = { x, y, z, rotY: currentRotY, structure: selected, affordable };
+  }
 
   return {
     get active() { return active; },
@@ -66,7 +97,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       if (!active) {
         selected = null;
         pending = null;
-        rotationOverride = null;
+        pivot = null;
         ghost.clear();
       }
       return active;
@@ -81,43 +112,34 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
     selectStructure(id) {
       selected = STRUCTURES[id] || null;
       pending = null;
-      rotationOverride = null;
+      pivot = null;
       if (selected) ghost.setShape(selected);
       else ghost.clear();
-    },
-
-    // nudges the ghost by a fixed step; once used, the manual angle sticks
-    // for this structure instead of the auto tangent/neighbor logic
-    rotate(stepRad) {
-      if (!selected) return;
-      rotationOverride = (rotationOverride ?? lastRotY) + stepRad;
-      if (pending) this.handleTap({ x: pending.x, z: pending.z });
     },
 
     handleTap(point) {
       if (!active || !selected) return;
       const clamped = clampToBuildRadius(point);
-      let x, z, rotY;
-
-      if (rotationOverride != null) {
-        x = snap(clamped.x); z = snap(clamped.z);
-        rotY = rotationOverride;
+      const corner = findNearestCorner(clamped, placed);
+      if (corner) {
+        pivot = { x: corner.x, z: corner.z };
+        currentRotY = corner.rotY; // default: continue straight from this end
       } else {
-        const neighbor = findNeighborAttachment(clamped, selected.width, placed);
-        if (neighbor) {
-          x = neighbor.x; z = neighbor.z; rotY = neighbor.rotY;
-        } else {
-          x = snap(clamped.x); z = snap(clamped.z);
-          rotY = tangentRotation(x, z);
-        }
+        pivot = null;
+        freeCenter = { x: snap(clamped.x), z: snap(clamped.z) };
+        currentRotY = tangentRotation(freeCenter.x, freeCenter.z);
       }
+      commitGhost();
+    },
 
-      const y = terrainHeight(x, z);
-      ghost.moveTo(x, y, z, rotY);
-      const affordable = resources.canAfford(selected.cost);
-      ghost.setValid(affordable);
-      pending = { x, y, z, rotY, structure: selected, affordable };
-      lastRotY = rotY;
+    // Nudges the pending piece's angle. With a pivot locked (built onto an
+    // existing corner) this swings around that corner — e.g. one 90° turn
+    // to close a square instead of only ever extending in a straight line.
+    // With no pivot it just spins the piece in place.
+    rotate(stepRad) {
+      if (!pending) return;
+      currentRotY += stepRad;
+      commitGhost();
     },
 
     confirm() {
@@ -130,6 +152,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       const shadowMesh = addShadowBlob(scene, shadowMat, pending.x, pending.z, pending.structure.shadowRadius);
       placed.push({ x: pending.x, z: pending.z, rotY: pending.rotY, structure: pending.structure, mesh, shadowMesh });
       pending = null;
+      pivot = null;
       ghost.hide();
       return true;
     },
