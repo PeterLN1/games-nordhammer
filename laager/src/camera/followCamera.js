@@ -3,20 +3,36 @@ import * as THREE from "three";
 const MIN_ZOOM = 0.45; // closer
 const MAX_ZOOM = 1.7;  // farther
 const PINCH_SENSITIVITY = 0.0022;
+const MIN_ELEVATION = THREE.MathUtils.degToRad(16);
+const MAX_ELEVATION = THREE.MathUtils.degToRad(82);
 
-// Fixed-angle chase camera: follows the player's position (not their
-// facing) at a constant world-space offset. Simpler and less nauseating
-// on mobile than a rotating third-person orbit, and keeps taps unambiguous
-// since the camera never changes on single-finger input. Two-finger pinch
-// scales the offset distance in/out.
+// Chase camera: follows the player's position (not their facing) at an
+// orbit distance/angle the player controls directly — drag rotates,
+// pinch zooms — rather than a fixed angle, so the camp can be seen from
+// any side. The camera never reacts to a stationary tap, so tap-to-move
+// stays unambiguous; only a drag past a small threshold rotates it.
 export class FollowCamera {
   constructor(camera, baseFov = 42) {
     this.camera = camera;
     this.baseFov = baseFov; // desired *horizontal* fov
-    this.offset = new THREE.Vector3(7, 8.5, 9);
     this.lookOffset = new THREE.Vector3(0, 1.1, 0);
     this.current = new THREE.Vector3();
     this.zoom = 1;
+
+    // initial view angle, expressed as spherical coordinates around the player
+    const initial = new THREE.Vector3(7, 8.5, 9);
+    this.distance = initial.length();
+    this.azimuth = Math.atan2(initial.z, initial.x);
+    this.elevation = Math.asin(initial.y / this.distance);
+  }
+
+  get offset() {
+    const horiz = this.distance * Math.cos(this.elevation);
+    return new THREE.Vector3(
+      horiz * Math.cos(this.azimuth),
+      this.distance * Math.sin(this.elevation),
+      horiz * Math.sin(this.azimuth)
+    );
   }
 
   resize(aspect) {
@@ -31,6 +47,13 @@ export class FollowCamera {
   // spreading fingers (positive pinchDeltaPx) zooms in (closer)
   zoomBy(pinchDeltaPx) {
     this.zoom = THREE.MathUtils.clamp(this.zoom - pinchDeltaPx * PINCH_SENSITIVITY, MIN_ZOOM, MAX_ZOOM);
+  }
+
+  // dragging orbits the camera around the player; elevation is clamped so
+  // you can't flip over the top or dip below the ground
+  rotateBy(deltaAzimuthRad, deltaElevationRad) {
+    this.azimuth += deltaAzimuthRad;
+    this.elevation = THREE.MathUtils.clamp(this.elevation + deltaElevationRad, MIN_ELEVATION, MAX_ELEVATION);
   }
 
   snapTo(targetPos) {

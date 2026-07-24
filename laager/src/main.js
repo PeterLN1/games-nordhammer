@@ -19,6 +19,7 @@ import { STRUCTURES } from "./build/structures.js";
 import { createGridGuide } from "./build/gridGuide.js";
 
 const ROTATE_STEP = Math.PI / 4; // 45° per tap — two taps makes a clean 90° corner
+const CAMERA_DRAG_SPEED = 0.008; // radians per pixel of drag
 
 /* ---------------------------------------------------------------------
    Läger — stiliserad low-poly 3D-prototyp
@@ -160,6 +161,9 @@ createTouchControls(renderer, camera, [ground, clearing], {
   },
   onPinchZoom(deltaPx) {
     followCam.zoomBy(deltaPx);
+  },
+  onRotateDrag(deltaX, deltaY) {
+    followCam.rotateBy(-deltaX * CAMERA_DRAG_SPEED, deltaY * CAMERA_DRAG_SPEED);
   },
 });
 
