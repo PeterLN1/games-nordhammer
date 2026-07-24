@@ -41,6 +41,7 @@ const buildRotateBtn = document.getElementById("buildRotate");
 const buildConfirmBtn = document.getElementById("buildConfirm");
 const resWoodEl = document.getElementById("resWood");
 const resStoneEl = document.getElementById("resStone");
+const resGrassEl = document.getElementById("resGrass");
 
 const PLAY_RADIUS = 17; // how far from camp the player is allowed to walk
 
@@ -80,16 +81,25 @@ const resources = createResources();
 const buildMode = createBuildMode({ scene, palette: PALETTE, shadowMat, resources, terrainHeight });
 const gridGuide = createGridGuide(scene);
 
-resources.subscribe(({ wood, stone }) => {
+resources.subscribe(({ wood, stone, grass }) => {
   resWoodEl.textContent = wood;
   resStoneEl.textContent = stone;
+  resGrassEl.textContent = grass;
 });
+
+function costLabel(cost) {
+  const parts = [];
+  if (cost.wood) parts.push(`🪵${cost.wood}`);
+  if (cost.stone) parts.push(`🪨${cost.stone}`);
+  if (cost.grass) parts.push(`🌾${cost.grass}`);
+  return parts.join(" ");
+}
 
 Object.values(STRUCTURES).forEach((s) => {
   const btn = document.createElement("button");
   btn.className = "struct-btn";
   btn.dataset.id = s.id;
-  btn.innerHTML = `<span class="ic">${s.icon}</span><span>${s.label}</span><span class="cost">${s.cost.wood ? `🪵${s.cost.wood}` : `🪨${s.cost.stone}`}</span>`;
+  btn.innerHTML = `<span class="ic">${s.icon}</span><span>${s.label}</span><span class="cost">${costLabel(s.cost)}</span>`;
   btn.addEventListener("click", () => {
     buildMode.selectStructure(s.id);
     [...structureList.children].forEach((c) => c.classList.toggle("selected", c === btn));

@@ -11,6 +11,7 @@ export const PALETTE = {
   stoneBuilt: 0x8f8f83,
   plank: 0x6b4a30,
   fence: 0x5b4430,
+  grass: 0x8a9c3f,
   logs: 0x33210f,
   moon: 0xf3ecd6,
   playerCloak: 0x4c7a8a,

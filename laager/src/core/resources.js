@@ -1,6 +1,7 @@
-// Simple resource pool (wood/stone). No gathering yet — that's phase 3 —
-// so this just starts with a fixed stock and lets the build system spend it.
-export function createResources(initial = { wood: 20, stone: 10 }) {
+// Simple resource pool (wood/stone/grass). No gathering yet — that's phase
+// 3 — so this just starts with a fixed stock and lets the build system
+// spend it.
+export function createResources(initial = { wood: 20, stone: 10, grass: 15 }) {
   const state = { ...initial };
   const listeners = new Set();
 
@@ -11,17 +12,20 @@ export function createResources(initial = { wood: 20, stone: 10 }) {
   return {
     get wood() { return state.wood; },
     get stone() { return state.stone; },
+    get grass() { return state.grass; },
     canAfford(cost) {
-      return state.wood >= (cost.wood || 0) && state.stone >= (cost.stone || 0);
+      return state.wood >= (cost.wood || 0) && state.stone >= (cost.stone || 0) && state.grass >= (cost.grass || 0);
     },
     spend(cost) {
       state.wood -= cost.wood || 0;
       state.stone -= cost.stone || 0;
+      state.grass -= cost.grass || 0;
       notify();
     },
     refund(cost) {
       state.wood += cost.wood || 0;
       state.stone += cost.stone || 0;
+      state.grass += cost.grass || 0;
       notify();
     },
     subscribe(fn) {
