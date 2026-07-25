@@ -40,11 +40,16 @@ function endPoints(p) {
   ];
 }
 
-// Nearest open end of any placed structure to the tap point, if close
-// enough to count as "aiming at that corner" rather than free placement.
+// Nearest open end of any placed *wall* to the tap point, if close enough
+// to count as "aiming at that corner" rather than free placement. Only
+// walls chain corner-to-corner this way — posts/platforms/roofs/ladders
+// have a "width" field for unrelated reasons (snapping things onto their
+// top), not a wall-style open end, so including them here let a wall
+// snap-pivot onto nonsense points derived from a platform's footprint.
 function findNearestCorner(point, placed) {
   let best = null, bestDist = Infinity;
   for (const p of placed) {
+    if (p.structure.snapMode !== "edge") continue;
     for (const end of endPoints(p)) {
       const d = Math.hypot(end.x - point.x, end.z - point.z);
       if (d < NEIGHBOR_SEARCH_RADIUS && d < bestDist) {
@@ -75,12 +80,20 @@ function findNearestTop(point, placed, filterFn) {
 
 // If (x,z) is over a placed platform, the height of its walkable surface —
 // so a wall/post built there sits on the platform instead of at ground
-// level, and the player standing on it doesn't sink to the ground.
+// level, and the player standing on it doesn't sink to the ground. Tests
+// against the platform's actual (rotated) square footprint rather than an
+// approximated circle, so a wall snapped right at the platform's edge is
+// judged correctly instead of by a fuzzy distance guess.
 export function platformSurfaceAt(x, z, placed) {
   let best = null;
   for (const p of placed) {
     if (p.structure.id !== "platform") continue;
-    if (Math.hypot(p.x - x, p.z - z) < p.structure.width / 2) {
+    const dx = x - p.x, dz = z - p.z;
+    const cos = Math.cos(-p.rotY), sin = Math.sin(-p.rotY);
+    const lx = dx * cos - dz * sin;
+    const lz = dx * sin + dz * cos;
+    const half = p.structure.width / 2;
+    if (Math.abs(lx) <= half && Math.abs(lz) <= half) {
       const y = p.y + p.structure.height;
       if (best === null || y > best) best = y;
     }
@@ -142,7 +155,11 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       const dir = forward(currentRotY);
       x = pivot.x + dir.x * (selected.width / 2);
       z = pivot.z + dir.z * (selected.width / 2);
-      y = pivot.y;
+      // Re-derive height from what's actually under the new spot rather
+      // than blindly inheriting the neighbor's — otherwise chaining walls
+      // off the edge of a platform leaves them floating at platform height
+      // instead of dropping back down to the ground.
+      y = platformSurfaceAt(x, z, placed) ?? terrainHeight(x, z);
     } else {
       x = freeCenter.x; z = freeCenter.z; y = anchorY;
     }

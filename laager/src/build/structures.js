@@ -183,10 +183,17 @@ export const STRUCTURES = {
     height: 1.3,
     snapMode: "free", // plain grid placement — posts don't chain end-to-end like walls
     build(palette) {
+      // wrapped in a group (like every other structure) so confirm()'s
+      // group.position.set(...) positions the *base*, not the geometry's
+      // own centered origin — a bare mesh here previously got its internal
+      // position.y=0.65 clobbered, burying the post half underground and
+      // throwing off anything snapping onto its "top".
+      const group = new THREE.Group();
       const postMat = mat(palette, "fence");
       const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.3, 6), postMat);
       mesh.position.y = 0.65;
-      return mesh;
+      group.add(mesh);
+      return group;
     },
   },
 

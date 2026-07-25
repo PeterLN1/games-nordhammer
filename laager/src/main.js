@@ -17,6 +17,7 @@ import { createBuildMode, platformSurfaceAt } from "./build/buildMode.js";
 import { STRUCTURES } from "./build/structures.js";
 import { createGridGuide } from "./build/gridGuide.js";
 import { createCutaway } from "./build/cutaway.js";
+import { createPlatformClimb } from "./build/platformClimb.js";
 
 const ROTATE_STEP = Math.PI / 4; // 45° per tap — two taps makes a clean 90° corner
 const CAMERA_DRAG_SPEED = 0.008; // radians per pixel of drag
@@ -78,11 +79,14 @@ const gridGuide = createGridGuide(scene);
 const cutaway = createCutaway();
 
 // ---------- player ----------
-// stand on a platform's surface if there is one, otherwise the ground
-function groundOrPlatformHeight(x, z) {
-  return platformSurfaceAt(x, z, buildMode.placed) ?? terrainHeight(x, z);
+// The player only stands on a platform's surface after climbing a ladder
+// attached to it, and stays up there until walking off its footprint —
+// otherwise it's ground height as usual.
+const platformClimb = createPlatformClimb();
+function playerHeightAt(x, z) {
+  return platformClimb.update(x, z, buildMode.placed) ?? terrainHeight(x, z);
 }
-const player = new Player(scene, PALETTE, shadowMat, groundOrPlatformHeight);
+const player = new Player(scene, PALETTE, shadowMat, playerHeightAt);
 const marker = createMoveMarker(scene);
 
 resources.subscribe(({ wood, stone, grass }) => {
@@ -170,7 +174,7 @@ createTouchControls(renderer, camera, [ground, clearing], {
     const len = Math.hypot(point.x, point.z);
     const p = len > PLAY_RADIUS ? point.clone().multiplyScalar(PLAY_RADIUS / len) : point;
     player.moveTo(p.x, p.z);
-    marker.show(p.x, groundOrPlatformHeight(p.x, p.z), p.z);
+    marker.show(p.x, platformSurfaceAt(p.x, p.z, buildMode.placed) ?? terrainHeight(p.x, p.z), p.z);
     hint.classList.add("hidden");
   },
   onPinchZoom(deltaPx) {
