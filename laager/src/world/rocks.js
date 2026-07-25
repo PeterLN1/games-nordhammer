@@ -15,4 +15,5 @@ export function buildRocks(scene, palette) {
     mesh.setMatrixAt(i, m);
   });
   scene.add(mesh);
+  return items; // {x, z, rot, scale} per rock, for collision against the big ones
 }

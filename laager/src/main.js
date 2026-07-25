@@ -18,6 +18,7 @@ import { STRUCTURES } from "./build/structures.js";
 import { createGridGuide } from "./build/gridGuide.js";
 import { createCutaway } from "./build/cutaway.js";
 import { createPlatformClimb } from "./build/platformClimb.js";
+import { createCollision } from "./world/collision.js";
 
 const ROTATE_STEP = Math.PI / 4; // 45° per tap — two taps makes a clean 90° corner
 const CAMERA_DRAG_SPEED = 0.008; // radians per pixel of drag
@@ -69,8 +70,8 @@ const lighting = createLighting(scene);
 const { ground, clearing } = buildGround(scene, PALETTE);
 buildFire(scene, PALETTE, shadowMat);
 const embers = buildEmbers(scene);
-buildTrees(scene, PALETTE, shadowMat);
-buildRocks(scene, PALETTE);
+const treeItems = buildTrees(scene, PALETTE, shadowMat);
+const rockItems = buildRocks(scene, PALETTE);
 buildFence(scene, PALETTE);
 
 // ---------- build system ----------
@@ -87,7 +88,8 @@ const platformClimb = createPlatformClimb();
 function playerHeightAt(x, z) {
   return platformClimb.update(x, z, buildMode.placed) ?? terrainHeight(x, z);
 }
-const player = new Player(scene, PALETTE, shadowMat, playerHeightAt);
+const collision = createCollision({ trees: treeItems, rocks: rockItems, buildMode });
+const player = new Player(scene, PALETTE, shadowMat, playerHeightAt, collision);
 const marker = createMoveMarker(scene);
 
 resources.subscribe(({ wood, stone, grass }) => {
@@ -188,6 +190,7 @@ createTouchControls(renderer, camera, [ground, clearing], {
       buildConfirmBtn.disabled = !buildMode.canConfirm;
       return;
     }
+    if (buildMode.tryToggleDoor(point)) return;
     const len = Math.hypot(point.x, point.z);
     const p = len > PLAY_RADIUS ? point.clone().multiplyScalar(PLAY_RADIUS / len) : point;
     player.moveTo(p.x, p.z);

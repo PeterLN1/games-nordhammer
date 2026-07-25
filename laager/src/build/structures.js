@@ -8,6 +8,11 @@ export const SNAP_SIZE = 1.2; // grid cell size for free/unanchored placement
 // gap and no overlap.
 export const WALL_SPAN = 1.3;
 
+// How high a ridge roof's peak sits above the wall tops it spans between
+// — shared with the gable-end wall so its triangle exactly fills the gap
+// under a ridge roof at that height.
+export const ROOF_RISE = 0.5;
+
 // transparent:true (at opacity 1, visually identical to opaque) so the
 // cutaway system can fade walls/roofs in place without ever recompiling
 // the material — only cheap while there are just a handful of structures.
@@ -102,7 +107,7 @@ function buildRoof(palette, span = 0.95, drop = 0.35) {
 // down to the far eave — so it reads as a proper house roof rather than
 // a lean-to, and (like buildRoof) buildMode sizes span/drop to the exact
 // gap to whatever wall it finds across the room.
-function buildRidgeRoof(palette, span = 1.3, drop = 0, rise = 0.5) {
+function buildRidgeRoof(palette, span = 1.3, drop = 0, rise = ROOF_RISE) {
   const group = new THREE.Group();
   const W = WALL_SPAN;
   const woodMat = mat(palette, "trunk");
@@ -142,6 +147,59 @@ function buildRidgeRoof(palette, span = 1.3, drop = 0, rise = 0.5) {
   ridge.position.copy(peak);
   group.add(ridge);
 
+  return group;
+}
+
+// A triangular infill panel for a ridge roof's gable end — sits on top
+// of a wall (like a roof) and fills the gap between the wall's flat top
+// and the sloped underside of a ridge roof at ROOF_RISE height, closing
+// off what would otherwise be an open triangular gap under the peak.
+// Fixed-size (one WALL_SPAN-wide wall segment's worth), so a wider gable
+// end needs several placed side by side — each is its own small peak
+// rather than one continuous triangle spanning the whole width.
+function buildGableWall(palette) {
+  const W = WALL_SPAN;
+  const plankMat = mat(palette, "plank");
+  const shape = new THREE.Shape();
+  shape.moveTo(-W / 2, 0);
+  shape.lineTo(W / 2, 0);
+  shape.lineTo(0, ROOF_RISE);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false });
+  geo.translate(0, 0, -0.05);
+  return new THREE.Mesh(geo, plankMat);
+}
+
+const DOOR_LEAF_WIDTH = WALL_SPAN - 0.16; // narrower than the opening so it clears the frame posts when it swings
+const DOOR_HEIGHT = 1.0; // matches wallWood's height
+
+// A door: a static frame (two posts + a lintel) around an opening the
+// same size as a wall segment, plus a swinging leaf hinged at the left
+// edge. The leaf lives in its own group (userData.leaf) so buildMode can
+// rotate just that part open/closed without touching the frame.
+function buildDoor(palette) {
+  const group = new THREE.Group();
+  const frameMat = mat(palette, "trunk");
+  const leafMat = mat(palette, "plank");
+
+  const postGeo = new THREE.BoxGeometry(0.08, DOOR_HEIGHT, 0.14);
+  [-WALL_SPAN / 2 + 0.04, WALL_SPAN / 2 - 0.04].forEach((x) => {
+    const post = new THREE.Mesh(postGeo, frameMat);
+    post.position.set(x, DOOR_HEIGHT / 2, 0);
+    group.add(post);
+  });
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(WALL_SPAN, 0.1, 0.16), frameMat);
+  lintel.position.set(0, DOOR_HEIGHT - 0.05, 0);
+  group.add(lintel);
+
+  const leaf = new THREE.Group();
+  leaf.position.set(-WALL_SPAN / 2 + 0.06, 0, 0); // hinge point, at the left post
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(DOOR_LEAF_WIDTH, DOOR_HEIGHT - 0.12, 0.06), leafMat);
+  panel.position.set(DOOR_LEAF_WIDTH / 2 + 0.02, DOOR_HEIGHT / 2, 0);
+  leaf.add(panel);
+  group.add(leaf);
+
+  group.userData.leaf = leaf;
   return group;
 }
 
@@ -286,6 +344,34 @@ export const STRUCTURES = {
     build(palette, opts) {
       const { span, drop } = opts || {};
       return buildRidgeRoof(palette, span, drop);
+    },
+  },
+
+  gableWall: {
+    id: "gableWall",
+    label: "Gavelvägg",
+    icon: "🔺",
+    cost: { wood: 2, stone: 0 },
+    shadowRadius: 0.6,
+    width: WALL_SPAN,
+    snapMode: "top", // sits on top of a wall segment
+    topFilter: "wall", // never rests on a post/platform — only a wall's top makes sense here
+    build(palette) {
+      return buildGableWall(palette);
+    },
+  },
+
+  door: {
+    id: "door",
+    label: "Dörr",
+    icon: "🚪",
+    cost: { wood: 3, stone: 0 },
+    shadowRadius: 0.85,
+    width: WALL_SPAN, // chains into a wall run exactly like a wallWood segment
+    height: 1.0,
+    snapMode: "edge",
+    build(palette) {
+      return buildDoor(palette);
     },
   },
 

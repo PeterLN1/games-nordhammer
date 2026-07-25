@@ -42,4 +42,5 @@ export function buildTrees(scene, palette, shadowMat) {
   });
 
   scene.add(trunks, cones1, cones2, shadowBlobs);
+  return items; // {x, z, rot, scale} per tree, for collision against the big ones
 }

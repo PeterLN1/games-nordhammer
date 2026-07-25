@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-const ROOF_COVER_RADIUS = 1.1; // how far from a roof's coverage center still counts as "under it"
+const ROOF_COVER_RADIUS = 2.0; // how far from a roof's coverage center still counts as "under it"
 const FADE_OPACITY = 0.18;
 const FADE_SPEED = 9; // higher = snappier fade
 

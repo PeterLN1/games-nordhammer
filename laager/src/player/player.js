@@ -9,8 +9,9 @@ const WALK_SWING_MAX = 0.55;
 const SWING_EASE = 8;
 
 export class Player {
-  constructor(scene, palette, shadowMat, terrainHeight, spawn = new THREE.Vector3(0, 0, 2.6)) {
+  constructor(scene, palette, shadowMat, terrainHeight, collision, spawn = new THREE.Vector3(0, 0, 2.6)) {
     this.terrainHeight = terrainHeight;
+    this.collision = collision;
     this.speed = 3.2;
     this.position = spawn.clone();
     this.target = spawn.clone();
@@ -42,8 +43,11 @@ export class Player {
     const moving = dist > STOP_DIST;
     if (moving) {
       const step = Math.min(this.speed * dt, dist);
-      this.position.x += (dx / dist) * step;
-      this.position.z += (dz / dist) * step;
+      const nx = this.position.x + (dx / dist) * step;
+      const nz = this.position.z + (dz / dist) * step;
+      const resolved = this.collision ? this.collision.resolve(this.position.x, this.position.z, nx, nz) : { x: nx, z: nz };
+      this.position.x = resolved.x;
+      this.position.z = resolved.z;
       const desiredFacing = Math.atan2(dx, dz);
       this.facing = lerpAngle(this.facing, desiredFacing, Math.min(1, dt * TURN_SPEED));
       this.walkPhase += dt * WALK_CYCLE_SPEED;

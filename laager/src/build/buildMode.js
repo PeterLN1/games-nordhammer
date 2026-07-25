@@ -3,6 +3,7 @@ import { createPlacementGhost } from "./placementGhost.js";
 import { addShadowBlob } from "../core/shadowDecals.js";
 
 const BUILD_RADIUS = 6.5; // how far from camp you can place structures
+const DOOR_OPEN_ANGLE = -Math.PI / 2; // swung flush against the wall it's hinged to
 const NEIGHBOR_SEARCH_RADIUS = 2.2; // how close a tap must be to an existing edge to snap onto it
 const TOP_SEARCH_RADIUS = 1.6; // how close a tap must be to snap a roof/platform onto a top
 const LADDER_SEARCH_RADIUS = 2.0; // how close a tap must be to a platform to attach a ladder
@@ -24,7 +25,7 @@ function clampToBuildRadius(point) {
   return { x: point.x * s, z: point.z * s };
 }
 
-function forward(rotY) {
+export function forward(rotY) {
   return { x: Math.cos(rotY), z: -Math.sin(rotY) };
 }
 
@@ -138,6 +139,17 @@ function findNearestTop(point, placed, filterFn) {
 const ROOF_SPAN_MIN = 0.6; // shorter than this and a partner is basically on top of the anchor already
 const ROOF_SPAN_MAX = 6.0; // generous — covers a multi-tile room (e.g. a 3-wide house), not just one platform tile
 const ROOF_SPAN_COS_TOL = Math.cos(0.5); // partner must be within ~28° of straight ahead
+const ROOF_SPAN_PARALLEL_TOL = 0.35; // ~20° — a wall run's *own* rotY, not just its position
+
+// Smallest angle between two wall orientations, treating rotY and
+// rotY+π as identical (a wall's "forward" is arbitrary — which end was
+// built first — so only the line it lies along matters here).
+function angleBetweenLines(a, b) {
+  let d = (a - b) % Math.PI;
+  if (d > Math.PI / 2) d -= Math.PI;
+  else if (d < -Math.PI / 2) d += Math.PI;
+  return Math.abs(d);
+}
 
 // A second nearby *wall*, roughly where the roof's slope is currently
 // facing, for the eave to rest on exactly instead of hanging in open
@@ -149,12 +161,23 @@ const ROOF_SPAN_COS_TOL = Math.cos(0.5); // partner must be within ~28° of stra
 // house is often the *nearest* candidate but isn't what the eave should
 // rest on, so including them here used to snap the roof down onto the
 // support post instead of across to the far wall.
+//
+// The true opposite wall of a room always runs *parallel* to the anchor
+// wall (same rotY, since both close off the same span) — a gable/end
+// wall is perpendicular. Without that check, a gable-wall segment a
+// couple tiles further along (not the one right at the corner, but the
+// next one down) can land close enough and just barely inside the angle
+// cone to out-compete the true, much-farther-away opposite wall on raw
+// distance — which is exactly what made end-of-room roof segments (the
+// ones with a gable wall nearby) refuse to span while the middle one,
+// with no gable wall close enough to confuse it, worked fine.
 function findRoofSpanPartner(anchor, rotY, placed) {
   const dir = { x: Math.sin(rotY), z: Math.cos(rotY) }; // world dir of the roof's local +Z (slope)
   let best = null, bestDist = Infinity;
   for (const p of placed) {
     if (p.structure.snapMode !== "edge") continue; // walls only
     if (p.x === anchor.x && p.z === anchor.z) continue; // that's the anchor itself
+    if (angleBetweenLines(p.rotY, rotY) > ROOF_SPAN_PARALLEL_TOL) continue; // must run parallel to the anchor
     const dx = p.x - anchor.x, dz = p.z - anchor.z;
     const dist = Math.hypot(dx, dz);
     if (dist < ROOF_SPAN_MIN || dist > ROOF_SPAN_MAX) continue;
@@ -364,7 +387,8 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       }
 
       if (mode === "top") {
-        const anchor = findNearestTop(clamped, placed, null);
+        const filter = selected.topFilter === "wall" ? (p) => p.structure.snapMode === "edge" : null;
+        const anchor = findNearestTop(clamped, placed, filter);
         if (!anchor) { clearPending(); return; } // nothing to rest on — refuse rather than float
         pivot = null;
         freeCenter = { x: anchor.x, z: anchor.z };
@@ -413,11 +437,30 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       mesh.rotation.y = pending.rotY;
       scene.add(mesh);
       const shadowMesh = addShadowBlob(scene, shadowMat, pending.x, pending.z, pending.structure.shadowRadius);
-      placed.push({ x: pending.x, y: pending.y, z: pending.z, rotY: pending.rotY, structure: pending.structure, mesh, shadowMesh });
+      const entry = { x: pending.x, y: pending.y, z: pending.z, rotY: pending.rotY, structure: pending.structure, mesh, shadowMesh };
+      if (pending.structure.id === "door") entry.open = false;
+      placed.push(entry);
       pending = null;
       pivot = null;
       ghost.hide();
       return true;
+    },
+
+    // Swings a placed door open/closed — the leaf's own visual hinge
+    // rotation lives on mesh.userData.leaf (see structures.buildDoor);
+    // collision just checks the .open flag directly, ignoring the swing
+    // angle, since a "half-open" door is still fully walkable in this
+    // stylized game.
+    tryToggleDoor(point) {
+      for (const p of placed) {
+        if (p.structure.id !== "door") continue;
+        if (Math.hypot(p.x - point.x, p.z - point.z) > p.structure.shadowRadius + 0.3) continue;
+        p.open = !p.open;
+        const leaf = p.mesh.userData.leaf;
+        if (leaf) leaf.rotation.y = p.open ? DOOR_OPEN_ANGLE : 0;
+        return true;
+      }
+      return false;
     },
 
     // finds the nearest placed structure to the tap point and removes it,
