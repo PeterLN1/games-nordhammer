@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-const ROOF_COVER_RADIUS = 2.0; // how far from a roof's coverage center still counts as "under it"
+const ROOF_COVER_MARGIN = 2.0; // how far *past the roof's own footprint* still counts as "under it"
 const FADE_OPACITY = 0.18;
 const FADE_SPEED = 9; // higher = snappier fade
 
@@ -25,18 +25,27 @@ export function createCutaway() {
       const active = new Set();
       lastActive = active;
 
-      // roofs: fade if the player is standing under their sloped coverage
+      // roofs: fade if the player is anywhere under the sloped panel's
+      // actual footprint (closest point on its ridge-to-eave centerline,
+      // clamped to its real span — which varies a lot, a ridge/gable roof
+      // over a big room reaches far further than the old fixed one-tile
+      // roof this radius check was originally tuned for) plus a margin.
       for (const p of placed) {
-        if (p.structure.snapMode !== "top") continue;
+        if (!p.structure.spansToOpposite) continue;
         const outward = { x: Math.sin(p.rotY), z: Math.cos(p.rotY) };
-        const coverX = p.x + outward.x * 0.5;
-        const coverZ = p.z + outward.z * 0.5;
+        const span = p.buildArgs?.span ?? p.structure.width;
+        const dx = playerPos.x - p.x, dz = playerPos.z - p.z;
+        const t = Math.max(0, Math.min(span, dx * outward.x + dz * outward.z));
+        const coverX = p.x + outward.x * t, coverZ = p.z + outward.z * t;
         const d = Math.hypot(coverX - playerPos.x, coverZ - playerPos.z);
-        if (d < ROOF_COVER_RADIUS) active.add(p.mesh);
+        if (d < ROOF_COVER_MARGIN) active.add(p.mesh);
       }
 
-      // walls: fade if they sit between the camera and the player
-      const wallEntries = placed.filter((p) => p.structure.snapMode === "edge" && p.structure.id !== "post");
+      // walls: fade if they sit between the camera and the player — a
+      // gable wall is snapMode "top" (it rests on a wall's top) but reads
+      // visually as a small vertical wall, so it belongs in this
+      // occlusion check rather than the roof-coverage one above.
+      const wallEntries = placed.filter((p) => (p.structure.snapMode === "edge" || p.structure.id === "gableWall") && p.structure.id !== "post");
       if (wallEntries.length) {
         const from = camera.position;
         const to = new THREE.Vector3(playerPos.x, playerPos.y + 1, playerPos.z);

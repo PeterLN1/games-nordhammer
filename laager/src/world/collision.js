@@ -91,13 +91,18 @@ export function createCollision({ trees, rocks, buildMode, terrainHeight }) {
   }
 
   return {
-    // Resolves a movement step by trying each axis independently, so
-    // brushing past a wall/tree at an angle slides you along it instead
-    // of just freezing the instant either axis alone would clip something.
-    // `y` is the player's *current* standing height, used only to decide
-    // which floor's obstacles apply.
+    // Resolves a movement step. Tries the full diagonal move first — for
+    // a wall that isn't aligned with the world X/Z axes (any rotated
+    // room), that's often clear even when neither pure-X nor pure-Z
+    // alone would be, since those two only ever slide along the world
+    // axes, not along the wall's own angle. Falls back to each axis
+    // independently so brushing past a wall/tree still slides along it
+    // instead of freezing the instant either axis alone would clip
+    // something. `y` is the player's *current* standing height, used
+    // only to decide which floor's obstacles apply.
     resolve(fromX, fromZ, toX, toZ, y) {
       const clear = depenetrate(fromX, fromZ, y);
+      if (!blocked(toX, toZ, y)) return { x: toX, z: toZ };
       let x = clear.x, z = clear.z;
       if (!blocked(toX, z, y)) x = toX;
       if (!blocked(x, toZ, y)) z = toZ;

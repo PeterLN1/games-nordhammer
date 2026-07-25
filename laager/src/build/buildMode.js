@@ -240,6 +240,14 @@ function findWallRunSpan(anchor, placed) {
       let next = null, nextFarEnd = null;
       for (const p of placed) {
         if (inChain.has(p) || p.structure.snapMode !== "edge") continue;
+        // must run parallel to the anchor — on a *closed* room perimeter,
+        // the perpendicular wall at each corner also touches this same
+        // endpoint, and without this check the chain walked straight
+        // through every corner and all the way around the building,
+        // collapsing the "span" to whatever tiny gap was left when it
+        // wrapped back near its own start instead of stopping at the
+        // real end of this one straight run.
+        if (angleBetweenLines(p.rotY, anchor.rotY) > ROOF_SPAN_PARALLEL_TOL) continue;
         const ends = endPoints(p);
         if (Math.hypot(ends[0].x - currentEnd.x, ends[0].z - currentEnd.z) < CHAIN_LINK_EPS) { next = p; nextFarEnd = ends[1]; break; }
         if (Math.hypot(ends[1].x - currentEnd.x, ends[1].z - currentEnd.z) < CHAIN_LINK_EPS) { next = p; nextFarEnd = ends[0]; break; }
@@ -518,7 +526,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       mesh.rotation.y = pending.rotY;
       scene.add(mesh);
       const shadowMesh = addShadowBlob(scene, shadowMat, pending.x, pending.z, pending.structure.shadowRadius);
-      const entry = { x: pending.x, y: pending.y, z: pending.z, rotY: pending.rotY, structure: pending.structure, mesh, shadowMesh };
+      const entry = { x: pending.x, y: pending.y, z: pending.z, rotY: pending.rotY, structure: pending.structure, mesh, shadowMesh, buildArgs: pending.buildArgs };
       if (pending.structure.id === "door") entry.open = false;
       placed.push(entry);
       pending = null;
