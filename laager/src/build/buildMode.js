@@ -450,30 +450,54 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
     // rotation lives on mesh.userData.leaf (see structures.buildDoor);
     // collision just checks the .open flag directly, ignoring the swing
     // angle, since a "half-open" door is still fully walkable in this
-    // stylized game.
-    tryToggleDoor(point) {
-      for (const p of placed) {
-        if (p.structure.id !== "door") continue;
-        if (Math.hypot(p.x - point.x, p.z - point.z) > p.structure.shadowRadius + 0.3) continue;
-        p.open = !p.open;
-        const leaf = p.mesh.userData.leaf;
-        if (leaf) leaf.rotation.y = p.open ? DOOR_OPEN_ANGLE : 0;
-        return true;
+    // stylized game. Prefers the exact door a raycast hit (hitObject),
+    // same reasoning as tryDemolish, falling back to nearest-by-distance.
+    tryToggleDoor(point, hitObject) {
+      let door = null;
+      if (hitObject) {
+        let obj = hitObject;
+        while (obj && !door) {
+          door = placed.find((p) => p.structure.id === "door" && p.mesh === obj) || null;
+          obj = obj.parent;
+        }
       }
-      return false;
+      if (!door) {
+        door = placed.find((p) => p.structure.id === "door" && Math.hypot(p.x - point.x, p.z - point.z) <= p.structure.shadowRadius + 0.3) || null;
+      }
+      if (!door) return false;
+      door.open = !door.open;
+      const leaf = door.mesh.userData.leaf;
+      if (leaf) leaf.rotation.y = door.open ? DOOR_OPEN_ANGLE : 0;
+      return true;
     },
 
-    // finds the nearest placed structure to the tap point and removes it,
-    // refunding its full cost
-    tryDemolish(point) {
+    // Removes the tapped structure and refunds its full cost. `hitObject`
+    // (the actual mesh a raycast landed on, if any) lets this remove
+    // exactly what was tapped — important once a structure sits up on a
+    // platform, where its (x,z) can be a fair distance from the point a
+    // ground-projected tap infers. Falls back to nearest-by-distance
+    // (e.g. a demolished-mid-air miss, or a thin structure the ray missed)
+    // when there's no direct hit.
+    tryDemolish(point, hitObject) {
       if (!demolish) return false;
-      let best = null, bestIndex = -1, bestDist = Infinity;
-      placed.forEach((p, i) => {
-        const d = Math.hypot(p.x - point.x, p.z - point.z);
-        if (d < p.structure.shadowRadius + 0.3 && d < bestDist) {
-          bestDist = d; best = p; bestIndex = i;
+      let best = null, bestIndex = -1;
+      if (hitObject) {
+        let obj = hitObject;
+        while (obj && best === null) {
+          const i = placed.findIndex((p) => p.mesh === obj);
+          if (i !== -1) { best = placed[i]; bestIndex = i; }
+          obj = obj.parent;
         }
-      });
+      }
+      if (!best) {
+        let bestDist = Infinity;
+        placed.forEach((p, i) => {
+          const d = Math.hypot(p.x - point.x, p.z - point.z);
+          if (d < p.structure.shadowRadius + 0.3 && d < bestDist) {
+            bestDist = d; best = p; bestIndex = i;
+          }
+        });
+      }
       if (!best) return false;
       scene.remove(best.mesh);
       scene.remove(best.shadowMesh);

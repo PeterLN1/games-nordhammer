@@ -10,10 +10,20 @@ const FADE_SPEED = 9; // higher = snappier fade
 // camp only ever has a small number of built structures.
 export function createCutaway() {
   const raycaster = new THREE.Raycaster();
+  let lastActive = new Set();
 
   return {
+    // Meshes currently faded out (roof over the player, wall between
+    // camera and player) — tap-targeting excludes these, so a tap
+    // "through" a see-through roof reaches the wall/ground beneath it
+    // instead of hitting the invisible-looking but still-solid roof.
+    getFaded() {
+      return lastActive;
+    },
+
     update(placed, playerPos, camera, dt) {
       const active = new Set();
+      lastActive = active;
 
       // roofs: fade if the player is standing under their sloped coverage
       for (const p of placed) {

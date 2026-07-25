@@ -45,7 +45,8 @@ export class Player {
       const step = Math.min(this.speed * dt, dist);
       const nx = this.position.x + (dx / dist) * step;
       const nz = this.position.z + (dz / dist) * step;
-      const resolved = this.collision ? this.collision.resolve(this.position.x, this.position.z, nx, nz) : { x: nx, z: nz };
+      const currentY = this.terrainHeight(this.position.x, this.position.z);
+      const resolved = this.collision ? this.collision.resolve(this.position.x, this.position.z, nx, nz, currentY) : { x: nx, z: nz };
       this.position.x = resolved.x;
       this.position.z = resolved.z;
       const desiredFacing = Math.atan2(dx, dz);

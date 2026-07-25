@@ -10,10 +10,18 @@ const TAP_DELAY_MS = 140;
 // rotate drag instead of a stationary tap.
 const DRAG_THRESHOLD_PX = 10;
 
-// One finger taps the ground to walk there (raycast against the ground
-// meshes). A single finger that moves past a small threshold instead
-// orbits the camera. Two fingers pinch to zoom the follow camera in/out.
-export function createTouchControls(renderer, camera, groundMeshes, { onTap, onPinchZoom, onRotateDrag }) {
+// One finger taps to interact with whatever's actually under it —
+// raycast against the ground *and* every built structure (nearest hit
+// wins), not just the ground plane. Building/demolishing at height used
+// to always project onto the flat ground no matter what was visually
+// under your finger, which put the inferred point nowhere near an
+// elevated wall/platform and made tapping it directly unreliable. A
+// single finger that moves past a small threshold instead orbits the
+// camera. Two fingers pinch to zoom the follow camera in/out.
+//
+// getTargets() is called fresh on every tap (not just once) since the
+// set of built structures changes as the player builds/demolishes.
+export function createTouchControls(renderer, camera, getTargets, { onTap, onPinchZoom, onRotateDrag }) {
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const pointers = new Map(); // pointerId -> {x, y}
@@ -28,8 +36,8 @@ export function createTouchControls(renderer, camera, groundMeshes, { onTap, onP
     ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
-    const hits = raycaster.intersectObjects(groundMeshes, false);
-    if (hits.length) onTap(hits[0].point);
+    const hits = raycaster.intersectObjects(getTargets(), true);
+    if (hits.length) onTap(hits[0].point, hits[0].object);
   }
 
   function pinchDistance() {

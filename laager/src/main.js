@@ -88,7 +88,7 @@ const platformClimb = createPlatformClimb();
 function playerHeightAt(x, z) {
   return platformClimb.update(x, z, buildMode.placed) ?? terrainHeight(x, z);
 }
-const collision = createCollision({ trees: treeItems, rocks: rockItems, buildMode });
+const collision = createCollision({ trees: treeItems, rocks: rockItems, buildMode, terrainHeight });
 const player = new Player(scene, PALETTE, shadowMat, playerHeightAt, collision);
 const marker = createMoveMarker(scene);
 
@@ -179,10 +179,23 @@ buildConfirmBtn.addEventListener("click", () => {
   if (buildMode.confirm()) buildConfirmBtn.disabled = !buildMode.canConfirm;
 });
 
-createTouchControls(renderer, camera, [ground, clearing], {
-  onTap(point) {
+// Raycast targets include every built structure (not just the ground
+// plane), so a tap lands on whatever's actually visually under it —
+// recomputed fresh each tap since what's built changes over time.
+// Currently-faded structures (a roof over the player, a wall between
+// camera and player — see cutaway.js) are left out, so tapping "through"
+// one of those reaches the wall/ground behind it instead of hitting the
+// see-through-but-still-solid mesh.
+function tapTargets() {
+  const faded = cutaway.getFaded();
+  const structureMeshes = buildMode.placed.filter((p) => !faded.has(p.mesh)).map((p) => p.mesh);
+  return [ground, clearing, ...structureMeshes];
+}
+
+createTouchControls(renderer, camera, tapTargets, {
+  onTap(point, hitObject) {
     if (buildMode.demolishActive) {
-      buildMode.tryDemolish(point);
+      buildMode.tryDemolish(point, hitObject);
       return;
     }
     if (buildMode.active) {
@@ -190,7 +203,7 @@ createTouchControls(renderer, camera, [ground, clearing], {
       buildConfirmBtn.disabled = !buildMode.canConfirm;
       return;
     }
-    if (buildMode.tryToggleDoor(point)) return;
+    if (buildMode.tryToggleDoor(point, hitObject)) return;
     const len = Math.hypot(point.x, point.z);
     const p = len > PLAY_RADIUS ? point.clone().multiplyScalar(PLAY_RADIUS / len) : point;
     player.moveTo(p.x, p.z);
