@@ -18,9 +18,9 @@ export function createPlacementGhost(scene, palette) {
   }
 
   return {
-    setShape(structure) {
+    setShape(structure, buildArgs) {
       this.clear();
-      object = structure.build(palette);
+      object = structure.build(palette, buildArgs);
       object.visible = false;
       scene.add(object);
       applyMat();

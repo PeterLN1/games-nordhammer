@@ -1,6 +1,12 @@
 import * as THREE from "three";
 
-export const SNAP_SIZE = 1.2; // grid cell size, matches the wall segment width
+export const SNAP_SIZE = 1.2; // grid cell size for free/unanchored placement
+
+// A wall's full span, edge-to-edge — deliberately equal to a platform's
+// own width (see structures.platform below) so a single wall segment
+// exactly closes one platform edge corner-to-corner, with no leftover
+// gap and no overlap.
+export const WALL_SPAN = 1.3;
 
 // transparent:true (at opacity 1, visually identical to opaque) so the
 // cutaway system can fade walls/roofs in place without ever recompiling
@@ -14,7 +20,7 @@ function mat(palette, key, extra = {}) {
 // elsewhere in the scene, so a built wall reads as piled fieldstone
 // instead of cut/poured blocks. Still one InstancedMesh (~1 draw call).
 function buildStoneWall(palette) {
-  const W = 1.15, D = 0.28;
+  const W = WALL_SPAN, D = 0.28;
   const rows = [
     { y0: 0, h: 0.26, count: 4 },
     { y0: 0.24, h: 0.26, count: 5 },
@@ -47,16 +53,22 @@ function buildStoneWall(palette) {
   return mesh;
 }
 
-// A sloped lean-to roof panel: wood rafters + ridge beam under a grass
-// thatch layer. Its local origin is the ridge (the edge that sits on a
-// wall's/post's top), sloping outward and down toward the eave.
-function buildRoof(palette) {
+// A sloped roof panel: wood rafters + ridge beam under a grass thatch
+// layer. Its local origin is the ridge (the edge that sits on a
+// wall's/post's top), sloping down toward the eave.
+//
+// span/drop default to a fixed overhang (a one-sided lean-to, for a
+// roof built against a single wall with nothing opposite it) but
+// buildMode passes exact values whenever it finds a second wall/post
+// roughly where the eave would land — then the eave sits exactly on
+// that support instead of hanging unattached in open air.
+function buildRoof(palette, span = 0.95, drop = 0.35) {
   const group = new THREE.Group();
-  const W = 1.15, EAVE_DROP = 0.35, DEPTH = 0.95;
+  const W = WALL_SPAN;
   const woodMat = mat(palette, "trunk");
   const grassMat = mat(palette, "grass");
 
-  const slopeVec = new THREE.Vector3(0, -EAVE_DROP, DEPTH);
+  const slopeVec = new THREE.Vector3(0, -drop, span);
   const slopeLen = slopeVec.length();
   const slopeDir = slopeVec.clone().normalize();
   const mid = slopeVec.clone().multiplyScalar(0.5); // origin (0,0,0) IS the ridge
@@ -137,7 +149,7 @@ export const STRUCTURES = {
     icon: "🪵",
     cost: { wood: 3, stone: 0 },
     shadowRadius: 0.85,
-    width: 1.15, // used to snap flush edge-to-edge against a neighboring structure
+    width: WALL_SPAN, // used to snap flush edge-to-edge against a neighboring structure
     height: 1.0, // where its top sits, for roofs/platforms snapping onto it
     snapMode: "edge",
     build(palette) {
@@ -145,12 +157,12 @@ export const STRUCTURES = {
       const plankMat = mat(palette, "plank");
       const braceMat = mat(palette, "trunk");
 
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.0, 0.12), plankMat);
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(WALL_SPAN, 1.0, 0.12), plankMat);
       panel.position.y = 0.5;
       group.add(panel);
 
       [0.28, 0.72].forEach((h) => {
-        const brace = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, 0.15), braceMat);
+        const brace = new THREE.Mesh(new THREE.BoxGeometry(WALL_SPAN + 0.05, 0.08, 0.15), braceMat);
         brace.position.y = h;
         group.add(brace);
       });
@@ -164,7 +176,7 @@ export const STRUCTURES = {
     icon: "🪨",
     cost: { wood: 0, stone: 3 },
     shadowRadius: 0.9,
-    width: 1.15,
+    width: WALL_SPAN,
     height: 0.78,
     snapMode: "edge",
     build(palette) {
@@ -202,10 +214,11 @@ export const STRUCTURES = {
     icon: "🌾",
     cost: { wood: 2, stone: 0, grass: 3 },
     shadowRadius: 0.9,
-    width: 1.15,
+    width: WALL_SPAN,
     snapMode: "top", // snaps onto the top of a nearby wall/post — never floats
-    build(palette) {
-      return buildRoof(palette);
+    build(palette, opts) {
+      const { span, drop } = opts || {};
+      return buildRoof(palette, span, drop);
     },
   },
 

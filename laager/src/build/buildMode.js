@@ -51,13 +51,23 @@ function localToWorld(p, lx, lz) {
 
 // A platform's 4 corners, at its own walkable height — lets a wall snap
 // onto a platform's perimeter (to trace a house's outline on top of it)
-// the same way walls snap onto each other's ends.
+// the same way walls snap onto each other's ends. Each corner's default
+// rotY faces along the edge toward the *next* corner (not just copied
+// from the platform's own rotY) — with a square footprint, "local +X"
+// is only ever the correct tangent for two of the four corners, so
+// copying the platform's rotY blindly sent the other two corners' walls
+// straight off the platform's far side and down to ground height.
 function platformCorners(p) {
   const half = p.structure.width / 2;
   const y = p.y + p.structure.height;
-  return [[half, half], [half, -half], [-half, half], [-half, -half]].map(([lx, lz]) => {
-    const { x, z } = localToWorld(p, lx, lz);
-    return { x, z, y, rotY: p.rotY };
+  const local = [[half, half], [half, -half], [-half, -half], [-half, half]]; // cyclic order around the perimeter
+  const world = local.map(([lx, lz]) => localToWorld(p, lx, lz));
+  return world.map((c, i) => {
+    const next = world[(i + 1) % world.length];
+    const tx = next.x - c.x, tz = next.z - c.z;
+    const len = Math.hypot(tx, tz) || 1;
+    const rotY = Math.atan2(-tz / len, tx / len); // forward(rotY) === this tangent
+    return { x: c.x, z: c.z, y, rotY };
   });
 }
 
@@ -120,6 +130,38 @@ function findNearestTop(point, placed, filterFn) {
     if (d < TOP_SEARCH_RADIUS && d < bestDist) {
       bestDist = d;
       best = { x: p.x, z: p.z, y: p.y + p.structure.height, rotY: p.rotY };
+    }
+  }
+  return best;
+}
+
+const ROOF_SPAN_MIN = 0.6; // shorter than this and a partner is basically on top of the anchor already
+const ROOF_SPAN_MAX = 2.0; // covers one platform tile's edge-to-edge distance (1.3) with margin
+const ROOF_SPAN_COS_TOL = Math.cos(0.5); // partner must be within ~28° of straight ahead
+
+// A second nearby *wall*, roughly where the roof's slope is currently
+// facing, for the eave to rest on exactly instead of hanging in open
+// air — this is what turns the roof from a one-sided overhang into a
+// proper span between two walls (e.g. opposite sides of a house). Search
+// direction follows the roof's *current* rotation, so turning it with
+// the rotate button re-aims the search instead of just spinning in place.
+// Only walls count as a partner — a post/platform in the middle of the
+// house is often the *nearest* candidate but isn't what the eave should
+// rest on, so including them here used to snap the roof down onto the
+// support post instead of across to the far wall.
+function findRoofSpanPartner(anchor, rotY, placed) {
+  const dir = { x: Math.sin(rotY), z: Math.cos(rotY) }; // world dir of the roof's local +Z (slope)
+  let best = null, bestDist = Infinity;
+  for (const p of placed) {
+    if (p.structure.snapMode !== "edge") continue; // walls only
+    if (p.x === anchor.x && p.z === anchor.z) continue; // that's the anchor itself
+    const dx = p.x - anchor.x, dz = p.z - anchor.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < ROOF_SPAN_MIN || dist > ROOF_SPAN_MAX) continue;
+    if ((dx * dir.x + dz * dir.z) / dist < ROOF_SPAN_COS_TOL) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = { x: p.x, z: p.z, y: p.y + p.structure.height };
     }
   }
   return best;
@@ -220,10 +262,20 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
     } else {
       x = freeCenter.x; z = freeCenter.z; y = anchorY;
     }
+
+    let buildArgs;
+    if (selected.id === "roof") {
+      const partner = findRoofSpanPartner({ x, z, y }, currentRotY, placed);
+      buildArgs = partner
+        ? { span: Math.hypot(partner.x - x, partner.z - z), drop: y - partner.y }
+        : undefined;
+      ghost.setShape(selected, buildArgs); // re-shape: span/drop can change every tap or rotate
+    }
+
     ghost.moveTo(x, y, z, currentRotY);
     const affordable = resources.canAfford(selected.cost);
     ghost.setValid(affordable);
-    pending = { x, y, z, rotY: currentRotY, structure: selected, affordable };
+    pending = { x, y, z, rotY: currentRotY, structure: selected, affordable, buildArgs };
   }
 
   return {
@@ -311,6 +363,15 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
         freeCenter = { x: anchor.x, z: anchor.z };
         anchorY = anchor.y;
         currentRotY = anchor.rotY;
+        // A roof's default facing is a coin flip between "toward the
+        // house interior" and "out over open air" — if the default comes
+        // up empty but flipping 180° finds a wall to span to, take that
+        // instead, so tapping a wall just works without a manual rotate.
+        if (selected.id === "roof"
+          && !findRoofSpanPartner(anchor, currentRotY, placed)
+          && findRoofSpanPartner(anchor, currentRotY + Math.PI, placed)) {
+          currentRotY += Math.PI;
+        }
         commitGhost();
         return;
       }
@@ -340,7 +401,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
     confirm() {
       if (!pending || !pending.affordable) return false;
       resources.spend(pending.structure.cost);
-      const mesh = pending.structure.build(palette);
+      const mesh = pending.structure.build(palette, pending.buildArgs);
       mesh.position.set(pending.x, pending.y, pending.z);
       mesh.rotation.y = pending.rotY;
       scene.add(mesh);
