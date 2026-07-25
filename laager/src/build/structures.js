@@ -52,14 +52,14 @@ function buildStoneWall(palette) {
 // wall's/post's top), sloping outward and down toward the eave.
 function buildRoof(palette) {
   const group = new THREE.Group();
-  const W = 1.15, RIDGE_Y = 1.0, EAVE_DROP = 0.35, DEPTH = 0.95;
+  const W = 1.15, EAVE_DROP = 0.35, DEPTH = 0.95;
   const woodMat = mat(palette, "trunk");
   const grassMat = mat(palette, "grass");
 
   const slopeVec = new THREE.Vector3(0, -EAVE_DROP, DEPTH);
   const slopeLen = slopeVec.length();
   const slopeDir = slopeVec.clone().normalize();
-  const mid = slopeVec.clone().multiplyScalar(0.5).add(new THREE.Vector3(0, RIDGE_Y, 0));
+  const mid = slopeVec.clone().multiplyScalar(0.5); // origin (0,0,0) IS the ridge
 
   const rafterQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), slopeDir);
   const rafterGeo = new THREE.CylinderGeometry(0.045, 0.05, slopeLen, 5);
@@ -72,7 +72,6 @@ function buildRoof(palette) {
 
   const ridge = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, W, 6), woodMat);
   ridge.rotation.z = Math.PI / 2;
-  ridge.position.set(0, RIDGE_Y, 0);
   group.add(ridge);
 
   const thatchQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), slopeDir);

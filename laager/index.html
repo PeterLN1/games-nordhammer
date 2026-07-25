@@ -34,6 +34,15 @@
     background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
     padding: 8px 13px; border-radius: 999px; backdrop-filter: blur(6px);
   }
+  .hud-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; }
+  .hud-right > * { pointer-events: auto; }
+  .daynight {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
+    padding: 6px 10px; border-radius: 999px; backdrop-filter: blur(6px);
+    font-size: 11px; font-variant-numeric: tabular-nums;
+  }
+  .daynight input[type=range] { width: 84px; height: 16px; accent-color: #ffb14a; }
 
   .hint {
     position: fixed; left: 50%; bottom: max(22px, env(safe-area-inset-bottom));
@@ -100,7 +109,14 @@
 
   <div class="hud">
     <a href="/">← Spel</a>
-    <h1>Läger · 3D-demo</h1>
+    <div class="hud-right">
+      <h1>Läger · 3D-demo</h1>
+      <div class="daynight" id="dayNightPanel">
+        <span id="dayNightIcon">☀️</span>
+        <input type="range" id="dayNightSlider" min="0" max="24" step="0.25" value="12">
+        <span id="dayNightLabel">12:00</span>
+      </div>
+    </div>
   </div>
   <div class="hint" id="hint">Tryck för att gå dit · dra för att rotera · nyp för att zooma</div>
   <div class="fps" id="fps"></div>

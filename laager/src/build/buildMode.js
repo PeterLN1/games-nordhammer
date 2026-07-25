@@ -40,21 +40,68 @@ function endPoints(p) {
   ];
 }
 
-// Nearest open end of any placed *wall* to the tap point, if close enough
-// to count as "aiming at that corner" rather than free placement. Only
-// walls chain corner-to-corner this way — posts/platforms/roofs/ladders
-// have a "width" field for unrelated reasons (snapping things onto their
-// top), not a wall-style open end, so including them here let a wall
-// snap-pivot onto nonsense points derived from a platform's footprint.
+// Local-to-world for a point in a placed structure's own (rotated) frame
+// — the exact inverse of the world-to-local step in platformSurfaceAt(),
+// so a corner/edge computed here always lands where the footprint test
+// (and the actual rendered mesh) agrees it should.
+function localToWorld(p, lx, lz) {
+  const cos = Math.cos(p.rotY), sin = Math.sin(p.rotY);
+  return { x: p.x + lx * cos + lz * sin, z: p.z - lx * sin + lz * cos };
+}
+
+// A platform's 4 corners, at its own walkable height — lets a wall snap
+// onto a platform's perimeter (to trace a house's outline on top of it)
+// the same way walls snap onto each other's ends.
+function platformCorners(p) {
+  const half = p.structure.width / 2;
+  const y = p.y + p.structure.height;
+  return [[half, half], [half, -half], [-half, half], [-half, -half]].map(([lx, lz]) => {
+    const { x, z } = localToWorld(p, lx, lz);
+    return { x, z, y, rotY: p.rotY };
+  });
+}
+
+// Nearest open end of a placed wall, or nearest corner of a placed
+// platform, to the tap point — close enough to count as "aiming at that
+// corner" rather than free placement. Posts/roofs/ladders have a "width"
+// field for unrelated reasons (snapping things onto their top), not a
+// wall-style open end, so they're excluded here.
 function findNearestCorner(point, placed) {
   let best = null, bestDist = Infinity;
   for (const p of placed) {
-    if (p.structure.snapMode !== "edge") continue;
-    for (const end of endPoints(p)) {
+    let ends;
+    if (p.structure.snapMode === "edge") ends = endPoints(p);
+    else if (p.structure.id === "platform") ends = platformCorners(p);
+    else continue;
+    for (const end of ends) {
       const d = Math.hypot(end.x - point.x, end.z - point.z);
       if (d < NEIGHBOR_SEARCH_RADIUS && d < bestDist) {
         bestDist = d;
         best = end;
+      }
+    }
+  }
+  return best;
+}
+
+const PLATFORM_EDGE_SEARCH_RADIUS = 1.0; // how close a tap must be to an empty tile-slot next to a platform to snap a new one flush against it
+
+// The 4 empty tile-slots directly adjacent to a placed platform's edges.
+// Snapping here (instead of onto the world grid) keeps a floor of tiles
+// perfectly seamless regardless of what odd angle the supporting posts
+// happen to sit at.
+function findNearestPlatformNeighbor(point, placed) {
+  let best = null, bestDist = Infinity;
+  for (const p of placed) {
+    if (p.structure.id !== "platform") continue;
+    const w = p.structure.width;
+    for (const [lx, lz] of [[w, 0], [-w, 0], [0, w], [0, -w]]) {
+      const { x, z } = localToWorld(p, lx, lz);
+      if (placed.some((q) => q.structure.id === "platform" && Math.hypot(q.x - x, q.z - z) < 0.3)) continue; // slot already filled
+      const d = Math.hypot(x - point.x, z - point.z);
+      if (d < PLATFORM_EDGE_SEARCH_RADIUS && d < bestDist) {
+        bestDist = d;
+        best = { x, z, y: p.y, rotY: p.rotY };
       }
     }
   }
@@ -89,10 +136,20 @@ export function platformSurfaceAt(x, z, placed) {
   for (const p of placed) {
     if (p.structure.id !== "platform") continue;
     const dx = x - p.x, dz = z - p.z;
-    const cos = Math.cos(-p.rotY), sin = Math.sin(-p.rotY);
+    // NB: this must use +p.rotY, not -p.rotY — it has to be the exact
+    // inverse of localToWorld() below (which itself matches how three.js
+    // actually renders mesh.rotation.y), or a rotated platform's tested
+    // footprint stops matching its visible one and only the dead center
+    // (where rotation doesn't matter) still resolves as "on the platform".
+    const cos = Math.cos(p.rotY), sin = Math.sin(p.rotY);
     const lx = dx * cos - dz * sin;
     const lz = dx * sin + dz * cos;
-    const half = p.structure.width / 2;
+    // +2cm margin: a wall built flush along the platform's rim (exactly
+    // the intended use, see findNearestCorner) puts its center right at
+    // this boundary, where float rounding alone can push it a hair past
+    // a strict <= — the margin absorbs that instead of the wall dropping
+    // to ground height for no visible reason.
+    const half = p.structure.width / 2 + 0.02;
     if (Math.abs(lx) <= half && Math.abs(lz) <= half) {
       const y = p.y + p.structure.height;
       if (best === null || y > best) best = y;
@@ -233,9 +290,22 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
         return;
       }
 
-      if (mode === "top" || mode === "topPost") {
-        const filter = mode === "topPost" ? (p) => p.structure.id === "post" : null;
-        const anchor = findNearestTop(clamped, placed, filter);
+      if (mode === "topPost") {
+        // Prefer snapping flush against an existing platform tile (for a
+        // seamless floor) over resting fresh on a post's top.
+        const neighbor = findNearestPlatformNeighbor(clamped, placed);
+        const anchor = neighbor || findNearestTop(clamped, placed, (p) => p.structure.id === "post");
+        if (!anchor) { clearPending(); return; } // nothing to rest on — refuse rather than float
+        pivot = null;
+        freeCenter = { x: anchor.x, z: anchor.z };
+        anchorY = anchor.y;
+        currentRotY = anchor.rotY;
+        commitGhost();
+        return;
+      }
+
+      if (mode === "top") {
+        const anchor = findNearestTop(clamped, placed, null);
         if (!anchor) { clearPending(); return; } // nothing to rest on — refuse rather than float
         pivot = null;
         freeCenter = { x: anchor.x, z: anchor.z };

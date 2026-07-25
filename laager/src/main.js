@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { PALETTE } from "./core/palette.js";
 import { createShadowMaterial } from "./core/shadowDecals.js";
-import { buildSky } from "./world/sky.js";
+import { createSky } from "./world/sky.js";
 import { createLighting } from "./world/lighting.js";
 import { buildGround, terrainHeight } from "./world/terrain.js";
 import { buildFire, buildEmbers } from "./world/fire.js";
@@ -43,6 +43,9 @@ const buildConfirmBtn = document.getElementById("buildConfirm");
 const resWoodEl = document.getElementById("resWood");
 const resStoneEl = document.getElementById("resStone");
 const resGrassEl = document.getElementById("resGrass");
+const dayNightSlider = document.getElementById("dayNightSlider");
+const dayNightIcon = document.getElementById("dayNightIcon");
+const dayNightLabel = document.getElementById("dayNightLabel");
 
 const PLAY_RADIUS = 17; // how far from camp the player is allowed to walk
 
@@ -55,15 +58,13 @@ renderer.toneMappingExposure = 1.15;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = PALETTE.skyTop.clone();
-scene.fog = new THREE.FogExp2(PALETTE.skyTop.getHex(), 0.028);
 
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
 const followCam = new FollowCamera(camera);
 
 // ---------- world ----------
 const shadowMat = createShadowMaterial();
-buildSky(scene, PALETTE);
+const sky = createSky(scene, PALETTE);
 const lighting = createLighting(scene);
 const { ground, clearing } = buildGround(scene, PALETTE);
 buildFire(scene, PALETTE, shadowMat);
@@ -102,6 +103,22 @@ function costLabel(cost) {
   if (cost.grass) parts.push(`🌾${cost.grass}`);
   return parts.join(" ");
 }
+
+function formatClock(hours) {
+  const h = Math.floor(hours) % 24;
+  const m = Math.round((hours % 1) * 60) % 60;
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+}
+function refreshDayNightUI() {
+  dayNightLabel.textContent = formatClock(sky.hours);
+  dayNightIcon.textContent = sky.isNight ? "🌙" : "☀️";
+}
+dayNightSlider.value = sky.hours;
+refreshDayNightUI();
+dayNightSlider.addEventListener("input", () => {
+  sky.setHours(parseFloat(dayNightSlider.value));
+  refreshDayNightUI();
+});
 
 Object.values(STRUCTURES).forEach((s) => {
   const btn = document.createElement("button");
@@ -202,6 +219,7 @@ let fpsAccum = 0, fpsFrames = 0, fpsTimer = 0;
 function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
+  sky.update(dt);
   lighting.updateFireFlicker(clock.elapsedTime);
   embers.update(dt);
   player.update(dt);
