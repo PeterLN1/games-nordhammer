@@ -95,6 +95,56 @@ function buildRoof(palette, span = 0.95, drop = 0.35) {
   return group;
 }
 
+// A symmetric ridge (gable/"ryggås") roof: two sloped halves meeting at a
+// central peak, instead of one panel hanging off a single wall. Local
+// origin is still the near eave (the anchor wall's top, same convention
+// as buildRoof), climbing to the peak at the span's midpoint then back
+// down to the far eave — so it reads as a proper house roof rather than
+// a lean-to, and (like buildRoof) buildMode sizes span/drop to the exact
+// gap to whatever wall it finds across the room.
+function buildRidgeRoof(palette, span = 1.3, drop = 0, rise = 0.5) {
+  const group = new THREE.Group();
+  const W = WALL_SPAN;
+  const woodMat = mat(palette, "trunk");
+  const grassMat = mat(palette, "grass");
+
+  const near = new THREE.Vector3(0, 0, 0);
+  const peak = new THREE.Vector3(0, rise, span / 2);
+  const far = new THREE.Vector3(0, -drop, span);
+
+  function addSlope(from, to) {
+    const vec = to.clone().sub(from);
+    const len = vec.length();
+    const dir = vec.clone().normalize();
+    const mid = from.clone().add(to).multiplyScalar(0.5);
+
+    const rafterQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    const rafterGeo = new THREE.CylinderGeometry(0.04, 0.045, len, 5);
+    [-W / 2 + 0.12, 0, W / 2 - 0.12].forEach((x) => {
+      const rafter = new THREE.Mesh(rafterGeo, woodMat);
+      rafter.position.set(x, mid.y, mid.z);
+      rafter.quaternion.copy(rafterQuat);
+      group.add(rafter);
+    });
+
+    const thatchQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+    const thatch = new THREE.Mesh(new THREE.BoxGeometry(W, 0.06, len), grassMat);
+    thatch.position.set(0, mid.y + 0.05, mid.z);
+    thatch.quaternion.copy(thatchQuat);
+    group.add(thatch);
+  }
+
+  addSlope(near, peak);
+  addSlope(peak, far);
+
+  const ridge = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, W, 6), woodMat);
+  ridge.rotation.z = Math.PI / 2;
+  ridge.position.copy(peak);
+  group.add(ridge);
+
+  return group;
+}
+
 // A flat plank platform (its local origin is its underside, so it snaps
 // flush onto whatever it's resting on) with two support beams showing
 // underneath.
@@ -216,9 +266,26 @@ export const STRUCTURES = {
     shadowRadius: 0.9,
     width: WALL_SPAN,
     snapMode: "top", // snaps onto the top of a nearby wall/post — never floats
+    spansToOpposite: true, // buildMode sizes it to reach a wall found across the room, if any
     build(palette, opts) {
       const { span, drop } = opts || {};
       return buildRoof(palette, span, drop);
+    },
+  },
+
+  ridgeRoof: {
+    id: "ridgeRoof",
+    label: "Ryggåstak",
+    icon: "⛺",
+    cost: { wood: 3, stone: 0, grass: 5 },
+    shadowRadius: 0.95,
+    width: WALL_SPAN,
+    snapMode: "top", // snaps onto the top of a nearby wall — never floats
+    spansToOpposite: true, // sized to the exact gap to the wall it finds across the room
+    requiresSpan: true, // a peaked roof needs a wall on both sides — refuse rather than build half a peak
+    build(palette, opts) {
+      const { span, drop } = opts || {};
+      return buildRidgeRoof(palette, span, drop);
     },
   },
 

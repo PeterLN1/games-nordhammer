@@ -136,7 +136,7 @@ function findNearestTop(point, placed, filterFn) {
 }
 
 const ROOF_SPAN_MIN = 0.6; // shorter than this and a partner is basically on top of the anchor already
-const ROOF_SPAN_MAX = 2.0; // covers one platform tile's edge-to-edge distance (1.3) with margin
+const ROOF_SPAN_MAX = 6.0; // generous — covers a multi-tile room (e.g. a 3-wide house), not just one platform tile
 const ROOF_SPAN_COS_TOL = Math.cos(0.5); // partner must be within ~28° of straight ahead
 
 // A second nearby *wall*, roughly where the roof's slope is currently
@@ -264,8 +264,15 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
     }
 
     let buildArgs;
-    if (selected.id === "roof") {
+    if (selected.spansToOpposite) {
       const partner = findRoofSpanPartner({ x, z, y }, currentRotY, placed);
+      if (!partner && selected.requiresSpan) {
+        // e.g. a ridge roof needs a wall on both sides — refuse rather
+        // than build a lopsided peak with nothing under one half of it
+        pending = null;
+        ghost.hide();
+        return;
+      }
       buildArgs = partner
         ? { span: Math.hypot(partner.x - x, partner.z - z), drop: y - partner.y }
         : undefined;
@@ -367,7 +374,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
         // house interior" and "out over open air" — if the default comes
         // up empty but flipping 180° finds a wall to span to, take that
         // instead, so tapping a wall just works without a manual rotate.
-        if (selected.id === "roof"
+        if (selected.spansToOpposite
           && !findRoofSpanPartner(anchor, currentRotY, placed)
           && findRoofSpanPartner(anchor, currentRotY + Math.PI, placed)) {
           currentRotY += Math.PI;
