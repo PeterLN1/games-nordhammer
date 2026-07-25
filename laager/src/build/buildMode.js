@@ -50,25 +50,54 @@ function localToWorld(p, lx, lz) {
   return { x: p.x + lx * cos + lz * sin, z: p.z - lx * sin + lz * cos };
 }
 
+// Direction-only version of localToWorld (no position offset) — for
+// turning a local tangent direction into a world-space one.
+function localDirToWorld(rotY, lx, lz) {
+  const cos = Math.cos(rotY), sin = Math.sin(rotY);
+  return { x: lx * cos + lz * sin, z: -lx * sin + lz * cos };
+}
+
+// Whether another platform tile sits at local offset (lx, lz) from p —
+// i.e. immediately across one of its edges, making that edge an internal
+// seam rather than a real room boundary.
+function hasPlatformNeighbor(p, lx, lz, placed) {
+  const { x, z } = localToWorld(p, lx, lz);
+  return placed.some((q) => q.structure.id === "platform" && Math.hypot(q.x - x, q.z - z) < 0.3);
+}
+
 // A platform's 4 corners, at its own walkable height — lets a wall snap
 // onto a platform's perimeter (to trace a house's outline on top of it)
-// the same way walls snap onto each other's ends. Each corner's default
-// rotY faces along the edge toward the *next* corner (not just copied
-// from the platform's own rotY) — with a square footprint, "local +X"
-// is only ever the correct tangent for two of the four corners, so
-// copying the platform's rotY blindly sent the other two corners' walls
-// straight off the platform's far side and down to ground height.
-function platformCorners(p) {
+// the same way walls snap onto each other's ends.
+//
+// Each corner touches two edges — the one running along local X (at a
+// fixed local Z) and the one running along local Z (at a fixed local X).
+// The default tangent (matching a lone tile's own cyclic order, so a
+// single-tile room's corners still behave exactly as before) picks one
+// of those two — but on a multi-tile floor, that default edge might be
+// an internal seam shared with a neighboring tile rather than the room's
+// real outer boundary. When that happens, use the *other* edge instead:
+// it's the one actually open to the outside, and thus the one a wall
+// should trace. Without this, some corners of a multi-tile room aimed
+// their default wall straight along a hidden interior joint, which is
+// what made walls end up facing inconsistent directions relative to
+// each other unless every affected corner was manually rotated 90°.
+function platformCorners(p, placed) {
   const half = p.structure.width / 2;
+  const w = p.structure.width;
   const y = p.y + p.structure.height;
-  const local = [[half, half], [half, -half], [-half, -half], [-half, half]]; // cyclic order around the perimeter
-  const world = local.map(([lx, lz]) => localToWorld(p, lx, lz));
-  return world.map((c, i) => {
-    const next = world[(i + 1) % world.length];
-    const tx = next.x - c.x, tz = next.z - c.z;
-    const len = Math.hypot(tx, tz) || 1;
-    const rotY = Math.atan2(-tz / len, tx / len); // forward(rotY) === this tangent
-    return { x: c.x, z: c.z, y, rotY };
+  return [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([sx, sz]) => {
+    const { x, z } = localToWorld(p, sx * half, sz * half);
+    const lxOpen = !hasPlatformNeighbor(p, sx * w, 0, placed); // edge at local x = sx*half
+    const lzOpen = !hasPlatformNeighbor(p, 0, sz * w, placed); // edge at local z = sz*half
+    const lxDir = { lx: 0, lz: -sz }; // traces the lx edge
+    const lzDir = { lx: -sx, lz: 0 }; // traces the lz edge
+    const defaultIsLx = sx === sz; // matches the original single-tile cyclic order
+    const dir = defaultIsLx
+      ? (lxOpen ? lxDir : (lzOpen ? lzDir : lxDir))
+      : (lzOpen ? lzDir : (lxOpen ? lxDir : lzDir));
+    const tangent = localDirToWorld(p.rotY, dir.lx, dir.lz);
+    const rotY = Math.atan2(-tangent.z, tangent.x); // forward(rotY) === this tangent
+    return { x, z, y, rotY };
   });
 }
 
@@ -82,7 +111,7 @@ function findNearestCorner(point, placed) {
   for (const p of placed) {
     let ends;
     if (p.structure.snapMode === "edge") ends = endPoints(p);
-    else if (p.structure.id === "platform") ends = platformCorners(p);
+    else if (p.structure.id === "platform") ends = platformCorners(p, placed);
     else continue;
     for (const end of ends) {
       const d = Math.hypot(end.x - point.x, end.z - point.z);
@@ -107,8 +136,8 @@ function findNearestPlatformNeighbor(point, placed) {
     if (p.structure.id !== "platform") continue;
     const w = p.structure.width;
     for (const [lx, lz] of [[w, 0], [-w, 0], [0, w], [0, -w]]) {
+      if (hasPlatformNeighbor(p, lx, lz, placed)) continue; // slot already filled
       const { x, z } = localToWorld(p, lx, lz);
-      if (placed.some((q) => q.structure.id === "platform" && Math.hypot(q.x - x, q.z - z) < 0.3)) continue; // slot already filled
       const d = Math.hypot(x - point.x, z - point.z);
       if (d < PLATFORM_EDGE_SEARCH_RADIUS && d < bestDist) {
         bestDist = d;
@@ -190,6 +219,42 @@ function findRoofSpanPartner(anchor, rotY, placed) {
   return best;
 }
 
+const CHAIN_LINK_EPS = 0.05; // how close two wall endpoints must be to count as "the same joint"
+
+// Walks a chain of corner-connected wall segments (same orientation,
+// each one's end exactly touching the next's) starting from `anchor`, in
+// both directions, to find the whole run's two extreme endpoints — a
+// gable wall uses this to size itself to the *entire* end of a room
+// (however many individual wall segments make it up) instead of just the
+// one segment it happens to be tapped on. Sizing/positioning each small
+// segment independently made multi-segment gable ends a row of
+// mismatched little triangles rather than one that actually fits the
+// ridge roof's real peak, which sits at the middle of the *whole* run.
+function findWallRunSpan(anchor, placed) {
+  const inChain = new Set([anchor]);
+  const anchorEnds = endPoints(anchor);
+  const extremes = [anchorEnds[0], anchorEnds[1]];
+  for (let side = 0; side < 2; side++) {
+    let currentEnd = extremes[side];
+    while (true) {
+      let next = null, nextFarEnd = null;
+      for (const p of placed) {
+        if (inChain.has(p) || p.structure.snapMode !== "edge") continue;
+        const ends = endPoints(p);
+        if (Math.hypot(ends[0].x - currentEnd.x, ends[0].z - currentEnd.z) < CHAIN_LINK_EPS) { next = p; nextFarEnd = ends[1]; break; }
+        if (Math.hypot(ends[1].x - currentEnd.x, ends[1].z - currentEnd.z) < CHAIN_LINK_EPS) { next = p; nextFarEnd = ends[0]; break; }
+      }
+      if (!next) break;
+      inChain.add(next);
+      currentEnd = nextFarEnd;
+      extremes[side] = currentEnd;
+    }
+  }
+  const span = Math.hypot(extremes[1].x - extremes[0].x, extremes[1].z - extremes[0].z);
+  const mid = { x: (extremes[0].x + extremes[1].x) / 2, z: (extremes[0].z + extremes[1].z) / 2 };
+  return { span, mid };
+}
+
 // If (x,z) is over a placed platform, the height of its walkable surface —
 // so a wall/post built there sits on the platform instead of at ground
 // level, and the player standing on it doesn't sink to the ground. Tests
@@ -265,6 +330,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
   let freeCenter = null;
   let anchorY = 0;
   let currentRotY = 0;
+  let topAnchorEntry = null; // the raw placed entry a "top" tap resolved to — needed by spansOwnRun to re-walk its wall chain
 
   function clearPending() {
     pending = null;
@@ -300,6 +366,13 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
         ? { span: Math.hypot(partner.x - x, partner.z - z), drop: y - partner.y }
         : undefined;
       ghost.setShape(selected, buildArgs); // re-shape: span/drop can change every tap or rotate
+    } else if (selected.spansOwnRun && topAnchorEntry) {
+      // re-walk the chain fresh (not just once at tap time) so rotate()
+      // calling back into this stays consistent — cheap given how few
+      // walls a camp ever has
+      const run = findWallRunSpan(topAnchorEntry, placed);
+      buildArgs = { span: run.span };
+      ghost.setShape(selected, buildArgs);
     }
 
     ghost.moveTo(x, y, z, currentRotY);
@@ -322,6 +395,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
         selected = null;
         pending = null;
         pivot = null;
+        topAnchorEntry = null;
         ghost.clear();
       }
       return active;
@@ -337,6 +411,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       selected = STRUCTURES[id] || null;
       pending = null;
       pivot = null;
+      topAnchorEntry = null;
       if (selected) ghost.setShape(selected);
       else ghost.clear();
     },
@@ -394,6 +469,12 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
         freeCenter = { x: anchor.x, z: anchor.z };
         anchorY = anchor.y;
         currentRotY = anchor.rotY;
+        topAnchorEntry = placed.find((p) => p.x === anchor.x && p.z === anchor.z) || null;
+        if (selected.spansOwnRun && topAnchorEntry) {
+          // reposition to the *whole* connected run's midpoint, not just
+          // the one segment tapped — see findWallRunSpan
+          freeCenter = findWallRunSpan(topAnchorEntry, placed).mid;
+        }
         // A roof's default facing is a coin flip between "toward the
         // house interior" and "out over open air" — if the default comes
         // up empty but flipping 180° finds a wall to span to, take that

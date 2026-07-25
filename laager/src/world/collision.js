@@ -58,6 +58,38 @@ export function createCollision({ trees, rocks, buildMode, terrainHeight }) {
     return false;
   }
 
+  // Pushes (x,z) directly away from any wall it's currently overlapping,
+  // by the exact penetration depth. Near a corner where two wall capsules'
+  // rounded ends overlap, trying each axis *independently* (see resolve()
+  // below) can find both the X-only and Z-only attempts blocked forever
+  // — neither one alone escapes, even though the player isn't sealed in —
+  // which read as the player getting permanently wedged against a post/
+  // wall corner with nothing visibly stopping them. Running this before
+  // every move guarantees the starting position is never inside a wall,
+  // so there's always at least a small step available to slide out along.
+  function depenetrate(x, z, y) {
+    for (let iter = 0; iter < 4; iter++) {
+      let pushed = false;
+      for (const p of buildMode.placed) {
+        if (p.structure.snapMode !== "edge") continue;
+        if (p.structure.id === "door" && p.open) continue;
+        if (Math.abs(y - p.y) > FLOOR_TOLERANCE) continue;
+        const c = closestOnSegment(x, z, p);
+        const dx = x - c.x, dz = x === c.x && z === c.z ? 1e-4 : z - c.z;
+        const dist = Math.hypot(dx, dz);
+        const minDist = WALL_HALF_THICKNESS + PLAYER_RADIUS;
+        if (dist < minDist) {
+          const push = minDist - dist + 0.002;
+          x += (dx / dist) * push;
+          z += (dz / dist) * push;
+          pushed = true;
+        }
+      }
+      if (!pushed) break;
+    }
+    return { x, z };
+  }
+
   return {
     // Resolves a movement step by trying each axis independently, so
     // brushing past a wall/tree at an angle slides you along it instead
@@ -65,8 +97,9 @@ export function createCollision({ trees, rocks, buildMode, terrainHeight }) {
     // `y` is the player's *current* standing height, used only to decide
     // which floor's obstacles apply.
     resolve(fromX, fromZ, toX, toZ, y) {
-      let x = fromX, z = fromZ;
-      if (!blocked(toX, fromZ, y)) x = toX;
+      const clear = depenetrate(fromX, fromZ, y);
+      let x = clear.x, z = clear.z;
+      if (!blocked(toX, z, y)) x = toX;
       if (!blocked(x, toZ, y)) z = toZ;
       return { x, z };
     },

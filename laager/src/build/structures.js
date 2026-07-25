@@ -154,15 +154,16 @@ function buildRidgeRoof(palette, span = 1.3, drop = 0, rise = ROOF_RISE) {
 // of a wall (like a roof) and fills the gap between the wall's flat top
 // and the sloped underside of a ridge roof at ROOF_RISE height, closing
 // off what would otherwise be an open triangular gap under the peak.
-// Fixed-size (one WALL_SPAN-wide wall segment's worth), so a wider gable
-// end needs several placed side by side — each is its own small peak
-// rather than one continuous triangle spanning the whole width.
-function buildGableWall(palette) {
-  const W = WALL_SPAN;
+// span defaults to one WALL_SPAN-wide wall segment, but buildMode passes
+// the *whole* connected wall run's actual length (see findWallRunSpan in
+// buildMode.js) so a multi-segment gable end gets one properly-sized
+// triangle reaching the real ridge peak, instead of several small
+// mismatched ones that don't line up with it.
+function buildGableWall(palette, span = WALL_SPAN) {
   const plankMat = mat(palette, "plank");
   const shape = new THREE.Shape();
-  shape.moveTo(-W / 2, 0);
-  shape.lineTo(W / 2, 0);
+  shape.moveTo(-span / 2, 0);
+  shape.lineTo(span / 2, 0);
   shape.lineTo(0, ROOF_RISE);
   shape.closePath();
   const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.1, bevelEnabled: false });
@@ -356,8 +357,10 @@ export const STRUCTURES = {
     width: WALL_SPAN,
     snapMode: "top", // sits on top of a wall segment
     topFilter: "wall", // never rests on a post/platform — only a wall's top makes sense here
-    build(palette) {
-      return buildGableWall(palette);
+    spansOwnRun: true, // sized to the whole connected wall run, not just the tapped segment
+    build(palette, opts) {
+      const { span } = opts || {};
+      return buildGableWall(palette, span);
     },
   },
 
