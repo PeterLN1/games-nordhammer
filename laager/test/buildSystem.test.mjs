@@ -16,7 +16,7 @@ import { createBuildMode, platformSurfaceAt } from "../src/build/buildMode.js";
 import { createCutaway } from "../src/build/cutaway.js";
 import { createCollision } from "../src/world/collision.js";
 import { PALETTE } from "../src/core/palette.js";
-import { STRUCTURES, ROOF_RISE } from "../src/build/structures.js";
+import { STRUCTURES, ROOF_RISE, WALL_SPAN } from "../src/build/structures.js";
 
 const EPS = 0.01;
 
@@ -331,6 +331,107 @@ for (const rotY of [0, 0.6, Math.PI / 2]) {
       `maxStuckFrames=${maxStuckFrames}, finalPos=(${x.toFixed(3)},${z.toFixed(3)}), reached=${Math.hypot(t1.x - x, t1.z - z) < 0.05}`
     );
   }
+}
+
+// ---------------------------------------------------------------------
+// 5) Drag-to-build: main.js's handleBuildDrag() is just
+//    handleTap()+confirm() called on every pointer-move point along the
+//    swipe — this replays that exact loop in Node to check the row it
+//    produces, without needing a real touchscreen.
+// ---------------------------------------------------------------------
+function simulateDrag(bm, id, points) {
+  bm.selectStructure(id);
+  let built = 0;
+  let anchor = null, dir = null;
+  points.forEach((pt, i) => {
+    // Mirrors main.js's handleBuildDrag: the first point of a gesture
+    // carries no direction yet; later points derive one once they've
+    // moved far enough from the last anchor, same as the real drag path.
+    if (i === 0) { anchor = { x: pt.x, z: pt.z }; dir = null; }
+    else {
+      const dx = pt.x - anchor.x, dz = pt.z - anchor.z;
+      const len = Math.hypot(dx, dz);
+      if (len > 0.15) { dir = { x: dx / len, z: dz / len }; anchor = { x: pt.x, z: pt.z }; }
+    }
+    bm.handleTap(pt, dir);
+    if (bm.canConfirm && bm.confirm()) built++;
+  });
+  return built;
+}
+
+function samplesAlongLine(x0, z0, x1, z1, count) {
+  const pts = [];
+  for (let i = 0; i <= count; i++) {
+    const t = i / count;
+    pts.push({ x: x0 + (x1 - x0) * t, z: z0 + (z1 - z0) * t });
+  }
+  return pts;
+}
+
+{
+  const bm = makeBuildMode();
+  bm.toggle(true);
+  const points = samplesAlongLine(0, 0, 4, 0, 40); // a straight 4m drag, sampled every 0.1m like real pointermove events
+  const built = simulateDrag(bm, "wallWood", points);
+  const walls = bm.placed.filter((p) => p.structure.id === "wallWood");
+  check("drag-build: a 4m straight drag places more than one wall segment", built > 1, `built=${built}`);
+  check("drag-build: every confirmed segment actually landed in placed[]", walls.length === built);
+
+  let overlap = false;
+  for (let i = 0; i < walls.length; i++) {
+    for (let j = i + 1; j < walls.length; j++) {
+      if (Math.hypot(walls[i].x - walls[j].x, walls[i].z - walls[j].z) < WALL_SPAN - 0.1) overlap = true;
+    }
+  }
+  check("drag-build: no two segments of the row overlap each other", !overlap);
+
+  // The row must actually follow the drag's own direction (here, due
+  // east) rather than buildMode's tangent-to-camp-center default — right
+  // at the camp center (0,0) that default points due *south* instead,
+  // which is exactly the bug directionRotation() exists to fix (a wall
+  // dragged east used to shoot off north/south instead).
+  const first = walls[0], last = walls[walls.length - 1];
+  const rowDx = last.x - first.x, rowDz = last.z - first.z;
+  check(
+    "drag-build: the row's own direction matches the drag (east), not the camp-tangent default",
+    rowDx > 0 && Math.abs(rowDz) < 0.05 * Math.abs(rowDx),
+    `first=(${first.x.toFixed(2)},${first.z.toFixed(2)}) last=(${last.x.toFixed(2)},${last.z.toFixed(2)})`
+  );
+
+  // A finger that stalls (or jitters in place) at the end of the drag
+  // re-resolves the exact same open corner on every extra pointer-move —
+  // without confirm()'s duplicate guard this would silently keep
+  // spending resources on invisible stacked copies at the same joint.
+  const beforeStall = bm.placed.filter((p) => p.structure.id === "wallWood").length;
+  const lastPoint = points[points.length - 1];
+  for (let i = 0; i < 20; i++) simulateDrag(bm, "wallWood", [lastPoint]);
+  const afterStall = bm.placed.filter((p) => p.structure.id === "wallWood").length;
+  check("drag-build: a stalled/jittering finger doesn't keep building duplicates", afterStall === beforeStall, `before=${beforeStall}, after=${afterStall}`);
+  bm.toggle(false);
+}
+
+{
+  const bm = makeBuildMode();
+  bm.toggle(true);
+  const points = samplesAlongLine(0, 0, 3.6, 0, 30); // posts grid-snap every SNAP_SIZE, no corner-chaining needed
+  const built = simulateDrag(bm, "post", points);
+  check("drag-build: dragging also lays down a row of grid-snapped posts", built > 1, `built=${built}`);
+}
+
+// canDragBuild should only be true for structures that can snap without
+// an existing anchor to rest on (walls/doors chain corner-to-corner,
+// posts grid-snap) — roofs/platforms/ladders always need something
+// specific underneath, so dragging across open ground for those should
+// stay tap-and-confirm rather than refusing over and over.
+{
+  const bm = makeBuildMode();
+  bm.toggle(true);
+  const expectDragBuildable = { wallWood: true, wallStone: true, door: true, post: true, roof: false, ridgeRoof: false, gableWall: false, platform: false, ladder: false };
+  for (const [id, expected] of Object.entries(expectDragBuildable)) {
+    bm.selectStructure(id);
+    check(`canDragBuild for ${id} is ${expected}`, bm.canDragBuild === expected, `got ${bm.canDragBuild}`);
+  }
+  bm.toggle(false);
 }
 
 // ---------------------------------------------------------------------

@@ -18,6 +18,15 @@ function tangentRotation(x, z) {
   return Math.atan2(x, z) + Math.PI / 2;
 }
 
+// Orientation whose forward() matches a given (unit) direction — used
+// instead of tangentRotation whenever a drag is actually in progress, so
+// a row painted by dragging follows the finger's own path rather than
+// the camp-tangent default (which, right around the camp center, points
+// in a near-arbitrary direction unrelated to the swipe).
+function directionRotation(dx, dz) {
+  return Math.atan2(-dz, dx);
+}
+
 function clampToBuildRadius(point) {
   const len = Math.hypot(point.x, point.z);
   if (len <= BUILD_RADIUS) return { x: point.x, z: point.z };
@@ -395,6 +404,17 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
     get selectedId() { return selected ? selected.id : null; },
     get canConfirm() { return !!(pending && pending.affordable); },
     get placed() { return placed; },
+    // Whether the currently selected structure makes sense to lay down by
+    // dragging a line across the ground instead of tap-confirm per piece —
+    // true for the two snap modes that chain/grid without needing an
+    // existing anchor to rest on ("edge" walls/doors, "free" posts).
+    // Roofs/platforms/ladders always need something specific to snap onto
+    // (a wall top, a post top, a platform edge) — dragging across open
+    // ground for those would just refuse over and over, so they stay
+    // tap-and-confirm only.
+    get canDragBuild() {
+      return !!selected && (selected.snapMode === "edge" || selected.snapMode === "free");
+    },
 
     toggle(force) {
       active = force !== undefined ? force : !active;
@@ -424,7 +444,15 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       else ghost.clear();
     },
 
-    handleTap(point) {
+    // dragDir (optional, {x,z} unit vector) is the current direction of
+    // travel during a drag-to-build sweep (see main.js's handleBuildDrag)
+    // — it only affects the *first* piece of a row, freely placed with no
+    // corner to snap onto, so that piece's facing follows the swipe
+    // instead of the tangent-to-camp-center default (see
+    // directionRotation). Every following piece in the row anchors onto
+    // that first piece's open end instead, so the direction naturally
+    // carries forward without needing to be passed again.
+    handleTap(point, dragDir = null) {
       if (!active || !selected) return;
       const clamped = clampToBuildRadius(point);
       mode = selected.snapMode;
@@ -439,7 +467,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
           const gx = snap(clamped.x), gz = snap(clamped.z);
           freeCenter = { x: gx, z: gz };
           anchorY = platformSurfaceAt(gx, gz, placed) ?? terrainHeight(gx, gz);
-          currentRotY = tangentRotation(gx, gz);
+          currentRotY = dragDir ? directionRotation(dragDir.x, dragDir.z) : tangentRotation(gx, gz);
         }
         commitGhost();
         return;
@@ -450,7 +478,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
         const gx = snap(clamped.x), gz = snap(clamped.z);
         freeCenter = { x: gx, z: gz };
         anchorY = platformSurfaceAt(gx, gz, placed) ?? terrainHeight(gx, gz);
-        currentRotY = tangentRotation(gx, gz);
+        currentRotY = dragDir ? directionRotation(dragDir.x, dragDir.z) : tangentRotation(gx, gz);
         commitGhost();
         return;
       }
@@ -520,6 +548,16 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
 
     confirm() {
       if (!pending || !pending.affordable) return false;
+      // Refuse an exact-overlap duplicate — the same structure already
+      // sitting at (x,y,z). Manual taps rarely hit this, but drag-to-build
+      // (see continueDrag) re-resolves the snap on every pointer move, and
+      // a pointer that lingers or jitters right on top of the joint it
+      // just placed would otherwise re-snap to that same open corner and
+      // silently spend resources on an invisible stacked copy.
+      const duplicate = placed.some((p) => p.structure.id === pending.structure.id
+        && Math.hypot(p.x - pending.x, p.z - pending.z) < 0.1
+        && Math.abs(p.y - pending.y) < 0.1);
+      if (duplicate) { pending = null; ghost.hide(); return false; }
       resources.spend(pending.structure.cost);
       const mesh = pending.structure.build(palette, pending.buildArgs);
       mesh.position.set(pending.x, pending.y, pending.z);

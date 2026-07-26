@@ -131,6 +131,10 @@ Object.values(STRUCTURES).forEach((s) => {
     buildMode.selectStructure(s.id);
     [...structureList.children].forEach((c) => c.classList.toggle("selected", c === btn));
     buildConfirmBtn.disabled = !buildMode.canConfirm;
+    hint.textContent = buildMode.canDragBuild
+      ? "Dra fingret för en rad · eller tryck för att placera · ✓ för att bygga"
+      : "Tryck på marken för att placera · ✓ för att bygga";
+    hint.classList.remove("hidden");
   });
   structureList.appendChild(btn);
 });
@@ -192,6 +196,37 @@ function tapTargets() {
   return [ground, clearing, ...structureMeshes];
 }
 
+// Dragging a finger along the ground while a wall/post is selected lays
+// down a whole row in one sweep instead of tap → ✓ per piece: each move
+// event re-resolves the same corner/grid snap a manual tap would use, and
+// auto-confirms it immediately if affordable. confirm()'s own duplicate
+// guard (see buildMode.js) keeps a lingering or jittery finger from
+// re-building the same joint over and over.
+//
+// dragAnchor/dragDir track the sweep's current direction of travel, fed
+// to handleTap() so the row's very first (freely-placed, no-corner-yet)
+// piece follows the finger instead of buildMode's tangent-to-camp-center
+// default — every following piece then just chains off that first one's
+// open end. The anchor only advances once the finger has moved enough to
+// give a stable direction, so per-pixel jitter doesn't make the row
+// wobble. isStart resets both at the beginning of each new drag gesture.
+let dragAnchor = null;
+let dragDir = null;
+function handleBuildDrag(point, hitObject, isStart) {
+  if (isStart) { dragAnchor = { x: point.x, z: point.z }; dragDir = null; }
+  else {
+    const dx = point.x - dragAnchor.x, dz = point.z - dragAnchor.z;
+    const len = Math.hypot(dx, dz);
+    if (len > 0.15) {
+      dragDir = { x: dx / len, z: dz / len };
+      dragAnchor = { x: point.x, z: point.z };
+    }
+  }
+  buildMode.handleTap(point, dragDir);
+  if (buildMode.canConfirm) buildMode.confirm();
+  buildConfirmBtn.disabled = !buildMode.canConfirm;
+}
+
 createTouchControls(renderer, camera, tapTargets, {
   onTap(point, hitObject) {
     if (buildMode.demolishActive) {
@@ -216,6 +251,8 @@ createTouchControls(renderer, camera, tapTargets, {
   onRotateDrag(deltaX, deltaY) {
     followCam.rotateBy(-deltaX * CAMERA_DRAG_SPEED, deltaY * CAMERA_DRAG_SPEED);
   },
+  onBuildDrag: handleBuildDrag,
+  isBuildDragActive: () => buildMode.active && !buildMode.demolishActive && buildMode.canDragBuild,
 });
 
 // ---------- resize ----------
