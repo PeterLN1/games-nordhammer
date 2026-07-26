@@ -36,6 +36,11 @@
   }
   .hud-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; }
   .hud-right > * { pointer-events: auto; }
+  .hud-reset {
+    font-size: 12px; font-weight: 600; color: #f2eee0;
+    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
+    padding: 6px 12px; border-radius: 999px; backdrop-filter: blur(6px);
+  }
   .daynight {
     display: flex; align-items: center; gap: 6px;
     background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
@@ -111,6 +116,7 @@
     <a href="/">← Spel</a>
     <div class="hud-right">
       <h1>Läger · 3D-demo</h1>
+      <button class="hud-reset" id="resetGame" aria-label="Börja om från början">↺ Börja om</button>
       <div class="daynight" id="dayNightPanel">
         <span id="dayNightIcon">☀️</span>
         <input type="range" id="dayNightSlider" min="0" max="24" step="0.25" value="12">

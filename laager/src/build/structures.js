@@ -1,12 +1,20 @@
 import * as THREE from "three";
 
-export const SNAP_SIZE = 1.2; // grid cell size for free/unanchored placement
-
 // A wall's full span, edge-to-edge — deliberately equal to a platform's
 // own width (see structures.platform below) so a single wall segment
 // exactly closes one platform edge corner-to-corner, with no leftover
 // gap and no overlap.
 export const WALL_SPAN = 1.3;
+
+// Grid cell size for free/unanchored placement (posts, and a wall/door
+// with no neighbor to snap onto) — kept equal to WALL_SPAN so a post
+// dropped straight onto the grid always ends up exactly one wall-span
+// from its neighbors, the same spacing chained walls/platforms already
+// use. When these two didn't match, four independently-placed posts in a
+// square wouldn't actually be a clean square in platform-width terms —
+// platforms built on top of them would overlap or gap instead of tiling
+// seamlessly.
+export const SNAP_SIZE = WALL_SPAN;
 
 // How high a ridge roof's peak sits above the wall tops it spans between
 // — shared with the gable-end wall so its triangle exactly fills the gap
@@ -23,7 +31,8 @@ function mat(palette, key, extra = {}) {
 // A dry-stone wall built from staggered courses of irregular boulders —
 // the same low-poly icosahedron primitive as the scattered natural rocks
 // elsewhere in the scene, so a built wall reads as piled fieldstone
-// instead of cut/poured blocks. Still one InstancedMesh (~1 draw call).
+// instead of cut/poured blocks. Still just two draw calls (backing +
+// one InstancedMesh for every boulder).
 function buildStoneWall(palette) {
   const W = WALL_SPAN, D = 0.28;
   const rows = [
@@ -31,6 +40,21 @@ function buildStoneWall(palette) {
     { y0: 0.24, h: 0.26, count: 5 },
     { y0: 0.48, h: 0.3, count: 4 },
   ];
+  const totalHeight = rows[rows.length - 1].y0 + rows[rows.length - 1].h;
+  const group = new THREE.Group();
+
+  // The boulders themselves are round and irregularly sized/spaced (that's
+  // what sells "piled fieldstone" over "cut blocks"), which necessarily
+  // leaves real gaps between them — with nothing behind those gaps, the
+  // wall reads as see-through rather than solid. A slab in a dark
+  // shadow/mortar tone, sized just inside the boulders' own footprint so
+  // it never pokes out past them from a normal viewing angle, closes that
+  // without flattening the bumpy silhouette that makes it look natural.
+  const backingMat = mat(palette, "stoneBuilt", { color: new THREE.Color(palette.stoneBuilt).multiplyScalar(0.35) });
+  const backing = new THREE.Mesh(new THREE.BoxGeometry(W - 0.15, totalHeight - 0.04, D * 0.5), backingMat);
+  backing.position.set(0, totalHeight / 2, 0);
+  group.add(backing);
+
   const stoneMat = mat(palette, "stoneBuilt");
   const total = rows.reduce((s, r) => s + r.count, 0);
   const mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.5, 0), stoneMat, total);
@@ -55,7 +79,8 @@ function buildStoneWall(palette) {
       i++;
     }
   });
-  return mesh;
+  group.add(mesh);
+  return group;
 }
 
 // A sloped roof panel: wood rafters + ridge beam under a grass thatch
@@ -197,6 +222,40 @@ function buildDoor(palette) {
   leaf.position.set(-WALL_SPAN / 2 + 0.06, 0, 0); // hinge point, at the left post
   const panel = new THREE.Mesh(new THREE.BoxGeometry(DOOR_LEAF_WIDTH, DOOR_HEIGHT - 0.12, 0.06), leafMat);
   panel.position.set(DOOR_LEAF_WIDTH / 2 + 0.02, DOOR_HEIGHT / 2, 0);
+  leaf.add(panel);
+  group.add(leaf);
+
+  group.userData.leaf = leaf;
+  return group;
+}
+
+const DOOR_STONE_HEIGHT = 0.78; // matches wallStone's own height, so it sits flush in a stone wall run
+
+// A door built to sit in a stone wall run instead of a wood one: squat
+// rough-cut stone jambs/lintel (thicker than the wood door's slender
+// frame, to read as stone rather than timber) at wallStone's own height,
+// with the same swinging plank leaf as buildDoor.
+function buildDoorStone(palette) {
+  const group = new THREE.Group();
+  const jambMat = mat(palette, "stoneBuilt");
+  const leafMat = mat(palette, "plank");
+
+  const jambGeo = new THREE.BoxGeometry(0.16, DOOR_STONE_HEIGHT, 0.26);
+  [-WALL_SPAN / 2 + 0.08, WALL_SPAN / 2 - 0.08].forEach((x) => {
+    const jamb = new THREE.Mesh(jambGeo, jambMat);
+    jamb.position.set(x, DOOR_STONE_HEIGHT / 2, 0);
+    group.add(jamb);
+  });
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(WALL_SPAN, 0.16, 0.28), jambMat);
+  lintel.position.set(0, DOOR_STONE_HEIGHT - 0.08, 0);
+  group.add(lintel);
+
+  const leafHeight = DOOR_STONE_HEIGHT - 0.16;
+  const leafWidth = WALL_SPAN - 0.24;
+  const leaf = new THREE.Group();
+  leaf.position.set(-WALL_SPAN / 2 + 0.1, 0, 0); // hinge point, at the left jamb
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(leafWidth, leafHeight, 0.06), leafMat);
+  panel.position.set(leafWidth / 2 + 0.02, leafHeight / 2, 0);
   leaf.add(panel);
   group.add(leaf);
 
@@ -373,8 +432,24 @@ export const STRUCTURES = {
     width: WALL_SPAN, // chains into a wall run exactly like a wallWood segment
     height: 1.0,
     snapMode: "edge",
+    isDoor: true, // openable — see tryToggleDoor/collision, which key off this rather than a hardcoded id
     build(palette) {
       return buildDoor(palette);
+    },
+  },
+
+  doorStone: {
+    id: "doorStone",
+    label: "Stendörr",
+    icon: "🚪",
+    cost: { wood: 1, stone: 3 },
+    shadowRadius: 0.85,
+    width: WALL_SPAN, // chains into a wall run exactly like a wallStone segment
+    height: DOOR_STONE_HEIGHT,
+    snapMode: "edge",
+    isDoor: true,
+    build(palette) {
+      return buildDoorStone(palette);
     },
   },
 

@@ -50,7 +50,7 @@ export function createCollision({ trees, rocks, buildMode, terrainHeight }) {
     }
     for (const p of buildMode.placed) {
       if (p.structure.snapMode !== "edge") continue; // only walls/doors — not posts, roofs, platforms
-      if (p.structure.id === "door" && p.open) continue;
+      if (p.structure.isDoor && p.open) continue;
       if (Math.abs(y - p.y) > FLOOR_TOLERANCE) continue;
       const c = closestOnSegment(x, z, p);
       if (Math.hypot(x - c.x, z - c.z) < WALL_HALF_THICKNESS + PLAYER_RADIUS) return true;
@@ -72,7 +72,7 @@ export function createCollision({ trees, rocks, buildMode, terrainHeight }) {
       let pushed = false;
       for (const p of buildMode.placed) {
         if (p.structure.snapMode !== "edge") continue;
-        if (p.structure.id === "door" && p.open) continue;
+        if (p.structure.isDoor && p.open) continue;
         if (Math.abs(y - p.y) > FLOOR_TOLERANCE) continue;
         const c = closestOnSegment(x, z, p);
         const dx = x - c.x, dz = x === c.x && z === c.z ? 1e-4 : z - c.z;

@@ -371,7 +371,13 @@ function samplesAlongLine(x0, z0, x1, z1, count) {
 {
   const bm = makeBuildMode();
   bm.toggle(true);
-  const points = samplesAlongLine(0, 0, 4, 0, 40); // a straight 4m drag, sampled every 0.1m like real pointermove events
+  // A straight 4m drag running *south* (not along the fixed grid default's
+  // own east-west facing — see GRID_ROTATION in buildMode.js), sampled
+  // every 0.1m like real pointermove events. This is exactly the case
+  // directionRotation() exists for: without it, the row's first (freely
+  // placed) piece would default to facing east regardless of which way
+  // the finger actually dragged.
+  const points = samplesAlongLine(0, 0, 0, 4, 40);
   const built = simulateDrag(bm, "wallWood", points);
   const walls = bm.placed.filter((p) => p.structure.id === "wallWood");
   check("drag-build: a 4m straight drag places more than one wall segment", built > 1, `built=${built}`);
@@ -385,16 +391,11 @@ function samplesAlongLine(x0, z0, x1, z1, count) {
   }
   check("drag-build: no two segments of the row overlap each other", !overlap);
 
-  // The row must actually follow the drag's own direction (here, due
-  // east) rather than buildMode's tangent-to-camp-center default — right
-  // at the camp center (0,0) that default points due *south* instead,
-  // which is exactly the bug directionRotation() exists to fix (a wall
-  // dragged east used to shoot off north/south instead).
   const first = walls[0], last = walls[walls.length - 1];
   const rowDx = last.x - first.x, rowDz = last.z - first.z;
   check(
-    "drag-build: the row's own direction matches the drag (east), not the camp-tangent default",
-    rowDx > 0 && Math.abs(rowDz) < 0.05 * Math.abs(rowDx),
+    "drag-build: the row's own direction matches the drag (south), not the fixed grid default (east)",
+    rowDz > 0 && Math.abs(rowDx) < 0.05 * Math.abs(rowDz),
     `first=(${first.x.toFixed(2)},${first.z.toFixed(2)}) last=(${last.x.toFixed(2)},${last.z.toFixed(2)})`
   );
 
@@ -418,6 +419,156 @@ function samplesAlongLine(x0, z0, x1, z1, count) {
   check("drag-build: dragging also lays down a row of grid-snapped posts", built > 1, `built=${built}`);
 }
 
+// ---------------------------------------------------------------------
+// 6) Grid alignment: independently-placed free-snapped structures (posts)
+//    must all agree on the same default facing, and land on a grid whose
+//    spacing actually matches a platform's own width — otherwise a
+//    manually-built 2x2 post square produces platforms that don't tile
+//    into a clean floor. This is the real bug from a user report.
+// ---------------------------------------------------------------------
+{
+  const bm = makeBuildMode();
+  bm.toggle(true);
+  // Four posts placed independently (not chained) at the corners of a
+  // WALL_SPAN-sided square, far from the origin — under the old
+  // tangent-to-camp-center default, each corner's own position gave it a
+  // *different* default rotation, so no two posts ever agreed on
+  // "straight" even though the user laid them out as a square.
+  const corners = [
+    { x: 5, z: 5 }, { x: 5 + WALL_SPAN, z: 5 },
+    { x: 5, z: 5 + WALL_SPAN }, { x: 5 + WALL_SPAN, z: 5 + WALL_SPAN },
+  ];
+  for (const c of corners) place(bm, "post", c);
+  const posts = bm.placed.filter((p) => p.structure.id === "post");
+  check(
+    "grid: independently-placed posts all share the same default rotation",
+    posts.every((p) => near(p.rotY, posts[0].rotY)),
+    posts.map((p) => p.rotY.toFixed(3)).join(", ")
+  );
+
+  // Now build a platform directly on each post — the manual approach from
+  // the report (as opposed to placing one platform and letting
+  // findNearestPlatformNeighbor auto-continue the floor).
+  for (const c of corners) place(bm, "platform", c);
+  const platforms = bm.placed.filter((p) => p.structure.id === "platform");
+  check(
+    "grid: platforms built independently on each post all share the same rotation",
+    platforms.every((p) => near(p.rotY, platforms[0].rotY)),
+    platforms.map((p) => p.rotY.toFixed(3)).join(", ")
+  );
+  bm.toggle(false);
+}
+
+{
+  const bm = makeBuildMode();
+  bm.toggle(true);
+  // Two taps roughly (not exactly) a wall-span apart, the way a real
+  // finger would land rather than a pixel-perfect coordinate — both must
+  // still snap onto the same physical grid a platform's width expects
+  // (SNAP_SIZE === WALL_SPAN), or the posts end up close to but not
+  // exactly one platform-width apart and adjacent platform tiles overlap
+  // or gap instead of tiling seamlessly.
+  place(bm, "post", { x: 5.06, z: 5.04 });
+  place(bm, "post", { x: 5.06 + WALL_SPAN, z: 5.04 });
+  const posts = bm.placed.filter((p) => p.structure.id === "post");
+  const spacing = Math.hypot(posts[1].x - posts[0].x, posts[1].z - posts[0].z);
+  check("grid: two roughly-wall-span-apart taps snap to exactly WALL_SPAN apart", near(spacing, WALL_SPAN, 0.01), `spacing=${spacing.toFixed(3)}`);
+  bm.toggle(false);
+}
+
+// ---------------------------------------------------------------------
+// 7) Build-anywhere: buildMode's own placement radius should match the
+//    playable area (passed in as buildRadius), not a small fixed radius
+//    around the campfire — while still clamping to *something* so a tap
+//    can't build off the edge of the map entirely.
+// ---------------------------------------------------------------------
+{
+  const bm = makeBuildMode(); // uses createBuildMode's default buildRadius
+  bm.toggle(true);
+  const built = place(bm, "wallWood", { x: 16, z: 0 });
+  const wall = bm.placed.find((p) => p.structure.id === "wallWood");
+  // Grid-snapped to the nearest WALL_SPAN multiple, so not exactly 16 —
+  // just needs to have landed nowhere near the old 6.5m build radius.
+  check("build-anywhere: a structure far from camp (16m) is not clamped to a small build radius", built && near(wall.x, 16, WALL_SPAN), wall && wall.x);
+  bm.toggle(false);
+}
+
+{
+  const bm = makeBuildMode();
+  bm.toggle(true);
+  place(bm, "wallWood", { x: 40, z: 0 });
+  const wall = bm.placed.find((p) => p.structure.id === "wallWood");
+  check("build-anywhere: a tap far past the playable area still clamps instead of building off the map", wall && wall.x < 20, wall && wall.x);
+  bm.toggle(false);
+}
+
+// ---------------------------------------------------------------------
+// 8) Stone door: tryToggleDoor and collision now key off structure.isDoor
+//    rather than a hardcoded id === "door", so the new stone variant
+//    needs to behave exactly like the wood door — solid while closed,
+//    passable once open, toggled the same way.
+// ---------------------------------------------------------------------
+{
+  const bm = makeBuildMode();
+  bm.toggle(true);
+  place(bm, "doorStone", { x: 0, z: 0 });
+  const doorEntry = bm.placed.find((p) => p.structure.id === "doorStone");
+  check("doorStone: places successfully and starts closed", !!doorEntry && doorEntry.open === false);
+
+  const collision = createCollision({ trees: [], rocks: [], buildMode: bm, terrainHeight: () => 0 });
+  const { x: dx, z: dz, y: floorY } = doorEntry;
+  // Approach perpendicular to the door's own run (it defaults to
+  // GRID_ROTATION, running along world X) so this is a face-on walk into
+  // it, not a walk along its own centerline.
+  const blockedClosed = collision.resolve(dx, dz - 2, dx, dz, floorY);
+  check("doorStone: blocks the player while closed", Math.hypot(blockedClosed.x - dx, blockedClosed.z - dz) > 0.01, JSON.stringify(blockedClosed));
+
+  const toggled = bm.tryToggleDoor({ x: dx, z: dz }, null);
+  check("doorStone: tryToggleDoor finds it by distance and toggles isDoor structures generically", toggled && doorEntry.open === true);
+
+  const throughOpen = collision.resolve(dx, dz - 2, dx, dz, floorY);
+  check("doorStone: no longer blocks once open", near(throughOpen.x, dx, 0.01) && near(throughOpen.z, dz, 0.01), JSON.stringify(throughOpen));
+  bm.toggle(false);
+}
+
+// ---------------------------------------------------------------------
+// 9) Save/restore round-trip (core/save.js persists exactly this shape):
+//    buildMode.restore() must reproduce a saved layout's positions,
+//    rotations and open doors exactly, and must never spend resources
+//    while doing it — the save already reflects the post-spend totals,
+//    so restoring is reconstruction, not a repeat purchase.
+// ---------------------------------------------------------------------
+{
+  const bm1 = makeBuildMode();
+  bm1.toggle(true);
+  place(bm1, "wallWood", { x: 0, z: 0 });
+  place(bm1, "doorStone", { x: WALL_SPAN, z: 0 }); // chains onto the wall's open end
+  const doorEntry = bm1.placed.find((p) => p.structure.id === "doorStone");
+  doorEntry.open = true; // simulate the player having opened it before the session was saved
+  bm1.toggle(false);
+
+  const snapshot = bm1.placed.map((p) => ({ id: p.structure.id, x: p.x, y: p.y, z: p.z, rotY: p.rotY, buildArgs: p.buildArgs, open: p.open }));
+
+  let spendCalls = 0;
+  const bm2 = createBuildMode({
+    scene: new THREE.Scene(),
+    palette: PALETTE,
+    shadowMat: new THREE.MeshBasicMaterial(),
+    resources: { canAfford: () => true, spend: () => { spendCalls++; }, refund: () => {} },
+    terrainHeight: () => 0,
+  });
+  bm2.restore(snapshot);
+
+  check("save/restore: restores the same number of structures", bm2.placed.length === bm1.placed.length, `got ${bm2.placed.length}, expected ${bm1.placed.length}`);
+  check("save/restore: doesn't spend resources again while restoring", spendCalls === 0, `spendCalls=${spendCalls}`);
+  const restoredDoor = bm2.placed.find((p) => p.structure.id === "doorStone");
+  check("save/restore: an open door stays open after restore", !!restoredDoor && restoredDoor.open === true);
+  check(
+    "save/restore: restored positions/rotations match exactly",
+    bm2.placed.every((p, i) => near(p.x, bm1.placed[i].x) && near(p.z, bm1.placed[i].z) && near(p.rotY, bm1.placed[i].rotY))
+  );
+}
+
 // canDragBuild should only be true for structures that can snap without
 // an existing anchor to rest on (walls/doors chain corner-to-corner,
 // posts grid-snap) — roofs/platforms/ladders always need something
@@ -426,7 +577,7 @@ function samplesAlongLine(x0, z0, x1, z1, count) {
 {
   const bm = makeBuildMode();
   bm.toggle(true);
-  const expectDragBuildable = { wallWood: true, wallStone: true, door: true, post: true, roof: false, ridgeRoof: false, gableWall: false, platform: false, ladder: false };
+  const expectDragBuildable = { wallWood: true, wallStone: true, door: true, doorStone: true, post: true, roof: false, ridgeRoof: false, gableWall: false, platform: false, ladder: false };
   for (const [id, expected] of Object.entries(expectDragBuildable)) {
     bm.selectStructure(id);
     check(`canDragBuild for ${id} is ${expected}`, bm.canDragBuild === expected, `got ${bm.canDragBuild}`);

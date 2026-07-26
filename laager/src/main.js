@@ -7,15 +7,14 @@ import { buildGround, terrainHeight } from "./world/terrain.js";
 import { buildFire, buildEmbers } from "./world/fire.js";
 import { buildTrees } from "./world/trees.js";
 import { buildRocks } from "./world/rocks.js";
-import { buildFence } from "./world/fence.js";
 import { Player } from "./player/player.js";
 import { createTouchControls } from "./player/controls.js";
 import { createMoveMarker } from "./player/moveMarker.js";
 import { FollowCamera } from "./camera/followCamera.js";
 import { createResources } from "./core/resources.js";
+import { loadSave, writeSave, clearSave } from "./core/save.js";
 import { createBuildMode, platformSurfaceAt } from "./build/buildMode.js";
 import { STRUCTURES } from "./build/structures.js";
-import { createGridGuide } from "./build/gridGuide.js";
 import { createCutaway } from "./build/cutaway.js";
 import { createPlatformClimb } from "./build/platformClimb.js";
 import { createCollision } from "./world/collision.js";
@@ -44,6 +43,7 @@ const buildConfirmBtn = document.getElementById("buildConfirm");
 const resWoodEl = document.getElementById("resWood");
 const resStoneEl = document.getElementById("resStone");
 const resGrassEl = document.getElementById("resGrass");
+const resetBtn = document.getElementById("resetGame");
 const dayNightSlider = document.getElementById("dayNightSlider");
 const dayNightIcon = document.getElementById("dayNightIcon");
 const dayNightLabel = document.getElementById("dayNightLabel");
@@ -72,13 +72,30 @@ buildFire(scene, PALETTE, shadowMat);
 const embers = buildEmbers(scene);
 const treeItems = buildTrees(scene, PALETTE, shadowMat);
 const rockItems = buildRocks(scene, PALETTE);
-buildFence(scene, PALETTE);
 
 // ---------- build system ----------
-const resources = createResources();
-const buildMode = createBuildMode({ scene, palette: PALETTE, shadowMat, resources, terrainHeight });
-const gridGuide = createGridGuide(scene);
+// Loaded once at startup: a previous session's resources/buildings, if
+// any, so the camp is exactly as it was left instead of resetting on
+// every reload/revisit.
+const saved = loadSave();
+const resources = createResources(saved?.resources);
+const buildMode = createBuildMode({ scene, palette: PALETTE, shadowMat, resources, terrainHeight, buildRadius: PLAY_RADIUS });
+if (saved?.placed?.length) buildMode.restore(saved.placed);
 const cutaway = createCutaway();
+
+// Persisted after every build/demolish/door-toggle (see call sites below)
+// rather than on a timer — those are the only actions that actually
+// change what a reload needs to reproduce, so there's no reason to write
+// to storage any more often than that.
+function saveGame() {
+  writeSave({
+    version: 1,
+    resources: { wood: resources.wood, stone: resources.stone, grass: resources.grass },
+    placed: buildMode.placed.map((p) => ({
+      id: p.structure.id, x: p.x, y: p.y, z: p.z, rotY: p.rotY, buildArgs: p.buildArgs, open: p.open,
+    })),
+  });
+}
 
 // ---------- player ----------
 // The player only stands on a platform's surface after climbing a ladder
@@ -149,10 +166,8 @@ function setBuildActive(active) {
     buildConfirmBtn.disabled = true;
     hint.textContent = "Tryck på marken för att placera · ✓ för att bygga";
     hint.classList.remove("hidden");
-    gridGuide.show();
   } else {
     hint.classList.add("hidden");
-    gridGuide.hide();
   }
 }
 
@@ -161,13 +176,23 @@ function setDemolishActive(active) {
   demolishToggleBtn.classList.toggle("on", active);
   buildToggleBtn.classList.toggle("on", buildMode.active);
   buildPanel.classList.toggle("hidden", !buildMode.active);
-  gridGuide.hide();
   hint.textContent = "Tryck på en byggnad för att riva den";
   hint.classList.toggle("hidden", !active);
 }
 
 buildToggleBtn.addEventListener("click", () => setBuildActive(!buildMode.active));
 demolishToggleBtn.addEventListener("click", () => setDemolishActive(!buildMode.demolishActive));
+
+// Wipes the save and reloads rather than trying to reset every in-memory
+// system (built meshes, resources, player position, ...) by hand — a
+// fresh page load already does that correctly for the "no save" case, so
+// clear-then-reload gets a genuinely clean slate for free.
+resetBtn.addEventListener("click", () => {
+  if (window.confirm("Börja om från början? Allt du har byggt försvinner.")) {
+    clearSave();
+    location.reload();
+  }
+});
 
 // Avbryt always backs all the way out of build mode — a partial "just clear
 // the ghost but stay in the panel" state read as broken (tapping it seemed
@@ -180,7 +205,10 @@ buildRotateBtn.addEventListener("click", () => {
 });
 
 buildConfirmBtn.addEventListener("click", () => {
-  if (buildMode.confirm()) buildConfirmBtn.disabled = !buildMode.canConfirm;
+  if (buildMode.confirm()) {
+    buildConfirmBtn.disabled = !buildMode.canConfirm;
+    saveGame();
+  }
 });
 
 // Raycast targets include every built structure (not just the ground
@@ -205,11 +233,11 @@ function tapTargets() {
 //
 // dragAnchor/dragDir track the sweep's current direction of travel, fed
 // to handleTap() so the row's very first (freely-placed, no-corner-yet)
-// piece follows the finger instead of buildMode's tangent-to-camp-center
-// default — every following piece then just chains off that first one's
-// open end. The anchor only advances once the finger has moved enough to
-// give a stable direction, so per-pixel jitter doesn't make the row
-// wobble. isStart resets both at the beginning of each new drag gesture.
+// piece follows the finger instead of buildMode's fixed grid default —
+// every following piece then just chains off that first one's open end.
+// The anchor only advances once the finger has moved enough to give a
+// stable direction, so per-pixel jitter doesn't make the row wobble.
+// isStart resets both at the beginning of each new drag gesture.
 let dragAnchor = null;
 let dragDir = null;
 function handleBuildDrag(point, hitObject, isStart) {
@@ -223,14 +251,14 @@ function handleBuildDrag(point, hitObject, isStart) {
     }
   }
   buildMode.handleTap(point, dragDir);
-  if (buildMode.canConfirm) buildMode.confirm();
+  if (buildMode.canConfirm && buildMode.confirm()) saveGame();
   buildConfirmBtn.disabled = !buildMode.canConfirm;
 }
 
 createTouchControls(renderer, camera, tapTargets, {
   onTap(point, hitObject) {
     if (buildMode.demolishActive) {
-      buildMode.tryDemolish(point, hitObject);
+      if (buildMode.tryDemolish(point, hitObject)) saveGame();
       return;
     }
     if (buildMode.active) {
@@ -238,7 +266,7 @@ createTouchControls(renderer, camera, tapTargets, {
       buildConfirmBtn.disabled = !buildMode.canConfirm;
       return;
     }
-    if (buildMode.tryToggleDoor(point, hitObject)) return;
+    if (buildMode.tryToggleDoor(point, hitObject)) { saveGame(); return; }
     const len = Math.hypot(point.x, point.z);
     const p = len > PLAY_RADIUS ? point.clone().multiplyScalar(PLAY_RADIUS / len) : point;
     player.moveTo(p.x, p.z);

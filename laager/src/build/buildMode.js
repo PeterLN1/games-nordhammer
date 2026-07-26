@@ -2,7 +2,6 @@ import { STRUCTURES, SNAP_SIZE } from "./structures.js";
 import { createPlacementGhost } from "./placementGhost.js";
 import { addShadowBlob } from "../core/shadowDecals.js";
 
-const BUILD_RADIUS = 6.5; // how far from camp you can place structures
 const DOOR_OPEN_ANGLE = -Math.PI / 2; // swung flush against the wall it's hinged to
 const NEIGHBOR_SEARCH_RADIUS = 2.2; // how close a tap must be to an existing edge to snap onto it
 const TOP_SEARCH_RADIUS = 1.6; // how close a tap must be to snap a roof/platform onto a top
@@ -12,25 +11,29 @@ function snap(v) {
   return Math.round(v / SNAP_SIZE) * SNAP_SIZE;
 }
 
-// Structures default to facing tangent to the camp center, so placing one
-// with no neighbors nearby still leans toward curving into a palisade ring.
-function tangentRotation(x, z) {
-  return Math.atan2(x, z) + Math.PI / 2;
-}
+// Structures placed with no neighbor to snap onto default to this fixed
+// world-grid facing (rather than e.g. facing the camp center) — so two
+// posts dropped independently anywhere on the map share the same
+// orientation, and a platform built on each one inherits a matching
+// rotY instead of coming out rotated relative to its neighbor. That
+// used to be the actual bug behind a supposedly-square 2x2 post
+// layout producing platforms that didn't line up: each post's default
+// rotation depended on its own position (tangent to the camp center),
+// so no two posts placed at different spots ever agreed on "straight".
+const GRID_ROTATION = 0;
 
 // Orientation whose forward() matches a given (unit) direction — used
-// instead of tangentRotation whenever a drag is actually in progress, so
-// a row painted by dragging follows the finger's own path rather than
-// the camp-tangent default (which, right around the camp center, points
-// in a near-arbitrary direction unrelated to the swipe).
+// instead of GRID_ROTATION whenever a drag is actually in progress, so a
+// row painted by dragging follows the finger's own path instead of
+// snapping to the fixed grid default.
 function directionRotation(dx, dz) {
   return Math.atan2(-dz, dx);
 }
 
-function clampToBuildRadius(point) {
+function clampToBuildRadius(point, buildRadius) {
   const len = Math.hypot(point.x, point.z);
-  if (len <= BUILD_RADIUS) return { x: point.x, z: point.z };
-  const s = BUILD_RADIUS / len;
+  if (len <= buildRadius) return { x: point.x, z: point.z };
+  const s = buildRadius / len;
   return { x: point.x * s, z: point.z * s };
 }
 
@@ -328,7 +331,7 @@ function findLadderAnchor(point, placed) {
   return best;
 }
 
-export function createBuildMode({ scene, palette, shadowMat, resources, terrainHeight }) {
+export function createBuildMode({ scene, palette, shadowMat, resources, terrainHeight, buildRadius = 17 }) {
   const ghost = createPlacementGhost(scene, palette);
   const placed = []; // {x, y, z, rotY, structure, mesh, shadowMesh}
   let active = false;
@@ -416,6 +419,31 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       return !!selected && (selected.snapMode === "edge" || selected.snapMode === "free");
     },
 
+    // Rebuilds `placed` from a previously-saved plain-data snapshot (see
+    // core/save.js) — used once at startup to restore a session. Goes
+    // straight through structure.build()/scene.add() the same way
+    // confirm() does, but skips resources.spend() entirely: the save
+    // already captured the *post-spend* resource totals, so re-spending
+    // here would deduct the same cost twice.
+    restore(savedPlaced) {
+      for (const s of savedPlaced) {
+        const structure = STRUCTURES[s.id];
+        if (!structure) continue; // e.g. a save from a build with a since-removed structure id
+        const mesh = structure.build(palette, s.buildArgs);
+        mesh.position.set(s.x, s.y, s.z);
+        mesh.rotation.y = s.rotY;
+        scene.add(mesh);
+        const shadowMesh = addShadowBlob(scene, shadowMat, s.x, s.z, structure.shadowRadius);
+        const entry = { x: s.x, y: s.y, z: s.z, rotY: s.rotY, structure, mesh, shadowMesh, buildArgs: s.buildArgs };
+        if (structure.isDoor) {
+          entry.open = !!s.open;
+          const leaf = mesh.userData.leaf;
+          if (leaf && entry.open) leaf.rotation.y = DOOR_OPEN_ANGLE;
+        }
+        placed.push(entry);
+      }
+    },
+
     toggle(force) {
       active = force !== undefined ? force : !active;
       if (active) demolish = false;
@@ -454,7 +482,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
     // carries forward without needing to be passed again.
     handleTap(point, dragDir = null) {
       if (!active || !selected) return;
-      const clamped = clampToBuildRadius(point);
+      const clamped = clampToBuildRadius(point, buildRadius);
       mode = selected.snapMode;
 
       if (mode === "edge") {
@@ -467,7 +495,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
           const gx = snap(clamped.x), gz = snap(clamped.z);
           freeCenter = { x: gx, z: gz };
           anchorY = platformSurfaceAt(gx, gz, placed) ?? terrainHeight(gx, gz);
-          currentRotY = dragDir ? directionRotation(dragDir.x, dragDir.z) : tangentRotation(gx, gz);
+          currentRotY = dragDir ? directionRotation(dragDir.x, dragDir.z) : GRID_ROTATION;
         }
         commitGhost();
         return;
@@ -478,7 +506,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
         const gx = snap(clamped.x), gz = snap(clamped.z);
         freeCenter = { x: gx, z: gz };
         anchorY = platformSurfaceAt(gx, gz, placed) ?? terrainHeight(gx, gz);
-        currentRotY = dragDir ? directionRotation(dragDir.x, dragDir.z) : tangentRotation(gx, gz);
+        currentRotY = dragDir ? directionRotation(dragDir.x, dragDir.z) : GRID_ROTATION;
         commitGhost();
         return;
       }
@@ -565,7 +593,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       scene.add(mesh);
       const shadowMesh = addShadowBlob(scene, shadowMat, pending.x, pending.z, pending.structure.shadowRadius);
       const entry = { x: pending.x, y: pending.y, z: pending.z, rotY: pending.rotY, structure: pending.structure, mesh, shadowMesh, buildArgs: pending.buildArgs };
-      if (pending.structure.id === "door") entry.open = false;
+      if (pending.structure.isDoor) entry.open = false;
       placed.push(entry);
       pending = null;
       pivot = null;
@@ -584,12 +612,12 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       if (hitObject) {
         let obj = hitObject;
         while (obj && !door) {
-          door = placed.find((p) => p.structure.id === "door" && p.mesh === obj) || null;
+          door = placed.find((p) => p.structure.isDoor && p.mesh === obj) || null;
           obj = obj.parent;
         }
       }
       if (!door) {
-        door = placed.find((p) => p.structure.id === "door" && Math.hypot(p.x - point.x, p.z - point.z) <= p.structure.shadowRadius + 0.3) || null;
+        door = placed.find((p) => p.structure.isDoor && Math.hypot(p.x - point.x, p.z - point.z) <= p.structure.shadowRadius + 0.3) || null;
       }
       if (!door) return false;
       door.open = !door.open;
