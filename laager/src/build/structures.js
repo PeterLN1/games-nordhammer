@@ -47,11 +47,20 @@ function buildStoneWall(palette) {
   // what sells "piled fieldstone" over "cut blocks"), which necessarily
   // leaves real gaps between them — with nothing behind those gaps, the
   // wall reads as see-through rather than solid. A slab in a dark
-  // shadow/mortar tone, sized just inside the boulders' own footprint so
-  // it never pokes out past them from a normal viewing angle, closes that
-  // without flattening the bumpy silhouette that makes it look natural.
+  // shadow/mortar tone closes that without flattening the bumpy
+  // silhouette that makes it look natural.
+  //
+  // Full WALL_SPAN width — same as wallWood's panel — rather than inset
+  // inside the boulders' own footprint: two chained wall segments sit
+  // exactly WALL_SPAN center-to-center (see buildMode's corner-snapping),
+  // so an inset backing left a gap of its own right at that shared
+  // joint — precisely the one spot where each segment's own random
+  // boulders are *least* likely to cover it (they thin out toward a
+  // row's edges), and the seam between two stone walls read as not
+  // actually connected. Flush edges mean neighboring backings touch
+  // exactly, the same way wallWood's panels do.
   const backingMat = mat(palette, "stoneBuilt", { color: new THREE.Color(palette.stoneBuilt).multiplyScalar(0.35) });
-  const backing = new THREE.Mesh(new THREE.BoxGeometry(W - 0.15, totalHeight - 0.04, D * 0.5), backingMat);
+  const backing = new THREE.Mesh(new THREE.BoxGeometry(W, totalHeight - 0.04, D * 0.5), backingMat);
   backing.position.set(0, totalHeight / 2, 0);
   group.add(backing);
 

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { lerpAngle } from "../core/utils.js";
 import { buildCharacterModel } from "./characterModel.js";
+import { findPath } from "./pathfinding.js";
 
 const STOP_DIST = 0.03;
 const TURN_SPEED = 10; // rad/sec-ish, via lerp factor below
@@ -15,6 +16,7 @@ export class Player {
     this.speed = 3.2;
     this.position = spawn.clone();
     this.target = spawn.clone();
+    this.waypoints = []; // remaining points after `target`, when routing around an obstacle (see moveTo)
     this.facing = 0;
     this.walkPhase = 0;
     this.swing = 0;
@@ -32,14 +34,44 @@ export class Player {
     this._syncTransform();
   }
 
+  // Routes around anything solid in the way (see pathfinding.js) instead
+  // of aiming straight at (x,z) — a straight line only works when nothing
+  // is actually blocking it, and collision.js's per-frame sliding alone
+  // can't get *around* an obstacle, only glide along whichever side of it
+  // the player happens to run into. Falls back to the old straight-line
+  // target when there's no collision system to query (shouldn't happen
+  // in the real game) or when the target is simply unreachable (e.g.
+  // sealed behind a closed door) — walking there and stopping at the
+  // wall is the correct outcome in that case, same as before.
   moveTo(x, z) {
+    this.waypoints = [];
+    if (this.collision?.blocked) {
+      const y = this.terrainHeight(this.position.x, this.position.z);
+      const isBlocked = (px, pz) => this.collision.blocked(px, pz, y);
+      const path = findPath({ x: this.position.x, z: this.position.z }, { x, z }, isBlocked);
+      if (path && path.length) {
+        this.target.set(path[0].x, 0, path[0].z);
+        this.waypoints = path.slice(1);
+        return;
+      }
+    }
     this.target.set(x, 0, z);
   }
 
   update(dt) {
-    const dx = this.target.x - this.position.x;
-    const dz = this.target.z - this.position.z;
-    const dist = Math.hypot(dx, dz);
+    let dx = this.target.x - this.position.x;
+    let dz = this.target.z - this.position.z;
+    let dist = Math.hypot(dx, dz);
+    // Advance through any remaining waypoints as each one is reached —
+    // in the same frame, so arriving at an intermediate corner doesn't
+    // cost a stalled frame before continuing toward the next one.
+    while (dist <= STOP_DIST && this.waypoints.length) {
+      const next = this.waypoints.shift();
+      this.target.set(next.x, 0, next.z);
+      dx = this.target.x - this.position.x;
+      dz = this.target.z - this.position.z;
+      dist = Math.hypot(dx, dz);
+    }
     const moving = dist > STOP_DIST;
     if (moving) {
       const step = Math.min(this.speed * dt, dist);

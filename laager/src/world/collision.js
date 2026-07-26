@@ -91,6 +91,12 @@ export function createCollision({ trees, rocks, buildMode, terrainHeight }) {
   }
 
   return {
+    // Exposed for pathfinding.js: a yes/no obstacle query at an arbitrary
+    // point, using the exact same rule set real movement collides
+    // against, so a route it finds is actually walkable rather than
+    // subtly disagreeing with what resolve() will do frame to frame.
+    blocked,
+
     // Resolves a movement step. Tries the full diagonal move first — for
     // a wall that isn't aligned with the world X/Z axes (any rotated
     // room), that's often clear even when neither pure-X nor pure-Z

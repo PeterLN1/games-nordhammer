@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test/buildSystem.test.mjs"
+    "test": "node test/buildSystem.test.mjs && node test/pathfinding.test.mjs"
   },
   "devDependencies": {
     "three": "0.169.0"
