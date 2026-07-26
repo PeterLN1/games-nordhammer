@@ -8,11 +8,8 @@ Innan du börjar: läs `test/buildSystem.test.mjs` och kör `npm test`
 igen innan du committar något som rör `src/build/` eller
 `src/world/collision.js`.
 
-## Byggsystemet — UX (från utvärderingen, inget påbörjat än)
+## Byggsystemet — UX (från utvärderingen)
 
-- **Dra-för-att-bygga-rad**: bygga flera väggar/plattformar i en svep
-  (dra fingret längs en linje) i stället för tryck-bekräfta per bit.
-  Troligen det som ger mest känsla av "smidigt" per investerad timme.
 - **Statustext på spöket** under placering: "fäster i hörn" / "fritt
   placerad" / "hittar ingen vägg att vila på" osv. Just nu är alla
   snap-regler osynliga tills man råkar hitta dem.
