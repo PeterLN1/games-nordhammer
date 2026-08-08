@@ -35,84 +35,97 @@ function isBadName(name) {
 /* ---------- Lagring (Postgres eller minne) ---------- */
 let store;
 if (DATABASE_URL) {
-  const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
-  await pool.query(`
-    create table if not exists scores (
-      id bigserial primary key,
-      name text not null,
-      mode text not null default 'classic',
-      tiles integer not null,
-      seconds integer not null,
-      moves integer,
-      created_at timestamptz not null default now()
-    );`);
-  // migrering: seed-kolumn för delade givar (fanns inte i äldre tabeller)
-  await pool.query(`alter table scores add column if not exists seed text;`);
-  // migrering: from_share markerar resultat spelade via en känd/upprepningsbar
-  // giv (delad länk eller daglig utmaning) — sådana ska INTE räknas in i den
-  // vanliga topplistan (annars kan man öva in en memorerad körning och få en
-  // orättvist bra tid där). Giv-specifika topplistor påverkas inte.
-  await pool.query(`alter table scores add column if not exists from_share boolean not null default false;`);
-  // Supabase exponerar automatiskt en publik REST-API för varje tabell,
-  // skyddad enbart av Row-Level Security. Slå på RLS utan policyer så den
-  // vägen stängs helt — enda avsedda ingången är detta API. Påverkar inte
-  // den här anslutningen (superuser-roller kringgår alltid RLS).
-  await pool.query(`alter table scores enable row level security;`);
-  await pool.query(`create index if not exists scores_board_idx on scores (mode, tiles, seconds);`);
-  await pool.query(`create index if not exists scores_seed_idx on scores (seed, seconds);`);
-  store = {
-    async insert(s) {
-      await pool.query(
-        'insert into scores (name, mode, tiles, seconds, moves, seed, from_share) values ($1,$2,$3,$4,$5,$6,$7)',
-        [s.name, s.mode, s.tiles, s.seconds, s.moves, s.seed, !!s.fromShare]
-      );
-      if (s.fromShare) return null; // ingen global rank är meningsfull för ett giv-resultat
-      const r = await pool.query(
-        'select count(*)::int as c from scores where mode=$1 and tiles=$2 and seconds<$3 and from_share=false',
-        [s.mode, s.tiles, s.seconds]
-      );
-      return r.rows[0].c + 1;
-    },
-    async top(mode, tiles, limit) {
-      const r = await pool.query(
-        'select name, min(seconds) as seconds from scores where mode=$1 and tiles=$2 and from_share=false group by name order by seconds asc limit $3',
-        [mode, tiles, limit]
-      );
-      return r.rows;
-    },
-    async topBySeed(seed, limit) {
-      const r = await pool.query(
-        'select name, min(seconds) as seconds from scores where seed=$1 group by name order by seconds asc limit $2',
-        [seed, limit]
-      );
-      return r.rows;
-    },
-    // "Utmaningar": delade givar där minst två olika spelare faktiskt
-    // tävlat mot samma seed — filtrerar bort vanliga solo-partier
-    // (som alla har ett unikt, aldrig delat, seed).
-    async challenges(limit) {
-      const r = await pool.query(`
-        select b.seed, b.mode, b.tiles, b.best_name, b.best_seconds, m.players, m.last_played
-        from (
-          select distinct on (seed) seed, mode, tiles, name as best_name, seconds as best_seconds
-          from scores where seed is not null
-          order by seed, seconds asc
-        ) b
-        join (
-          select seed, count(distinct name) as players, max(created_at) as last_played
-          from scores where seed is not null
-          group by seed
-          having count(distinct name) >= 2
-        ) m using (seed)
-        order by m.last_played desc
-        limit $1;`, [limit]);
-      return r.rows.map(row => ({
-        seed: row.seed, mode: row.mode, tiles: row.tiles,
-        bestName: row.best_name, bestSeconds: row.best_seconds, players: row.players
-      }));
-    }
-  };
-  console.log('Topplista: ansluten till Postgres.');
+  try {
+    const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+    await pool.query(`
+      create table if not exists scores (
+        id bigserial primary key,
+        name text not null,
+        mode text not null default 'classic',
+        tiles integer not null,
+        seconds integer not null,
+        moves integer,
+        created_at timestamptz not null default now()
+      );`);
+    // migrering: seed-kolumn för delade givar (fanns inte i äldre tabeller)
+    await pool.query(`alter table scores add column if not exists seed text;`);
+    // migrering: from_share markerar resultat spelade via en känd/upprepningsbar
+    // giv (delad länk eller daglig utmaning) — sådana ska INTE räknas in i den
+    // vanliga topplistan (annars kan man öva in en memorerad körning och få en
+    // orättvist bra tid där). Giv-specifika topplistor påverkas inte.
+    await pool.query(`alter table scores add column if not exists from_share boolean not null default false;`);
+    // Supabase exponerar automatiskt en publik REST-API för varje tabell,
+    // skyddad enbart av Row-Level Security. Slå på RLS utan policyer så den
+    // vägen stängs helt — enda avsedda ingången är detta API. Påverkar inte
+    // den här anslutningen (superuser-roller kringgår alltid RLS).
+    await pool.query(`alter table scores enable row level security;`);
+    await pool.query(`create index if not exists scores_board_idx on scores (mode, tiles, seconds);`);
+    await pool.query(`create index if not exists scores_seed_idx on scores (seed, seconds);`);
+    store = {
+      async insert(s) {
+        await pool.query(
+          'insert into scores (name, mode, tiles, seconds, moves, seed, from_share) values ($1,$2,$3,$4,$5,$6,$7)',
+          [s.name, s.mode, s.tiles, s.seconds, s.moves, s.seed, !!s.fromShare]
+        );
+        if (s.fromShare) return null; // ingen global rank är meningsfull för ett giv-resultat
+        const r = await pool.query(
+          'select count(*)::int as c from scores where mode=$1 and tiles=$2 and seconds<$3 and from_share=false',
+          [s.mode, s.tiles, s.seconds]
+        );
+        return r.rows[0].c + 1;
+      },
+      async top(mode, tiles, limit) {
+        const r = await pool.query(
+          'select name, min(seconds) as seconds from scores where mode=$1 and tiles=$2 and from_share=false group by name order by seconds asc limit $3',
+          [mode, tiles, limit]
+        );
+        return r.rows;
+      },
+      async topBySeed(seed, limit) {
+        const r = await pool.query(
+          'select name, min(seconds) as seconds from scores where seed=$1 group by name order by seconds asc limit $2',
+          [seed, limit]
+        );
+        return r.rows;
+      },
+      // "Utmaningar": delade givar där minst två olika spelare faktiskt
+      // tävlat mot samma seed — filtrerar bort vanliga solo-partier
+      // (som alla har ett unikt, aldrig delat, seed).
+      async challenges(limit) {
+        const r = await pool.query(`
+          select b.seed, b.mode, b.tiles, b.best_name, b.best_seconds, m.players, m.last_played
+          from (
+            select distinct on (seed) seed, mode, tiles, name as best_name, seconds as best_seconds
+            from scores where seed is not null
+            order by seed, seconds asc
+          ) b
+          join (
+            select seed, count(distinct name) as players, max(created_at) as last_played
+            from scores where seed is not null
+            group by seed
+            having count(distinct name) >= 2
+          ) m using (seed)
+          order by m.last_played desc
+          limit $1;`, [limit]);
+        return r.rows.map(row => ({
+          seed: row.seed, mode: row.mode, tiles: row.tiles,
+          bestName: row.best_name, bestSeconds: row.best_seconds, players: row.players
+        }));
+      }
+    };
+    console.log('Topplista: ansluten till Postgres.');
+  } catch (e) {
+    // Vanligaste orsaken: Supabase-projektet är pausat (gratisnivån pausar
+    // automatiskt efter inaktivitet), så redan uppstarts-migreringarna
+    // failar. Innan den här catchen fanns kraschade hela processen direkt
+    // (ohanterat fel i top-level await) — Railway startade om den i en
+    // loop, och varje request under tiden fick ett anslutningsfel snarare
+    // än ett begripligt svar. Nu startar servern ändå (store stannar på
+    // null) och varje endpoint svarar tydligt 503 tills en ny
+    // driftsättning/omstart lyckas ansluta.
+    console.error('Topplista: kunde inte ansluta till Postgres vid uppstart (kan bero på att Supabase-projektet är pausat):', e.message);
+    store = null;
+  }
 } else {
   const mem = [];
   store = {
@@ -185,6 +198,7 @@ function rateLimited(ip) {
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 app.get('/api/leaderboard', async (req, res) => {
+  if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
   const seedRaw = req.query.seed;
   const seed = (typeof seedRaw === 'string' && seedRaw.length > 0 && seedRaw.length <= 300) ? seedRaw : null;
   let limit = parseInt(req.query.limit, 10);
@@ -205,6 +219,7 @@ app.get('/api/leaderboard', async (req, res) => {
 // "Utmaningar": bläddringsbar lista över delade givar som minst två
 // spelare tävlat på — öppet för alla, inget krävs för att se den.
 app.get('/api/challenges', async (req, res) => {
+  if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
   let limit = parseInt(req.query.limit, 10);
   if (!(limit > 0 && limit <= 50)) limit = 20;
   try {
@@ -215,6 +230,7 @@ app.get('/api/challenges', async (req, res) => {
 });
 
 app.post('/api/scores', async (req, res) => {
+  if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   if (rateLimited(ip)) return res.status(429).json({ error: 'for manga forsok, vanta lite' });
   const b = req.body || {};

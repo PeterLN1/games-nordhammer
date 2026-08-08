@@ -1233,7 +1233,10 @@
     var base = apiBase(); if(!base) return cb(new Error('ingen topplista'));
     fetch(base + '/api/leaderboard?tiles=' + tiles + '&mode=' + (mode||'classic') + '&limit=20')
       .then(function(r){ return r.json(); })
-      .then(function(d){ cb(null, (d && d.scores) || []); })
+      // Servern svarar med giltig JSON även på fel (t.ex. 500 {"error":"databasfel"}
+      // om Supabase är pausat) — utan att kolla d.error tolkas det svaret som en
+      // lyckad, tom topplista och visar "Var först på listan!" i stället för felet.
+      .then(function(d){ cb(d && d.error ? new Error(d.error) : null, (d && d.scores) || []); })
       .catch(function(e){ cb(e); });
   }
   function lbSubmit(payload, cb){
@@ -1258,14 +1261,14 @@
     var base = apiBase(); if(!base) return cb(new Error('ingen topplista'));
     fetch(base + '/api/leaderboard?seed=' + encodeURIComponent(seed) + '&limit=20')
       .then(function(r){ return r.json(); })
-      .then(function(d){ cb(null, (d && d.scores) || []); })
+      .then(function(d){ cb(d && d.error ? new Error(d.error) : null, (d && d.scores) || []); })
       .catch(function(e){ cb(e); });
   }
   function lbFetchChallenges(cb){
     var base = apiBase(); if(!base) return cb(new Error('ingen topplista'));
     fetch(base + '/api/challenges?limit=20')
       .then(function(r){ return r.json(); })
-      .then(function(d){ cb(null, (d && d.challenges) || []); })
+      .then(function(d){ cb(d && d.error ? new Error(d.error) : null, (d && d.challenges) || []); })
       .catch(function(e){ cb(e); });
   }
   function setupSeedLeaderboard(area, seed){
