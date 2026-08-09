@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#eef1f9" data-light="#eef1f9" data-dark="#0b1020">
+<title>Ordlek</title>
+<script src="/shared/theme.js"></script>
+<style>
+  :root {
+    --bg: radial-gradient(120% 90% at 50% 0%, #eef1f9 0%, #e3e8f4 100%);
+    --chrome: rgba(0,0,0,.06);
+    --ink: #1b2138;
+    --muted: rgba(27,33,56,.6);
+    --tile-empty-border: rgba(27,33,56,.22);
+    --tile-filled-border: rgba(27,33,56,.5);
+    --tile-bg: transparent;
+    --key-bg: rgba(27,33,56,.10);
+    --key-ink: #1b2138;
+    --correct: #3aa65a;
+    --present: #c9962c;
+    --absent: #8b93a7;
+    --accent: #ffb300;
+    --panel-bg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --bg: radial-gradient(120% 90% at 50% 0%, #16224a 0%, #0b1020 60%, #070a15 100%);
+      --chrome: rgba(0,0,0,.35);
+      --ink: #eef2ff;
+      --muted: rgba(238,242,255,.6);
+      --tile-empty-border: rgba(238,242,255,.22);
+      --tile-filled-border: rgba(238,242,255,.55);
+      --key-bg: rgba(238,242,255,.12);
+      --key-ink: #eef2ff;
+      --absent: #3a4266;
+      --panel-bg: #141a33;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: radial-gradient(120% 90% at 50% 0%, #16224a 0%, #0b1020 60%, #070a15 100%);
+    --chrome: rgba(0,0,0,.35);
+    --ink: #eef2ff;
+    --muted: rgba(238,242,255,.6);
+    --tile-empty-border: rgba(238,242,255,.22);
+    --tile-filled-border: rgba(238,242,255,.55);
+    --key-bg: rgba(238,242,255,.12);
+    --key-ink: #eef2ff;
+    --absent: #3a4266;
+    --panel-bg: #141a33;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #0b1020;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    touch-action: manipulation; overscroll-behavior: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100dvh; background: var(--bg); }
+
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: max(6px, env(safe-area-inset-top)) 12px 6px;
+    background: var(--chrome); flex: 0 0 auto;
+  }
+  header .back, header .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 10px; text-decoration: none;
+    color: var(--ink); background: var(--key-bg); font-size: 18px; line-height: 1;
+    border: none; cursor: pointer; font-family: inherit;
+  }
+  header .back:active, header .icon-btn:active { background: rgba(255,179,0,.3); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
+  header .spacer { flex: 1; }
+  select {
+    font-family: inherit; font-size: 13px; color: var(--ink);
+    background: var(--key-bg); border: none; border-radius: 8px;
+    padding: 7px 26px 7px 10px; -webkit-appearance: none; appearance: none;
+  }
+
+  #dayInfo {
+    flex: 0 0 auto; text-align: center; font-size: 12.5px; color: var(--muted);
+    padding: 6px 10px 0;
+  }
+
+  #boardWrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  #board {
+    display: grid; grid-template-rows: repeat(6, 1fr); gap: 7px;
+    width: min(330px, 78vw); height: min(78vh, 396px);
+    margin: 6px auto;
+  }
+  .row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+  .row.shake { animation: rowShake .45s; }
+  .tile {
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(18px, 6.5vw, 30px); font-weight: 800; text-transform: uppercase;
+    border-radius: 7px; border: 2px solid var(--tile-empty-border);
+    background: var(--tile-bg); color: var(--ink);
+    perspective: 400px;
+  }
+  .tile.filled { border-color: var(--tile-filled-border); }
+  .tile.flip { animation: tileFlip .5s ease; }
+  .tile.bounce { animation: tileBounce .55s ease; }
+  .tile.state-correct { background: var(--correct); border-color: var(--correct); color: #fff; }
+  .tile.state-present { background: var(--present); border-color: var(--present); color: #fff; }
+  .tile.state-absent { background: var(--absent); border-color: var(--absent); color: #fff; }
+  @keyframes tileFlip { 0% { transform: rotateX(0deg); } 50% { transform: rotateX(-90deg); } 100% { transform: rotateX(0deg); } }
+  @keyframes tileBounce { 0%,100% { transform: translateY(0); } 30% { transform: translateY(-16px); } 50% { transform: translateY(0); } 70% { transform: translateY(-7px); } 90% { transform: translateY(0); } }
+  @keyframes rowShake {
+    10%,90% { transform: translateX(-3px); } 20%,80% { transform: translateX(5px); }
+    30%,50%,70% { transform: translateX(-7px); } 40%,60% { transform: translateX(7px); }
+  }
+
+  #keyboard { flex: 0 0 auto; padding: 6px 6px max(8px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 7px; max-width: 520px; width: 100%; margin: 0 auto; }
+  .kbrow { display: flex; gap: 5px; justify-content: center; }
+  .key {
+    flex: 1; max-width: 38px; height: 48px; border-radius: 7px; border: none;
+    background: var(--key-bg); color: var(--key-ink); font-weight: 700; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; text-transform: uppercase;
+    font-family: inherit; cursor: pointer; padding: 0;
+  }
+  .key:active { filter: brightness(1.15); }
+  .key.wide { max-width: 60px; font-size: 11px; }
+  .key.state-correct { background: var(--correct); color: #fff; }
+  .key.state-present { background: var(--present); color: #fff; }
+  .key.state-absent { background: var(--absent); color: #fff; opacity: .7; }
+
+  /* ---- overlay (regler / resultat / statistik) ---- */
+  #overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 100;
+    display: none; align-items: center; justify-content: center; padding: 16px;
+  }
+  #overlay.show { display: flex; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .panel {
+    background: var(--panel-bg); color: var(--ink); border-radius: 16px;
+    padding: 22px 20px 18px; max-width: 380px; width: 100%; max-height: 86vh; overflow-y: auto;
+    text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  }
+  .panel .emoji { font-size: 42px; }
+  .panel h2 { margin: 6px 0 6px; font-size: 22px; }
+  .panel p { margin: 0 0 4px; color: var(--muted); font-size: 14.5px; line-height: 1.5; }
+  .panel button {
+    width: 100%; margin-top: 12px; padding: 13px; border: none; border-radius: 11px;
+    background: var(--accent); color: #1a1200; font-weight: 700; font-size: 15px;
+    cursor: pointer; font-family: inherit;
+  }
+  .panel button.ghost { background: var(--key-bg); color: var(--ink); }
+  .panel button:active { transform: scale(.98); }
+
+  .stat-row { display: flex; justify-content: center; gap: 22px; margin: 14px 0 10px; }
+  .stat-item .n { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .stat-item .l { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+
+  .dist { text-align: left; margin: 10px 0 4px; }
+  .dist-row { display: flex; align-items: center; gap: 7px; font-size: 12px; margin: 3px 0; }
+  .dist-row .num { width: 9px; text-align: right; font-weight: 700; color: var(--muted); }
+  .dist-row .bar { background: var(--absent); color: #fff; text-align: right; padding: 3px 7px; border-radius: 4px; min-width: 20px; font-weight: 700; font-size: 12px; }
+  .dist-row .bar.hi { background: var(--correct); }
+
+  .lb-title { font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 16px 0 8px; text-align: left; }
+  .lb-list { text-align: left; }
+  .lb-row { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 9px; font-size: 14px; }
+  .lb-row:nth-child(odd) { background: var(--key-bg); }
+  .lb-row.me { background: rgba(255,179,0,.2); box-shadow: inset 0 0 0 1px rgba(255,179,0,.5); }
+  .lb-rank { width: 22px; text-align: center; font-weight: 700; color: var(--muted); }
+  .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-time { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .lb-empty { color: var(--muted); font-size: 13px; padding: 6px 2px; text-align: left; }
+  .lb-entry { display: flex; gap: 8px; text-align: left; }
+  .lb-input {
+    flex: 1; padding: 11px 12px; border-radius: 9px; border: none;
+    background: var(--key-bg); color: var(--ink); font-family: inherit; font-size: 14px;
+  }
+  .lb-save { width: auto; margin-top: 0; padding: 0 16px; }
+
+  .rules-list { text-align: left; font-size: 14px; line-height: 1.6; margin: 10px 0; }
+  .rules-list .ex { display: flex; gap: 5px; margin: 8px 0 4px; }
+  .rules-list .ex .tile { width: 34px; height: 34px; font-size: 17px; border-radius: 5px; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(10px);
+    z-index: 10000; background: rgba(20,20,30,.92); color: #fff; padding: 10px 18px; border-radius: 10px;
+    font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <a class="back" href="/" aria-label="Till startsidan">‹</a>
+      <h1>🟩 Ordlek</h1>
+      <div class="spacer"></div>
+      <button class="icon-btn" id="btnStats" aria-label="Statistik">📊</button>
+      <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
+      <label class="theme-ctl">
+        <select data-theme-control aria-label="Tema">
+          <option value="auto">Auto</option>
+          <option value="light">Ljust</option>
+          <option value="dark">Mörkt</option>
+        </select>
+      </label>
+    </header>
+    <div id="dayInfo"></div>
+    <div id="boardWrap"><div id="board"></div></div>
+    <div id="keyboard"></div>
+  </div>
+  <div id="overlay"><div class="panel" id="panel"></div></div>
+  <div id="toast"></div>
+
+  <script src="words.js"></script>
+  <script>
+  "use strict";
+
+  /* ---------- Ord & dagligt val ---------- */
+  var WORD_LEN = 5, MAX_GUESSES = 6;
+  var GUESS_SET = new Set(ORDLEK_GUESSES);
+  var EPOCH = '2026-08-09'; // Ordlek #1
+
+  function hashStr(str){
+    var h = 2166136261 >>> 0; // FNV-1a
+    for(var i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return h >>> 0;
+  }
+  function todayIso(){ return new Date().toISOString().slice(0,10); } // UTC, samma dygnsgräns för alla
+  function dailyAnswer(dateStr){ return ORDLEK_ANSWERS[hashStr('ordlek-word:' + dateStr) % ORDLEK_ANSWERS.length]; }
+  function dayNumber(dateStr){
+    var d = Date.parse(dateStr + 'T00:00:00Z'), e = Date.parse(EPOCH + 'T00:00:00Z');
+    return Math.floor((d - e) / 86400000) + 1;
+  }
+  var SV_MONTHS = ['januari','februari','mars','april','maj','juni','juli','augusti','september','oktober','november','december'];
+  function formatDateSv(iso){
+    var p = iso.split('-'); return (+p[2]) + ' ' + (SV_MONTHS[(+p[1])-1] || '') + ' ' + p[0];
+  }
+
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  /* ---------- Statistik & sparat läge ---------- */
+  var STATS_KEY = 'ordlek:stats';
+  var NAME_KEY = 'ordlek:name';
+  var RULES_KEY = 'ordlek:seenRules';
+  function loadStats(){
+    try {
+      var s = JSON.parse(localStorage.getItem(STATS_KEY));
+      if(s && s.distribution && s.distribution.length === MAX_GUESSES) return s;
+    } catch(e){}
+    return { played: 0, wins: 0, currentStreak: 0, maxStreak: 0, distribution: [0,0,0,0,0,0], lastWinDate: null };
+  }
+  function saveStats(s){ try { localStorage.setItem(STATS_KEY, JSON.stringify(s)); } catch(e){} }
+  function recordResult(won, guessCount, dateStr){
+    var s = loadStats();
+    s.played++;
+    if(won){
+      s.wins++;
+      s.distribution[guessCount-1]++;
+      var prevDay = new Date(Date.parse(dateStr + 'T00:00:00Z') - 86400000).toISOString().slice(0,10);
+      s.currentStreak = (s.lastWinDate === prevDay) ? s.currentStreak + 1 : 1;
+      s.maxStreak = Math.max(s.maxStreak, s.currentStreak);
+      s.lastWinDate = dateStr;
+    } else {
+      s.currentStreak = 0;
+    }
+    saveStats(s);
+    return s;
+  }
+
+  function gameKey(dateStr){ return 'ordlek:game:' + dateStr; }
+  function loadGame(dateStr){
+    try { var g = JSON.parse(localStorage.getItem(gameKey(dateStr))); if(g && g.answer) return g; } catch(e){}
+    return null;
+  }
+  function saveGame(g){ try { localStorage.setItem(gameKey(g.date), JSON.stringify(g)); } catch(e){} }
+  function pruneOldGames(keepDate){
+    try {
+      var toRemove = [];
+      for(var i=0;i<localStorage.length;i++){
+        var k = localStorage.key(i);
+        if(k && k.indexOf('ordlek:game:') === 0 && k !== gameKey(keepDate)) toRemove.push(k);
+      }
+      toRemove.forEach(function(k){ localStorage.removeItem(k); });
+    } catch(e){}
+  }
+
+  function getName(){ try { return localStorage.getItem(NAME_KEY) || ''; } catch(e){ return ''; } }
+  function setName(n){ try { localStorage.setItem(NAME_KEY, n); } catch(e){} }
+
+  /* ---------- Spelläge ---------- */
+  var today = todayIso();
+  var state = loadGame(today);
+  if(!state){
+    state = { date: today, answer: dailyAnswer(today), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: false };
+    saveGame(state);
+    pruneOldGames(today);
+  }
+  var animating = false;
+  var keyState = {}; // bokstav -> 'correct'|'present'|'absent'
+
+  function evaluateGuess(guess, answer){
+    var marks = new Array(WORD_LEN).fill('absent');
+    var remain = {};
+    var i;
+    for(i=0;i<WORD_LEN;i++){
+      if(guess[i] === answer[i]) marks[i] = 'correct';
+      else remain[answer[i]] = (remain[answer[i]] || 0) + 1;
+    }
+    for(i=0;i<WORD_LEN;i++){
+      if(marks[i] === 'correct') continue;
+      var c = guess[i];
+      if(remain[c] > 0){ marks[i] = 'present'; remain[c]--; }
+    }
+    return marks;
+  }
+  function rebuildKeyState(){
+    keyState = {};
+    var rank = { absent: 0, present: 1, correct: 2 };
+    state.guesses.forEach(function(g){
+      for(var i=0;i<WORD_LEN;i++){
+        var c = g.word[i], m = g.marks[i];
+        if(!keyState[c] || rank[m] > rank[keyState[c]]) keyState[c] = m;
+      }
+    });
+  }
+
+  /* ---------- Rendering ---------- */
+  var current = '';
+  function renderBoard(){
+    var html = '';
+    for(var r=0;r<MAX_GUESSES;r++){
+      html += '<div class="row" data-row="'+r+'">';
+      if(r < state.guesses.length){
+        var g = state.guesses[r];
+        for(var i=0;i<WORD_LEN;i++) html += '<div class="tile filled state-'+g.marks[i]+'">'+esc(g.word[i])+'</div>';
+      } else if(r === state.guesses.length && state.status === 'playing'){
+        for(var i2=0;i2<WORD_LEN;i2++){
+          var ch = current[i2];
+          html += '<div class="tile'+(ch?' filled':'')+'">'+(ch?esc(ch):'')+'</div>';
+        }
+      } else {
+        for(var i3=0;i3<WORD_LEN;i3++) html += '<div class="tile"></div>';
+      }
+      html += '</div>';
+    }
+    document.getElementById('board').innerHTML = html;
+  }
+  var KB_ROWS = [
+    ['q','w','e','r','t','y','u','i','o','p','å'],
+    ['a','s','d','f','g','h','j','k','l','ö','ä'],
+    ['ENTER','z','x','c','v','b','n','m','BACK']
+  ];
+  function renderKeyboard(){
+    var html = '';
+    KB_ROWS.forEach(function(row){
+      html += '<div class="kbrow">';
+      row.forEach(function(k){
+        if(k === 'ENTER') html += '<button class="key wide" data-key="ENTER">Enter</button>';
+        else if(k === 'BACK') html += '<button class="key wide" data-key="BACK">⌫</button>';
+        else html += '<button class="key'+(keyState[k]?' state-'+keyState[k]:'')+'" data-key="'+k+'">'+k+'</button>';
+      });
+      html += '</div>';
+    });
+    document.getElementById('keyboard').innerHTML = html;
+    document.querySelectorAll('.key').forEach(function(btn){
+      btn.addEventListener('click', function(){ handleKey(this.getAttribute('data-key')); });
+    });
+  }
+  function renderDayInfo(){
+    var n = dayNumber(state.date);
+    document.getElementById('dayInfo').textContent = 'Dagens ord #' + n + ' · ' + formatDateSv(state.date);
+  }
+  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); }
+
+  /* ---------- Indata ---------- */
+  var LETTER_RE = /^[a-zåäö]$/;
+  function handleKey(k){
+    if(animating || state.status !== 'playing') return;
+    if(k === 'ENTER'){ submit(); return; }
+    if(k === 'BACK'){ current = current.slice(0,-1); renderBoard(); return; }
+    if(LETTER_RE.test(k) && current.length < WORD_LEN){ current += k; renderBoard(); }
+  }
+  document.addEventListener('keydown', function(e){
+    if(e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key;
+    if(k === 'Enter'){ handleKey('ENTER'); return; }
+    if(k === 'Backspace'){ handleKey('BACK'); return; }
+    k = k.toLowerCase();
+    if(LETTER_RE.test(k)) handleKey(k);
+  });
+
+  function shakeRow(r){
+    var row = document.querySelector('.row[data-row="'+r+'"]');
+    if(!row) return;
+    row.classList.add('shake');
+    setTimeout(function(){ row.classList.remove('shake'); }, 460);
+  }
+
+  function submit(){
+    if(current.length < WORD_LEN){ shakeRow(state.guesses.length); toast('För få bokstäver'); return; }
+    if(!GUESS_SET.has(current)){ shakeRow(state.guesses.length); toast('Inte ett ord i listan'); return; }
+    var word = current;
+    var marks = evaluateGuess(word, state.answer);
+    var rowIdx = state.guesses.length;
+    var rowEl = document.querySelector('.row[data-row="'+rowIdx+'"]');
+    animating = true;
+    var tiles = rowEl.querySelectorAll('.tile');
+    tiles.forEach(function(t,i){
+      setTimeout(function(){
+        t.classList.add('flip');
+        setTimeout(function(){ t.classList.add('filled', 'state-'+marks[i]); }, 250);
+      }, i*280);
+    });
+    var totalDelay = (WORD_LEN-1)*280 + 520;
+    setTimeout(function(){
+      state.guesses.push({ word: word, marks: marks });
+      current = '';
+      var won = marks.every(function(m){ return m === 'correct'; });
+      if(won){
+        tiles.forEach(function(t,i){ setTimeout(function(){ t.classList.add('bounce'); }, i*90); });
+        finish(true, rowEl);
+      } else if(state.guesses.length >= MAX_GUESSES){
+        finish(false, rowEl);
+      } else {
+        saveGame(state);
+        animating = false;
+        rebuildKeyState();
+        renderKeyboard();
+        renderBoard();
+      }
+    }, totalDelay);
+  }
+
+  function finish(won, rowEl){
+    state.status = won ? 'won' : 'lost';
+    state.finishedAt = Date.now();
+    saveGame(state);
+    animating = false;
+    rebuildKeyState();
+    renderKeyboard();
+    var stats = recordResult(won, state.guesses.length, state.date);
+    if(navigator.vibrate) try { navigator.vibrate(won ? [20,40,20] : 60); } catch(e){}
+    setTimeout(function(){ showResultPanel(won, stats); }, won ? 900 : 300);
+  }
+
+  /* ---------- Delning ---------- */
+  function shareText(){
+    var n = dayNumber(state.date);
+    var lines = state.guesses.map(function(g){
+      return g.marks.map(function(m){ return m === 'correct' ? '🟩' : (m === 'present' ? '🟨' : '⬛'); }).join('');
+    });
+    var scoreLabel = state.status === 'won' ? (state.guesses.length + '/6') : 'X/6';
+    return 'Ordlek #' + n + ' ' + scoreLabel + '\n\n' + lines.join('\n') + '\n\ngames.nordhammer.se/ordlek/';
+  }
+  function doShare(btn){
+    var text = shareText();
+    function flash(){
+      toast('Resultat kopierat!');
+      if(!btn) return;
+      var orig = btn.textContent; btn.textContent = '✓ Kopierat!'; btn.disabled = true;
+      setTimeout(function(){ btn.textContent = orig; btn.disabled = false; }, 1600);
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(flash).catch(function(){ showShareFallback(text); });
+    } else showShareFallback(text);
+  }
+  function showShareFallback(text){
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">🔗</div><h2>Dela resultat</h2>' +
+      '<textarea id="shareText" class="lb-input" style="width:100%;height:140px;resize:none" readonly>'+esc(text)+'</textarea>' +
+      '<button id="shareCopy">Kopiera</button>' +
+      '<button id="shareClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    var ta = document.getElementById('shareText');
+    setTimeout(function(){ try { ta.focus(); ta.select(); } catch(e){} }, 50);
+    document.getElementById('shareCopy').onclick = function(){
+      try { ta.focus(); ta.select(); document.execCommand('copy'); toast('Kopierat!'); } catch(e){}
+    };
+    document.getElementById('shareClose').onclick = hideOverlay;
+  }
+
+  /* ---------- Familje-topplista (samma Railway/Supabase-backend som Mahjong) ---------- */
+  var LEADERBOARD_API = 'https://games-nordhammer-production.up.railway.app';
+  function apiBase(){
+    try { return (localStorage.getItem('ordlek:api') || LEADERBOARD_API || '').replace(/\/+$/,''); }
+    catch(e){ return LEADERBOARD_API; }
+  }
+  function hasLeaderboard(){ return !!apiBase(); }
+  function seedFor(dateStr){ return 'ordlek:' + dateStr; }
+  function lbFetchBySeed(seed, cb){
+    var base = apiBase(); if(!base) return cb(new Error('ingen topplista'));
+    fetch(base + '/api/leaderboard?seed=' + encodeURIComponent(seed) + '&limit=20')
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb(d && d.error ? new Error(d.error) : null, (d && d.scores) || []); })
+      .catch(function(e){ cb(e); });
+  }
+  function lbSubmit(payload, cb){
+    var base = apiBase(); if(!base) return cb && cb(new Error('ingen topplista'));
+    fetch(base + '/api/scores', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb && cb(d && d.error ? new Error(d.error) : null, d); })
+      .catch(function(e){ cb && cb(e); });
+  }
+  function lbRenderList(el, list, myName){
+    if(!list || !list.length){ el.innerHTML = '<div class="lb-empty">Var först på listan idag!</div>'; return; }
+    var medals = ['🥇','🥈','🥉'];
+    el.innerHTML = list.map(function(s,i){
+      var me = (myName && s.name === myName) ? ' me' : '';
+      var rank = i < 3 ? medals[i] : (i+1);
+      return '<div class="lb-row'+me+'"><span class="lb-rank">'+rank+'</span>' +
+             '<span class="lb-name">'+esc(s.name)+'</span>' +
+             '<span class="lb-time">'+fmtSeconds(s.seconds)+'</span></div>';
+    }).join('');
+  }
+  function fmtSeconds(s){
+    s = Math.round(s);
+    var m = Math.floor(s/60), sec = s%60;
+    return m + ':' + (sec<10?'0':'') + sec;
+  }
+  function setupLeaderboard(area, won){
+    if(!hasLeaderboard()){ area.innerHTML = ''; return; }
+    var seed = seedFor(state.date);
+    function showList(){
+      area.innerHTML = '<div class="lb-title">🏆 Dagens familjetopplista</div><div class="lb-list">Laddar…</div>';
+      lbFetchBySeed(seed, function(err, list){
+        var el = area.querySelector('.lb-list');
+        if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
+        lbRenderList(el, list, getName());
+      });
+    }
+    if(!won || state.submitted){ showList(); return; }
+    var seconds = Math.max(1, Math.round((state.finishedAt - state.startedAt)/1000));
+    var name = getName();
+    if(name){
+      state.submitted = true; saveGame(state);
+      lbSubmit({ name:name, mode:'ordlek', tiles:WORD_LEN, seconds:seconds, moves:state.guesses.length, seed:seed }, showList);
+      showList();
+    } else {
+      area.innerHTML =
+        '<div class="lb-title">🏆 Kom med i familjetopplistan</div>' +
+        '<div class="lb-entry">' +
+          '<input id="lbName" class="lb-input" maxlength="20" placeholder="Ditt namn" autocomplete="off">' +
+          '<button id="lbSave" class="lb-save">Spara</button>' +
+        '</div>';
+      var save = function(){
+        var v = (area.querySelector('#lbName').value || '').trim();
+        if(!v) return;
+        setName(v);
+        state.submitted = true; saveGame(state);
+        lbSubmit({ name:v, mode:'ordlek', tiles:WORD_LEN, seconds:seconds, moves:state.guesses.length, seed:seed }, showList);
+      };
+      area.querySelector('#lbSave').onclick = save;
+      area.querySelector('#lbName').addEventListener('keydown', function(e){ if(e.key === 'Enter') save(); });
+    }
+  }
+
+  /* ---------- Paneler ---------- */
+  function distHtml(dist, highlightIdx){
+    var max = Math.max.apply(null, dist.concat([1]));
+    var html = '<div class="dist">';
+    dist.forEach(function(count, i){
+      var w = Math.max(8, Math.round((count/max)*100));
+      html += '<div class="dist-row"><span class="num">'+(i+1)+'</span>' +
+              '<span class="bar'+(i===highlightIdx?' hi':'')+'" style="width:'+w+'%">'+count+'</span></div>';
+    });
+    return html + '</div>';
+  }
+  function statBlockHtml(stats){
+    var pct = stats.played ? Math.round(100*stats.wins/stats.played) : 0;
+    return '<div class="stat-row">' +
+      '<div class="stat-item"><div class="n">'+stats.played+'</div><div class="l">Spelade</div></div>' +
+      '<div class="stat-item"><div class="n">'+pct+'%</div><div class="l">Vunna</div></div>' +
+      '<div class="stat-item"><div class="n">'+stats.currentStreak+'</div><div class="l">Svit</div></div>' +
+      '<div class="stat-item"><div class="n">'+stats.maxStreak+'</div><div class="l">Bästa svit</div></div>' +
+    '</div>';
+  }
+  function showResultPanel(won, stats){
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">'+(won?'🎉':'😔')+'</div>' +
+      '<h2>'+(won?'Snyggt!':'Nästa gång!')+'</h2>' +
+      '<p>'+(won ? ('Du gissade <b>'+state.answer.toUpperCase()+'</b> på '+state.guesses.length+' av '+MAX_GUESSES+' försök.')
+                 : ('Ordet var <b>'+state.answer.toUpperCase()+'</b>.')) + '</p>' +
+      statBlockHtml(stats) +
+      distHtml(stats.distribution, won ? state.guesses.length-1 : -1) +
+      '<div id="lbArea" class="lb-area"></div>' +
+      '<button id="pShare">📋 Dela resultat</button>' +
+      '<button id="pClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pShare').onclick = function(){ doShare(document.getElementById('pShare')); };
+    document.getElementById('pClose').onclick = hideOverlay;
+    setupLeaderboard(document.getElementById('lbArea'), won);
+  }
+  function showStatsPanel(){
+    var stats = loadStats();
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<h2>📊 Statistik</h2>' +
+      statBlockHtml(stats) +
+      distHtml(stats.distribution, -1) +
+      (state.status !== 'playing' ? '<button id="pShare2">📋 Dela dagens resultat</button>' : '') +
+      '<button id="pClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+    var ps = document.getElementById('pShare2');
+    if(ps) ps.onclick = function(){ doShare(ps); };
+  }
+  function showRulesPanel(){
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<h2>❔ Så funkar Ordlek</h2>' +
+      '<p style="text-align:left">Gissa dagens hemliga 5-bokstavsord på '+MAX_GUESSES+' försök. Samma ord för hela familjen varje dag — tävla om vem som löser det snabbast!</p>' +
+      '<div class="rules-list">' +
+        '<div class="ex"><div class="tile filled state-correct">O</div><div class="tile filled">R</div><div class="tile filled">D</div><div class="tile filled">E</div><div class="tile filled">T</div></div>' +
+        '<div>🟩 Grön = rätt bokstav på rätt plats.</div>' +
+        '<div class="ex" style="margin-top:10px"><div class="tile filled">O</div><div class="tile filled state-present">R</div><div class="tile filled">D</div><div class="tile filled">E</div><div class="tile filled">T</div></div>' +
+        '<div>🟨 Gul = bokstaven finns med, men på fel plats.</div>' +
+        '<div class="ex" style="margin-top:10px"><div class="tile filled">O</div><div class="tile filled">R</div><div class="tile filled state-absent">D</div><div class="tile filled">E</div><div class="tile filled">T</div></div>' +
+        '<div>⬛ Grå = bokstaven finns inte i ordet.</div>' +
+      '</div>' +
+      '<button id="pClose">Nu kör vi!</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+  }
+  function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
+
+  document.getElementById('btnStats').onclick = showStatsPanel;
+  document.getElementById('btnRules').onclick = showRulesPanel;
+  document.getElementById('overlay').addEventListener('click', function(e){ if(e.target.id === 'overlay') hideOverlay(); });
+
+  var toastTimer = null;
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 1600);
+  }
+
+  /* ---------- Start ---------- */
+  render();
+  if(state.status !== 'playing'){
+    setTimeout(function(){ showResultPanel(state.status === 'won', loadStats()); }, 200);
+  } else {
+    try {
+      if(!localStorage.getItem(RULES_KEY)){ localStorage.setItem(RULES_KEY, '1'); showRulesPanel(); }
+    } catch(e){}
+  }
+  </script>
+</body>
+</html>

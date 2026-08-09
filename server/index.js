@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || '*';
 
-const MODES = new Set(['classic', 'tilematch']);
+const MODES = new Set(['classic', 'tilematch', 'ordlek']);
 // enkel olämplighetsfilter (utökas vid behov)
 const BAD_WORDS = ['fitta', 'kuk', 'hora', 'knulla', 'jävla', 'javla', 'fuck', 'shit', 'bitch', 'cunt', 'nigger', 'nigga', 'slut'];
 
