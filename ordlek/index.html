@@ -197,6 +197,7 @@
       <a class="back" href="/" aria-label="Till startsidan">‹</a>
       <h1>🟩 Ordlek</h1>
       <div class="spacer"></div>
+      <button class="icon-btn" id="btnMarathon" aria-label="Maratontabell">🏁</button>
       <button class="icon-btn" id="btnStats" aria-label="Statistik">📊</button>
       <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
       <label class="theme-ctl">
@@ -526,20 +527,25 @@
   function setupLeaderboard(area, won){
     if(!hasLeaderboard()){ area.innerHTML = ''; return; }
     var seed = seedFor(state.date);
+    // Förlorade dagar skickas också in (moves = MAX_GUESSES+1, en "golfstraff"-
+    // siffra) så maratontabellen kan räkna dem — men filtreras bort här, den
+    // här listan ska bara visa vem som faktiskt löste dagens ord.
+    var moves = won ? state.guesses.length : (MAX_GUESSES + 1);
     function showList(){
       area.innerHTML = '<div class="lb-title">🏆 Dagens familjetopplista</div><div class="lb-list">Laddar…</div>';
       lbFetchBySeed(seed, function(err, list){
         var el = area.querySelector('.lb-list');
         if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
-        lbRenderList(el, list, getName());
+        var solved = (list || []).filter(function(s){ return s.moves == null || s.moves <= MAX_GUESSES; });
+        lbRenderList(el, solved, getName());
       });
     }
-    if(!won || state.submitted){ showList(); return; }
+    if(state.submitted){ showList(); return; }
     var seconds = Math.max(1, Math.round((state.finishedAt - state.startedAt)/1000));
     var name = getName();
     if(name){
       state.submitted = true; saveGame(state);
-      lbSubmit({ name:name, mode:'ordlek', tiles:WORD_LEN, seconds:seconds, moves:state.guesses.length, seed:seed }, showList);
+      lbSubmit({ name:name, mode:'ordlek', tiles:WORD_LEN, seconds:seconds, moves:moves, seed:seed }, showList);
       showList();
     } else {
       area.innerHTML =
@@ -553,11 +559,39 @@
         if(!v) return;
         setName(v);
         state.submitted = true; saveGame(state);
-        lbSubmit({ name:v, mode:'ordlek', tiles:WORD_LEN, seconds:seconds, moves:state.guesses.length, seed:seed }, showList);
+        lbSubmit({ name:v, mode:'ordlek', tiles:WORD_LEN, seconds:seconds, moves:moves, seed:seed }, showList);
       };
       area.querySelector('#lbSave').onclick = save;
       area.querySelector('#lbName').addEventListener('keydown', function(e){ if(e.key === 'Enter') save(); });
     }
+  }
+
+  /* ---------- Maratontabell ---------- */
+  function showMarathonPanel(){
+    var panel = document.getElementById('panel');
+    panel.innerHTML = '<h2>🏁 Maratontabell</h2><div id="marList" class="lb-list">Laddar…</div><button id="pClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+    var el = document.getElementById('marList');
+    var base = apiBase();
+    if(!base){ el.textContent = 'Ingen topplista kopplad.'; return; }
+    fetch(base + '/api/marathon').then(function(r){ return r.json(); }).then(function(d){
+      if(d.error){ el.textContent = 'Kunde inte hämta tabellen'; return; }
+      if(!d.rows || !d.rows.length){
+        el.innerHTML = '<div class="lb-empty">Maratontabellen startar '+formatDateSv(d.seasonStart)+' — häng med!</div>';
+        return;
+      }
+      var medals = ['🥇','🥈','🥉'];
+      var myName = getName();
+      el.innerHTML = d.rows.map(function(r,i){
+        var rank = i < 3 ? medals[i] : (i+1);
+        var me = (myName && r.name === myName) ? ' me' : '';
+        return '<div class="lb-row'+me+'"><span class="lb-rank">'+rank+'</span>' +
+               '<span class="lb-name">'+esc(r.name)+'</span>' +
+               '<span class="lb-guesses">'+r.played+'/'+r.days+'</span>' +
+               '<span class="lb-time">'+r.points+' p</span></div>';
+      }).join('');
+    }).catch(function(){ el.textContent = 'Kunde inte hämta tabellen'; });
   }
 
   /* ---------- Paneler ---------- */
@@ -630,6 +664,7 @@
   }
   function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
 
+  document.getElementById('btnMarathon').onclick = showMarathonPanel;
   document.getElementById('btnStats').onclick = showStatsPanel;
   document.getElementById('btnRules').onclick = showRulesPanel;
   document.getElementById('overlay').addEventListener('click', function(e){ if(e.target.id === 'overlay') hideOverlay(); });

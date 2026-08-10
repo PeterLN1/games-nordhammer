@@ -32,6 +32,59 @@ function isBadName(name) {
   return BAD_WORDS.some(w => l.includes(w));
 }
 
+/* ---------- Ordlek: maratontabell ----------
+   "Golfpoäng" över en säsong (kalendermånad): varje dag ger antingen
+   antal gissningar (om ordet löstes), 7 om man spelade men missade, eller
+   8 om man inte spelade alls den dagen. Lägst summa vinner — som i golf
+   får alla lika många "hål" oavsett hur ofta de faktiskt spelat, annars
+   gynnas den som spelar sällan orättvist. Säsongen börjar tidigast
+   ORDLEK_SEASON_START (så ingen får ett försprång från redan spelade dagar). */
+const ORDLEK_SEASON_START = '2026-08-11';
+function seasonBoundsFor(dateStr) {
+  const first = dateStr.slice(0, 8) + '01';
+  const y = +dateStr.slice(0, 4), m = +dateStr.slice(5, 7);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const last = dateStr.slice(0, 8) + String(lastDay).padStart(2, '0');
+  const start = first < ORDLEK_SEASON_START ? ORDLEK_SEASON_START : first;
+  return { start, end: last };
+}
+function nextDay(dateStr) {
+  return new Date(Date.parse(dateStr + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+}
+function dateRange(start, end) {
+  const dates = [];
+  for (let d = start; d <= end; d = nextDay(d)) dates.push(d);
+  return dates;
+}
+// rows: [{name, day, moves}] — moves är redan 1-6 (löst) eller 7 (missat).
+function computeMarathon(rows, seasonDates) {
+  const byName = {};
+  rows.forEach(r => { (byName[r.name] || (byName[r.name] = {}))[r.day] = r.moves; });
+  const table = Object.keys(byName).map(name => {
+    const days = byName[name];
+    let points = 0, played = 0, solvedSum = 0, solvedCount = 0;
+    seasonDates.forEach(d => {
+      const m = days[d];
+      if (m == null) { points += 8; return; }
+      played++;
+      points += Math.min(m, 7);
+      if (m <= 6) { solvedSum += m; solvedCount++; }
+    });
+    let streak = 0;
+    for (let i = seasonDates.length - 1; i >= 0; i--) {
+      const m = days[seasonDates[i]];
+      if (m != null && m <= 6) streak++; else break;
+    }
+    return {
+      name, played, days: seasonDates.length, points,
+      avg: solvedCount ? Math.round((solvedSum / solvedCount) * 10) / 10 : null,
+      streak
+    };
+  });
+  table.sort((a, b) => a.points - b.points);
+  return table;
+}
+
 /* ---------- Lagring (Postgres eller minne) ---------- */
 let store;
 if (DATABASE_URL) {
@@ -95,6 +148,18 @@ if (DATABASE_URL) {
         );
         return r.rows;
       },
+      // Ordlek-maraton: en rad per spelare och dag (bästa resultatet den
+      // dagen), för computeMarathon() att räkna golfpoäng på.
+      async marathon(seasonStart, seasonEnd) {
+        const r = await pool.query(
+          `select name, seed, min(moves) as moves
+           from scores
+           where seed like 'ordlek:%' and seed >= $1 and seed <= $2
+           group by name, seed`,
+          ['ordlek:' + seasonStart, 'ordlek:' + seasonEnd]
+        );
+        return r.rows.map(row => ({ name: row.name, day: row.seed.slice(7), moves: row.moves }));
+      },
       // "Utmaningar": delade givar där minst två olika spelare faktiskt
       // tävlat mot samma seed — filtrerar bort vanliga solo-partier
       // (som alla har ett unikt, aldrig delat, seed).
@@ -155,6 +220,15 @@ if (DATABASE_URL) {
         if (!best[x.name] || x.seconds < best[x.name].seconds) best[x.name] = { name: x.name, seconds: x.seconds, moves: x.moves };
       });
       return Object.values(best).sort((a, b) => a.seconds - b.seconds).slice(0, limit);
+    },
+    async marathon(seasonStart, seasonEnd) {
+      const from = 'ordlek:' + seasonStart, to = 'ordlek:' + seasonEnd;
+      const best = {};
+      mem.filter(x => x.seed && x.seed.indexOf('ordlek:') === 0 && x.seed >= from && x.seed <= to).forEach(x => {
+        const key = x.name + '|' + x.seed;
+        if (!best[key] || x.moves < best[key].moves) best[key] = { name: x.name, day: x.seed.slice(7), moves: x.moves };
+      });
+      return Object.values(best);
     },
     async challenges(limit) {
       const bySeed = {};
@@ -230,6 +304,24 @@ app.get('/api/challenges', async (req, res) => {
   if (!(limit > 0 && limit <= 50)) limit = 20;
   try {
     res.json({ challenges: await store.challenges(limit) });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'databasfel' });
+  }
+});
+
+app.get('/api/marathon', async (req, res) => {
+  if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
+  const today = new Date().toISOString().slice(0, 10);
+  const { start, end } = seasonBoundsFor(today);
+  const elapsedEnd = today < end ? today : end;
+  if (start > elapsedEnd) {
+    return res.json({ seasonStart: start, seasonEnd: end, daysElapsed: 0, rows: [] });
+  }
+  try {
+    const dates = dateRange(start, elapsedEnd);
+    const raw = await store.marathon(start, elapsedEnd);
+    const rows = computeMarathon(raw, dates).slice(0, 50);
+    res.json({ seasonStart: start, seasonEnd: end, daysElapsed: dates.length, rows });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'databasfel' });
   }
