@@ -327,6 +327,13 @@
   }
   maybeShowIabBanner();
 
+  // Synka tyst i bakgrunden varje sidladdning, inte bara när väljaren
+  // öppnas. ensurePicker() hoppar över nätverksanropet helt om enheten
+  // redan har en vald profil (vanligaste fallet efter första gången) —
+  // utan den här raden skulle en lokalt skapad profil aldrig laddas upp
+  // förrän man råkade klicka på "byt profil"-badgen minst en gång.
+  syncFromServer(function(){});
+
   window.NordhammerProfile = {
     list: list,
     current: current,
