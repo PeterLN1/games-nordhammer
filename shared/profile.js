@@ -61,6 +61,15 @@
     saveProfiles(loadProfiles().filter(function(p){ return p.id !== id; }));
     if(getCurrentId() === id) setCurrentId('');
   }
+  function update(id, patch){
+    var l = loadProfiles();
+    var p = l.filter(function(x){ return x.id === id; })[0];
+    if(!p) return null;
+    if(patch.name != null) p.name = String(patch.name).trim().slice(0, 20) || p.name;
+    if(patch.avatar != null) p.avatar = patch.avatar;
+    saveProfiles(l);
+    return p;
+  }
 
   /* ---------- UI ---------- */
   var CSS = ""
@@ -77,6 +86,10 @@
     + ".nh-name{font-size:12.5px;font-weight:600;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
     + ".nh-tile:active .nh-avatar{transform:scale(.95);}"
     + ".nh-tile-del{position:absolute;top:-6px;right:8px;width:22px;height:22px;border-radius:50%;border:none;background:#e0393e;color:#fff;font-size:11px;cursor:pointer;z-index:2;}"
+    + ".nh-tile-edit{position:absolute;top:-6px;left:8px;width:22px;height:22px;border-radius:50%;border:none;background:#4dabf7;color:#fff;font-size:11px;cursor:pointer;z-index:2;}"
+    + ".nh-iab{position:fixed;top:0;left:0;right:0;z-index:10000;display:flex;align-items:center;gap:10px;padding:9px 14px;font-size:12.5px;line-height:1.4;background:#ffb300;color:#1a1200;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}"
+    + ".nh-iab span{flex:1;}"
+    + ".nh-iab button{flex:0 0 auto;border:none;background:rgba(0,0,0,.12);color:inherit;width:22px;height:22px;border-radius:6px;font-size:12px;cursor:pointer;padding:0;}"
     + ".nh-manage,.nh-close,.nh-primary{width:100%;margin-top:8px;padding:12px;border:none;border-radius:11px;font-weight:700;font-size:14.5px;cursor:pointer;font-family:inherit;}"
     + ".nh-primary{background:#ffb300;color:#1a1200;}"
     + ".nh-manage,.nh-close{background:rgba(120,120,140,.16);color:inherit;}"
@@ -114,6 +127,7 @@
     var profiles = list();
     var tiles = profiles.map(function(p){
       return '<button class="nh-tile" data-id="' + p.id + '">' +
+        (manage ? '<span class="nh-tile-edit" data-edit="' + p.id + '" role="button" aria-label="Redigera">✎</span>' : '') +
         (manage ? '<span class="nh-tile-del" data-del="' + p.id + '" role="button" aria-label="Ta bort">✕</span>' : '') +
         '<span class="nh-avatar" style="background:' + p.color + '">' + p.avatar + '</span>' +
         '<span class="nh-name">' + esc(p.name) + '</span>' +
@@ -132,7 +146,7 @@
 
     Array.prototype.forEach.call(el.querySelectorAll('.nh-tile[data-id]'), function(t){
       t.addEventListener('click', function(e){
-        if(manage || (e.target && e.target.hasAttribute && e.target.hasAttribute('data-del'))) return;
+        if(manage) return;
         select(t.getAttribute('data-id'));
         closeOverlay(opts.onDone);
       });
@@ -148,6 +162,14 @@
         }
       });
     });
+    Array.prototype.forEach.call(el.querySelectorAll('[data-edit]'), function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var id = btn.getAttribute('data-edit');
+        var p = profiles.filter(function(x){ return x.id === id; })[0];
+        if(p) renderCreate(opts, p);
+      });
+    });
     var addTile = el.querySelector('[data-add]');
     if(addTile) addTile.addEventListener('click', function(){ renderCreate(opts); });
     var manageBtn = el.querySelector('[data-manage]');
@@ -160,17 +182,17 @@
     if(closeBtn) closeBtn.addEventListener('click', function(){ closeOverlay(opts.onDone); });
   }
 
-  function renderCreate(opts){
+  function renderCreate(opts, editProfile){
     var el = ensureRoot();
-    var chosen = AVATARS[0];
+    var chosen = (editProfile && editProfile.avatar) || AVATARS[0];
     el.innerHTML =
       '<div class="nh-panel">' +
-        '<h2>Ny profil</h2>' +
-        '<input id="nhNewName" class="nh-input" maxlength="20" placeholder="Namn" autocomplete="off">' +
+        '<h2>' + (editProfile ? 'Redigera profil' : 'Ny profil') + '</h2>' +
+        '<input id="nhNewName" class="nh-input" maxlength="20" placeholder="Namn" autocomplete="off" value="' + (editProfile ? esc(editProfile.name) : '') + '">' +
         '<div class="nh-avgrid">' +
-          AVATARS.map(function(a, i){ return '<button class="nh-av' + (i === 0 ? ' on' : '') + '" data-av="' + a + '">' + a + '</button>'; }).join('') +
+          AVATARS.map(function(a){ return '<button class="nh-av' + (a === chosen ? ' on' : '') + '" data-av="' + a + '">' + a + '</button>'; }).join('') +
         '</div>' +
-        '<button class="nh-primary" id="nhCreateSave">Skapa</button>' +
+        '<button class="nh-primary" id="nhCreateSave">' + (editProfile ? 'Spara' : 'Skapa') + '</button>' +
         '<button class="nh-close" id="nhCreateBack">Tillbaka</button>' +
       '</div>';
     el.classList.add('show');
@@ -184,13 +206,14 @@
     var save = function(){
       var name = (document.getElementById('nhNewName').value || '').trim();
       if(!name) return;
-      create(name, chosen);
+      if(editProfile) update(editProfile.id, { name: name, avatar: chosen });
+      else create(name, chosen);
       closeOverlay(opts.onDone);
     };
     document.getElementById('nhCreateSave').addEventListener('click', save);
     document.getElementById('nhNewName').addEventListener('keydown', function(e){ if(e.key === 'Enter') save(); });
     document.getElementById('nhCreateBack').addEventListener('click', function(){ renderPicker(opts); });
-    setTimeout(function(){ try { document.getElementById('nhNewName').focus(); } catch(e){} }, 30);
+    setTimeout(function(){ try { var f = document.getElementById('nhNewName'); f.focus(); f.select(); } catch(e){} }, 30);
   }
 
   function closeOverlay(cb){
@@ -207,10 +230,39 @@
     renderPicker({ dismissable: true, onDone: cb });
   }
 
+  /* ---------- App-inbyggda webbläsare (Messenger m.fl.) ----------
+     Dessa kör sidan i en isolerad lagringskontext, skild från telefonens
+     vanliga webbläsare — varken profiler eller spelresultat syns där när
+     man senare öppnar samma länk i Safari/Chrome. Går inte att synka i
+     efterhand utan inloggning, så vi varnar innan man väljer/skapar en
+     profil eller spelar istället. Gäller alla sidor som laddar denna
+     modul (hubben, Mahjong, Ordlek). */
+  var IAB_RE = /FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|; wv\)/i;
+  var IAB_DISMISS_KEY = 'nordhammer:iabDismissed';
+  function isInAppBrowser(){ return IAB_RE.test(navigator.userAgent || ''); }
+  function maybeShowIabBanner(){
+    if(!isInAppBrowser()) return;
+    try { if(sessionStorage.getItem(IAB_DISMISS_KEY)) return; } catch(e){}
+    ensureStyle();
+    var el = document.createElement('div');
+    el.className = 'nh-iab';
+    el.innerHTML =
+      '<span>Du öppnade sidan i en app-inbyggd webbläsare (t.ex. Messenger). Profiler och resultat sparas bara här — tryck ⋯ eller webbläsarikonen och välj "Öppna i webbläsare" innan du väljer/skapar profil.</span>' +
+      '<button aria-label="Stäng">✕</button>';
+    function mount(){ document.body.insertBefore(el, document.body.firstChild); }
+    if(document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);
+    el.querySelector('button').addEventListener('click', function(){
+      el.remove();
+      try { sessionStorage.setItem(IAB_DISMISS_KEY, '1'); } catch(e){}
+    });
+  }
+  maybeShowIabBanner();
+
   window.NordhammerProfile = {
     list: list,
     current: current,
     create: create,
+    update: update,
     select: select,
     remove: remove,
     ensurePicker: ensurePicker,
