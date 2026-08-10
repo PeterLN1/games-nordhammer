@@ -86,6 +86,16 @@
     flex: 0 0 auto; text-align: center; font-size: 12.5px; color: var(--muted);
     padding: 6px 10px 0;
   }
+  .iab-banner {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; font-size: 12.5px; line-height: 1.4;
+    background: var(--accent); color: #1a1200;
+  }
+  .iab-banner span { flex: 1; }
+  .iab-banner button {
+    flex: 0 0 auto; border: none; background: rgba(0,0,0,.12); color: inherit;
+    width: 22px; height: 22px; border-radius: 6px; font-size: 12px; cursor: pointer; padding: 0;
+  }
 
   #boardWrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 0; }
   #board {
@@ -208,6 +218,10 @@
         </select>
       </label>
     </header>
+    <div id="iabBanner" class="iab-banner" style="display:none">
+      <span id="iabText"></span>
+      <button id="iabClose" aria-label="Stäng">✕</button>
+    </div>
     <div id="dayInfo"></div>
     <div id="boardWrap"><div id="board"></div></div>
     <div id="keyboard"></div>
@@ -677,8 +691,32 @@
     toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 1600);
   }
 
+  /* ---------- App-inbyggd webbläsare (Messenger m.fl.) ----------
+     Dessa kör sidan i en isolerad kontext med eget lagringsutrymme, skilt
+     från telefonens vanliga webbläsare — spelaren tror att resultatet
+     finns kvar när de senare öppnar samma länk i Safari/Chrome, men det
+     gör det inte. Går inte att synka i efterhand utan inloggning, så vi
+     varnar innan de börjar spela istället. */
+  function isInAppBrowser(){
+    var ua = navigator.userAgent || '';
+    return /FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|; wv\)/i.test(ua);
+  }
+  function showIabBanner(){
+    var el = document.getElementById('iabBanner');
+    document.getElementById('iabText').textContent =
+      'Du öppnade Ordlek i en app-inbyggd webbläsare (t.ex. Messenger). Resultatet sparas bara här — tryck ⋯ eller webbläsarikonen och välj "Öppna i webbläsare" innan du spelar, annars kan det se ut som att du inte spelat när du öppnar länken i din vanliga webbläsare.';
+    el.style.display = 'flex';
+    document.getElementById('iabClose').onclick = function(){
+      el.style.display = 'none';
+      try { sessionStorage.setItem('ordlek:iabDismissed', '1'); } catch(e){}
+    };
+  }
+
   /* ---------- Start ---------- */
   render();
+  try {
+    if(isInAppBrowser() && !sessionStorage.getItem('ordlek:iabDismissed')) showIabBanner();
+  } catch(e){}
   if(state.status !== 'playing'){
     setTimeout(function(){ showResultPanel(state.status === 'won', loadStats()); }, 200);
   } else {
