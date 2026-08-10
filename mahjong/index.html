@@ -8,6 +8,7 @@
 <meta name="theme-color" content="#123b34" data-light="#123b34" data-dark="#0a1512">
 <title>Mahjong</title>
 <script src="/shared/theme.js"></script>
+<script src="/shared/profile.js"></script>
 <style>
   :root {
     --felt: radial-gradient(120% 90% at 50% 0%, #1c5a4e 0%, #123b34 55%, #0d2b26 100%);
@@ -1110,14 +1111,14 @@
   /* ---------- Global topplista (Railway + Supabase) ---------- */
   // Sätt din Railway-URL här (utan avslutande snedstreck). Tom = topplista av.
   var LEADERBOARD_API = 'https://games-nordhammer-production.up.railway.app';
-  var NAME_KEY = 'mahjong:name';
   function apiBase(){
     try { return (localStorage.getItem('mahjong:api') || LEADERBOARD_API || '').replace(/\/+$/,''); }
     catch(e){ return LEADERBOARD_API; }
   }
   function hasLeaderboard(){ return !!apiBase(); }
-  function getName(){ try { return localStorage.getItem(NAME_KEY) || ''; } catch(e){ return ''; } }
-  function setName(n){ try { localStorage.setItem(NAME_KEY, n); } catch(e){} }
+  // Namnet kommer nu från den delade profilen (shared/profile.js), inte
+  // ett mahjong-eget localStorage-namn — samma profil används i alla spel.
+  function getName(){ var p = NordhammerProfile.current(); return p ? p.name : ''; }
   function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
   /* ---------- Delbara givar (seed-kod) ---------- */
@@ -1371,7 +1372,9 @@
     if(navigator.vibrate) try { navigator.vibrate([20,40,20]); } catch(e){}
   }
 
-  // Topplista i vinstpanelen: skicka in tid (om namn finns) annars fråga efter namn
+  // Topplista i vinstpanelen: skicka in tid under den valda profilens namn.
+  // Profilen finns alltid redan (spelet gate:as av NordhammerProfile vid
+  // start), så det finns inget "fråga efter namn"-läge längre.
   // Giv-resultat (fromShare) räknas INTE med i den vanliga topplistan —
   // annars kunde man öva in en memorerad körning på en känd giv (delad
   // länk eller daglig utmaning) och få en orättvist bra "färsk bräde"-tid.
@@ -1389,26 +1392,8 @@
         lbRenderList(el, list, getName());
       });
     }
-    var name = getName();
-    if(name){
-      lbSubmit({ name:name, mode:mode, tiles:tiles, seconds:seconds, moves:moves, seed:seed, fromShare:fromShare }, function(){ showList(); if(onDone) onDone(); });
-      showList();
-    } else {
-      area.innerHTML =
-        '<div class="lb-title">🏆 Kom med i topplistan</div>' +
-        '<div class="lb-entry">' +
-          '<input id="lbName" class="lb-input" maxlength="20" placeholder="Ditt namn" autocomplete="off">' +
-          '<button id="lbSave" class="lb-save">Spara</button>' +
-        '</div>';
-      var save = function(){
-        var v = (area.querySelector('#lbName').value || '').trim();
-        if(!v) return;
-        setName(v);
-        lbSubmit({ name:v, mode:mode, tiles:tiles, seconds:seconds, moves:moves, seed:seed, fromShare:fromShare }, function(){ showList(); if(onDone) onDone(); });
-      };
-      area.querySelector('#lbSave').onclick = save;
-      area.querySelector('#lbName').addEventListener('keydown', function(e){ if(e.key === 'Enter') save(); });
-    }
+    lbSubmit({ name:getName(), mode:mode, tiles:tiles, seconds:seconds, moves:moves, seed:seed, fromShare:fromShare }, function(){ showList(); if(onDone) onDone(); });
+    showList();
   }
 
   function challengeRowHtml(c){
@@ -1573,30 +1558,6 @@
       '<button id="stClose" class="ghost">Stäng</button>';
     document.getElementById('stClose').onclick = hideOverlay;
     document.getElementById('overlay').classList.add('show');
-  }
-
-  /* ---------- Namn-ruta (vid start om inget namn) ---------- */
-  function openNamePrompt(){
-    var panel = document.getElementById('panel');
-    panel.innerHTML =
-      '<div class="emoji">🏆</div>' +
-      '<h2>Välkommen!</h2>' +
-      '<p>Ange ett namn för topplistan. Du kan ändra det senare i inställningarna.</p>' +
-      '<div class="lb-entry" style="margin-top:14px">' +
-        '<input id="npName" class="lb-input" maxlength="20" placeholder="Ditt namn" autocomplete="off">' +
-        '<button id="npSave" class="lb-save">Spara</button>' +
-      '</div>' +
-      '<button id="npSkip" class="ghost">Hoppa över</button>';
-    document.getElementById('overlay').classList.add('show');
-    var save = function(){
-      var v = (document.getElementById('npName').value || '').trim();
-      if(!v) return;
-      setName(v); hideOverlay();
-    };
-    document.getElementById('npSave').onclick = save;
-    document.getElementById('npName').addEventListener('keydown', function(e){ if(e.key === 'Enter') save(); });
-    document.getElementById('npSkip').onclick = hideOverlay;
-    try { document.getElementById('npName').focus(); } catch(e){}
   }
 
   /* ---------- Nyheter ("Nytt sedan sist") ----------
@@ -1796,8 +1757,8 @@
           '<button data-sound="0"'+(!cfg.sound?' class="on"':'')+'>Av</button>' +
         '</div>' +
         (hasLeaderboard() ?
-          '<div class="set-label">Namn (topplista)</div>' +
-          '<input id="setName" class="wide-select lb-input" maxlength="20" placeholder="Ditt namn" value="'+esc(getName())+'" autocomplete="off">'
+          '<div class="set-label">Profil (topplista)</div>' +
+          '<button id="setProfile" class="ghost lb-btn">👤 '+esc(getName() || 'Byt profil')+'</button>'
         : '') +
         '<div class="set-label">Dela</div>' +
         '<button id="setShare" class="ghost lb-btn">🔗 Dela denna giv</button>' +
@@ -1816,8 +1777,8 @@
         var b = e.target.closest('button'); if(!b) return;
         cfg.sound = b.dataset.sound === '1'; saveCfg(); if(cfg.sound) sfx('select'); render();
       });
-      var setNameEl = document.getElementById('setName');
-      if(setNameEl) setNameEl.addEventListener('input', function(){ setName(this.value.trim()); });
+      var setProfileBtn = document.getElementById('setProfile');
+      if(setProfileBtn) setProfileBtn.onclick = function(){ NordhammerProfile.openSwitcher(function(){ render(); }); };
       var setShareBtn = document.getElementById('setShare');
       setShareBtn.onclick = function(){ shareCurrentGame(setShareBtn); };
       document.getElementById('setStart').onclick = function(){
@@ -1898,8 +1859,8 @@
   if(hasLeaderboard()) btnLb.onclick = function(){ openLeaderboard('global'); }; else btnLb.style.display = 'none';
   document.getElementById('btnStats').onclick = openStats;
 
-  // Fråga efter namn första gången (om topplista finns och namn saknas)
-  if(hasLeaderboard() && !getName()) openNamePrompt();
+  // Fråga efter profil första gången (delad mellan alla spel, se shared/profile.js)
+  if(hasLeaderboard()) NordhammerProfile.ensurePicker(function(){});
 
   // Nyheter: en helt ny spelare (allra första sidladdningen) markeras som
   // "sett" direkt och tyst — oavsett om namnfrågan råkar visas just nu —

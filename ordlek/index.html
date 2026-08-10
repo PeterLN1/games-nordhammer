@@ -8,6 +8,7 @@
 <meta name="theme-color" content="#eef1f9" data-light="#eef1f9" data-dark="#0b1020">
 <title>Ordlek</title>
 <script src="/shared/theme.js"></script>
+<script src="/shared/profile.js"></script>
 <style>
   :root {
     --bg: radial-gradient(120% 90% at 50% 0%, #eef1f9 0%, #e3e8f4 100%);
@@ -207,6 +208,7 @@
       <a class="back" href="/" aria-label="Till startsidan">‹</a>
       <h1>🟩 Ordlek</h1>
       <div class="spacer"></div>
+      <button class="icon-btn" id="btnProfile" aria-label="Byt profil"></button>
       <button class="icon-btn" id="btnMarathon" aria-label="Maratontabell">🏁</button>
       <button class="icon-btn" id="btnStats" aria-label="Statistik">📊</button>
       <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
@@ -258,7 +260,6 @@
 
   /* ---------- Statistik & sparat läge ---------- */
   var STATS_KEY = 'ordlek:stats';
-  var NAME_KEY = 'ordlek:name';
   var RULES_KEY = 'ordlek:seenRules';
   function loadStats(){
     try {
@@ -302,12 +303,14 @@
     } catch(e){}
   }
 
-  function getName(){ try { return localStorage.getItem(NAME_KEY) || ''; } catch(e){ return ''; } }
-  function setName(n){ try { localStorage.setItem(NAME_KEY, n); } catch(e){} }
+  // Namnet kommer nu från den delade profilen (shared/profile.js), inte
+  // ett ordlek-eget localStorage-namn — samma profil används i alla spel.
+  function getName(){ var p = NordhammerProfile.current(); return p ? p.name : ''; }
 
   /* ---------- Spelläge ---------- */
   var today = todayIso();
   var state = loadGame(today);
+  var wasFreshState = !state; // avgör om vi ska fråga servern om profilen redan spelat idag (se Start)
   if(!state){
     state = { date: today, answer: dailyAnswer(today), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: false };
     saveGame(state);
@@ -556,28 +559,9 @@
     }
     if(state.submitted){ showList(); return; }
     var seconds = Math.max(1, Math.round((state.finishedAt - state.startedAt)/1000));
-    var name = getName();
-    if(name){
-      state.submitted = true; saveGame(state);
-      lbSubmit({ name:name, mode:'ordlek', tiles:WORD_LEN, seconds:seconds, moves:moves, seed:seed }, showList);
-      showList();
-    } else {
-      area.innerHTML =
-        '<div class="lb-title">🏆 Kom med i familjetopplistan</div>' +
-        '<div class="lb-entry">' +
-          '<input id="lbName" class="lb-input" maxlength="20" placeholder="Ditt namn" autocomplete="off">' +
-          '<button id="lbSave" class="lb-save">Spara</button>' +
-        '</div>';
-      var save = function(){
-        var v = (area.querySelector('#lbName').value || '').trim();
-        if(!v) return;
-        setName(v);
-        state.submitted = true; saveGame(state);
-        lbSubmit({ name:v, mode:'ordlek', tiles:WORD_LEN, seconds:seconds, moves:moves, seed:seed }, showList);
-      };
-      area.querySelector('#lbSave').onclick = save;
-      area.querySelector('#lbName').addEventListener('keydown', function(e){ if(e.key === 'Enter') save(); });
-    }
+    state.submitted = true; saveGame(state);
+    lbSubmit({ name:getName(), mode:'ordlek', tiles:WORD_LEN, seconds:seconds, moves:moves, seed:seed }, showList);
+    showList();
   }
 
   /* ---------- Maratontabell ---------- */
@@ -606,6 +590,47 @@
                '<span class="lb-time">'+r.points+' p</span></div>';
       }).join('');
     }).catch(function(){ el.textContent = 'Kunde inte hämta tabellen'; });
+  }
+
+  /* ---------- Redan spelat idag, på en annan enhet? ----------
+     Lokal lagring kan inte se över webbläsare/enheter (t.ex. spelat klart
+     i Messengers inbyggda webbläsare, öppnar sen samma länk i vanliga
+     webbläsaren). Med en delad profil kan vi istället fråga servern:
+     dagens topplista har redan alla resultat, inklusive förluster. */
+  function checkAlreadyPlayedElsewhere(cb){
+    if(!hasLeaderboard()) return cb(null);
+    var myName = (getName() || '').trim().toLowerCase();
+    if(!myName) return cb(null);
+    lbFetchBySeed(seedFor(today), function(err, list){
+      if(err || !list) return cb(null); // fail open — ett nätverksfel ska aldrig blockera spel
+      var hit = (list || []).filter(function(s){ return (s.name || '').trim().toLowerCase() === myName; })[0];
+      cb(hit || null);
+    });
+  }
+  function showAlreadyPlayedElsewhere(hit){
+    // status blir INTE 'playing' (låser tangentbordet) men sparas inte
+    // lokalt som klar — nästa laddning kollar servern på nytt istället
+    // för att permanent gissa sig till vad som hände på den andra enheten.
+    state.status = 'blocked';
+    state.submitted = true; // förhindrar att lbSubmit anropas igen av misstag denna session
+    var summary = (hit.moves != null && hit.moves <= MAX_GUESSES)
+      ? hit.moves + '/' + MAX_GUESSES + ' gissningar, ' + fmtSeconds(hit.seconds)
+      : 'löste inte ordet, ' + fmtSeconds(hit.seconds);
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">🔁</div><h2>Redan spelat idag</h2>' +
+      '<p>Du (' + esc(getName()) + ') har redan spelat dagens Ordlek idag, troligen på en annan enhet: ' + summary + '.</p>' +
+      '<div id="lbArea" class="lb-area"><div class="lb-title">🏆 Dagens familjetopplista</div><div class="lb-list">Laddar…</div></div>' +
+      '<button id="pClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+    lbFetchBySeed(seedFor(today), function(err, list){
+      var el = document.querySelector('#lbArea .lb-list');
+      if(!el) return;
+      if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
+      var solved = (list || []).filter(function(s){ return s.moves == null || s.moves <= MAX_GUESSES; });
+      lbRenderList(el, solved, getName());
+    });
   }
 
   /* ---------- Paneler ---------- */
@@ -712,6 +737,15 @@
     };
   }
 
+  /* ---------- Profil ---------- */
+  function renderProfileBadge(){
+    var p = NordhammerProfile.current();
+    document.getElementById('btnProfile').textContent = p ? p.avatar : '👤';
+  }
+  document.getElementById('btnProfile').onclick = function(){
+    NordhammerProfile.openSwitcher(function(){ renderProfileBadge(); render(); });
+  };
+
   /* ---------- Start ---------- */
   render();
   try {
@@ -724,6 +758,12 @@
       if(!localStorage.getItem(RULES_KEY)){ localStorage.setItem(RULES_KEY, '1'); showRulesPanel(); }
     } catch(e){}
   }
+  NordhammerProfile.ensurePicker(function(){
+    renderProfileBadge();
+    if(wasFreshState){
+      checkAlreadyPlayedElsewhere(function(hit){ if(hit) showAlreadyPlayedElsewhere(hit); });
+    }
+  });
   </script>
 </body>
 </html>

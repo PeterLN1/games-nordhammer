@@ -8,6 +8,7 @@
 <meta name="theme-color" content="#e7ebf6" data-light="#e7ebf6" data-dark="#0b1020">
 <title>Nordhammer Spel</title>
 <script src="/shared/theme.js"></script>
+<script src="/shared/profile.js"></script>
 <style>
   :root {
     --bg: radial-gradient(1200px 800px at 50% -10%, #ffffff 0%, #eef1f9 55%, #e3e8f4 100%);
@@ -67,7 +68,7 @@
     max-width: 880px; margin: 0 auto;
     padding: max(28px, env(safe-area-inset-top)) 20px 60px;
   }
-  .topbar { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+  .topbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 4px; }
   .theme-ctl { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; opacity: .8; }
   .theme-ctl select {
     font-family: inherit; font-size: 13px; color: var(--ink);
@@ -125,6 +126,7 @@
 <body>
   <div class="wrap">
     <div class="topbar">
+      <button class="nh-badge" id="profileBadge" aria-label="Byt profil"></button>
       <label class="theme-ctl">Tema
         <select data-theme-control aria-label="Tema">
           <option value="auto">Auto</option>
@@ -193,5 +195,19 @@
       games.nordhammer.se
     </footer>
   </div>
+  <script>
+    (function(){
+      var badge = document.getElementById('profileBadge');
+      function renderBadge(){
+        var p = NordhammerProfile.current();
+        badge.innerHTML = p
+          ? '<span class="nh-avatar" style="background:' + p.color + '">' + p.avatar + '</span><span>' + p.name.replace(/[<>&]/g, '') + '</span>'
+          : '<span class="nh-avatar nh-avatar-add" style="width:24px;height:24px;font-size:14px">?</span><span>Vem spelar?</span>';
+      }
+      badge.addEventListener('click', function(){ NordhammerProfile.openSwitcher(renderBadge); });
+      NordhammerProfile.ensurePicker(renderBadge);
+      renderBadge();
+    })();
+  </script>
 </body>
 </html>
