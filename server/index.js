@@ -114,6 +114,18 @@ if (DATABASE_URL) {
     await pool.query(`alter table scores enable row level security;`);
     await pool.query(`create index if not exists scores_board_idx on scores (mode, tiles, seconds);`);
     await pool.query(`create index if not exists scores_seed_idx on scores (seed, seconds);`);
+    // Delade profiler ("Vem spelar?") — id genereras klientsidan, se
+    // shared/profile.js. Ingen auth, samma öppna förtroendemodell som
+    // scores-tabellen (privat länk, inte ett publikt multi-familje-system).
+    await pool.query(`
+      create table if not exists profiles (
+        id text primary key,
+        name text not null,
+        avatar text not null,
+        color text not null,
+        created_at timestamptz not null default now()
+      );`);
+    await pool.query(`alter table profiles enable row level security;`);
     store = {
       async insert(s) {
         await pool.query(
@@ -183,6 +195,26 @@ if (DATABASE_URL) {
           seed: row.seed, mode: row.mode, tiles: row.tiles,
           bestName: row.best_name, bestSeconds: row.best_seconds, players: row.players
         }));
+      },
+      async listProfiles() {
+        const r = await pool.query('select id, name, avatar, color from profiles order by created_at asc');
+        return r.rows;
+      },
+      async insertProfile(p) {
+        await pool.query(
+          'insert into profiles (id, name, avatar, color) values ($1,$2,$3,$4) on conflict (id) do nothing',
+          [p.id, p.name, p.avatar, p.color]
+        );
+      },
+      async updateProfile(id, patch) {
+        const r = await pool.query(
+          'update profiles set name = coalesce($2, name), avatar = coalesce($3, avatar), color = coalesce($4, color) where id = $1 returning id, name, avatar, color',
+          [id, patch.name ?? null, patch.avatar ?? null, patch.color ?? null]
+        );
+        return r.rows[0] || null;
+      },
+      async removeProfile(id) {
+        await pool.query('delete from profiles where id = $1', [id]);
       }
     };
     console.log('Topplista: ansluten till Postgres.');
@@ -200,6 +232,7 @@ if (DATABASE_URL) {
   }
 } else {
   const mem = [];
+  const memProfiles = [];
   store = {
     async insert(s) {
       mem.push(Object.assign({}, s, { fromShare: !!s.fromShare, createdAt: Date.now() }));
@@ -243,6 +276,25 @@ if (DATABASE_URL) {
         .sort((a, b) => b.lastPlayed - a.lastPlayed)
         .slice(0, limit)
         .map(g => ({ seed: g.seed, mode: g.mode, tiles: g.tiles, bestName: g.best.name, bestSeconds: g.best.seconds, players: g.names.size }));
+    },
+    async listProfiles() {
+      return memProfiles.map(p => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
+    },
+    async insertProfile(p) {
+      if (memProfiles.some(x => x.id === p.id)) return;
+      memProfiles.push({ id: p.id, name: p.name, avatar: p.avatar, color: p.color });
+    },
+    async updateProfile(id, patch) {
+      const p = memProfiles.find(x => x.id === id);
+      if (!p) return null;
+      if (patch.name != null) p.name = patch.name;
+      if (patch.avatar != null) p.avatar = patch.avatar;
+      if (patch.color != null) p.color = patch.color;
+      return p;
+    },
+    async removeProfile(id) {
+      const i = memProfiles.findIndex(x => x.id === id);
+      if (i >= 0) memProfiles.splice(i, 1);
     }
   };
   console.warn('DATABASE_URL saknas - kor i MINNESLAGE (data sparas inte). Endast for lokal test.');
@@ -258,7 +310,7 @@ app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS === '*') res.setHeader('Access-Control-Allow-Origin', '*');
   else if (origin && allowList.includes(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Vary', 'Origin');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
@@ -322,6 +374,85 @@ app.get('/api/marathon', async (req, res) => {
     const raw = await store.marathon(start, elapsedEnd);
     const rows = computeMarathon(raw, dates).slice(0, 50);
     res.json({ seasonStart: start, seasonEnd: end, daysElapsed: dates.length, rows });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'databasfel' });
+  }
+});
+
+// Delade profiler ("Vem spelar?") — samma öppna förtroendemodell som
+// scores: ingen inloggning, id genereras och skickas av klienten
+// (shared/profile.js). Se planen i .claude/plans för bakgrund.
+function validAvatar(a) { return typeof a === 'string' && a.length > 0 && a.length <= 8; }
+function validColor(c) { return typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c); }
+function validProfileId(id) { return typeof id === 'string' && /^[a-z0-9]{4,64}$/i.test(id); }
+
+app.get('/api/profiles', async (req, res) => {
+  if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
+  try {
+    res.json({ profiles: await store.listProfiles() });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'databasfel' });
+  }
+});
+
+app.post('/api/profiles', async (req, res) => {
+  if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (rateLimited(ip)) return res.status(429).json({ error: 'for manga forsok, vanta lite' });
+  const b = req.body || {};
+  const id = validProfileId(b.id) ? b.id : null;
+  const name = cleanName(b.name);
+  if (!id) return res.status(400).json({ error: 'ogiltigt id' });
+  if (!name) return res.status(400).json({ error: 'namn kravs' });
+  if (isBadName(name)) return res.status(400).json({ error: 'olampligt namn' });
+  if (!validAvatar(b.avatar)) return res.status(400).json({ error: 'ogiltig avatar' });
+  if (!validColor(b.color)) return res.status(400).json({ error: 'ogiltig farg' });
+  try {
+    await store.insertProfile({ id, name, avatar: b.avatar, color: b.color });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'databasfel' });
+  }
+});
+
+app.patch('/api/profiles/:id', async (req, res) => {
+  if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (rateLimited(ip)) return res.status(429).json({ error: 'for manga forsok, vanta lite' });
+  const id = req.params.id;
+  if (!validProfileId(id)) return res.status(400).json({ error: 'ogiltigt id' });
+  const b = req.body || {};
+  const patch = {};
+  if (b.name != null) {
+    const name = cleanName(b.name);
+    if (!name) return res.status(400).json({ error: 'namn kravs' });
+    if (isBadName(name)) return res.status(400).json({ error: 'olampligt namn' });
+    patch.name = name;
+  }
+  if (b.avatar != null) {
+    if (!validAvatar(b.avatar)) return res.status(400).json({ error: 'ogiltig avatar' });
+    patch.avatar = b.avatar;
+  }
+  if (b.color != null) {
+    if (!validColor(b.color)) return res.status(400).json({ error: 'ogiltig farg' });
+    patch.color = b.color;
+  }
+  try {
+    const updated = await store.updateProfile(id, patch);
+    if (!updated) return res.status(404).json({ error: 'profil hittades inte' });
+    res.json({ ok: true, profile: updated });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'databasfel' });
+  }
+});
+
+app.delete('/api/profiles/:id', async (req, res) => {
+  if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
+  const id = req.params.id;
+  if (!validProfileId(id)) return res.status(400).json({ error: 'ogiltigt id' });
+  try {
+    await store.removeProfile(id);
+    res.json({ ok: true });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'databasfel' });
   }

@@ -1,9 +1,12 @@
 /* Delad profil ("Vem spelar?") för hela Nordhammer Spel — Netflix-liknande
-   profilval utan lösenord. En profil är bara ett namn + en emoji-avatar,
-   sparad i localStorage och därför delad mellan alla spel på samma
-   origin (games.nordhammer.se). Läs in synkront i <head>, precis som
-   theme.js — DOM-beroende arbete (overlayen) skjuts upp tills den
-   faktiskt behövs. */
+   profilval utan lösenord. En profil är bara ett namn + en emoji-avatar.
+   Listan synkas mot samma Railway/Supabase-backend som topplistorna (se
+   server/index.js, /api/profiles) så den är gemensam över alla enheter —
+   men VILKEN profil som är vald just nu på DEN HÄR enheten förblir lokal,
+   precis som på Netflix. localStorage fungerar som en cache: alltid
+   tillgänglig direkt (offline-vänligt, fail-open), uppdateras i
+   bakgrunden. Läs in synkront i <head>, precis som theme.js — DOM-
+   beroende arbete (overlayen) skjuts upp tills den faktiskt behövs. */
 (function(){
   "use strict";
   var PROFILES_KEY = "nordhammer:profiles";
@@ -11,6 +14,45 @@
   var LEGACY_NAME_KEYS = ["mahjong:name", "ordlek:name"];
   var AVATARS = ['🦊','🐼','🐸','🦉','🐙','🐢','🦄','🐯','🐨','🦁','🐰','🐬'];
   var COLORS = ['#ff6b6b','#ffa94d','#ffd43b','#69db7c','#38d9a9','#4dabf7','#748ffc','#da77f2','#f783ac','#20c997'];
+
+  /* ---------- Server-synk (samma backend som topplistorna) ---------- */
+  var API_BASE = 'https://games-nordhammer-production.up.railway.app';
+  function apiBase(){
+    try { return (localStorage.getItem('nordhammer:api') || API_BASE || '').replace(/\/+$/, ''); }
+    catch(e){ return API_BASE; }
+  }
+  function apiFetch(path, opts, cb){
+    var base = apiBase(); if(!base) return cb(new Error('ingen api'));
+    fetch(base + path, opts).then(function(r){ return r.json().then(function(d){ return { status: r.status, body: d }; }); })
+      .then(function(res){ cb((res.body && res.body.error) ? new Error(res.body.error) : null, res.body); })
+      .catch(cb);
+  }
+  var JSON_HEADERS = { 'Content-Type': 'application/json' };
+  function apiList(cb){ apiFetch('/api/profiles', {}, function(err, d){ cb(err, (d && d.profiles) || []); }); }
+  function apiCreate(p, cb){ apiFetch('/api/profiles', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(p) }, cb); }
+  function apiUpdate(id, patch, cb){ apiFetch('/api/profiles/' + id, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(patch) }, cb); }
+  function apiRemove(id, cb){ apiFetch('/api/profiles/' + id, { method: 'DELETE' }, cb); }
+
+  // Hämtar serverns profillista, laddar upp lokalt kända profiler som
+  // servern inte har (t.ex. skapade innan denna uppdatering, eller
+  // offline på en annan enhet), och sparar resultatet som ny cache.
+  // Ingen "synkad"-flagga — körs om varje gång, självläkande.
+  var syncing = false;
+  function syncFromServer(cb){
+    if(syncing){ if(cb) cb(new Error('synkar redan')); return; }
+    syncing = true;
+    apiList(function(err, serverProfiles){
+      syncing = false;
+      if(err){ if(cb) cb(err); return; }
+      var localCache = loadProfiles();
+      var serverNames = serverProfiles.map(function(p){ return (p.name || '').trim().toLowerCase(); });
+      var missing = localCache.filter(function(p){ return serverNames.indexOf((p.name || '').trim().toLowerCase()) < 0; });
+      missing.forEach(function(p){ apiCreate(p, function(){}); });
+      var merged = serverProfiles.concat(missing);
+      saveProfiles(merged);
+      if(cb) cb(null, merged);
+    });
+  }
 
   function loadProfiles(){
     try { var p = JSON.parse(localStorage.getItem(PROFILES_KEY)); return Array.isArray(p) ? p : []; }
@@ -46,6 +88,11 @@
     if(!id) return null;
     return loadProfiles().filter(function(p){ return p.id === id; })[0] || null;
   }
+  // Alla ändringar sparas lokalt direkt (omedelbar UI-respons, fungerar
+  // offline) och skickas sedan till servern i bakgrunden, best-effort.
+  // Misslyckas anropet behåller enheten ändå sin lokala ändring — nästa
+  // lyckade sync från en enhet som fungerar blir den som vinner i
+  // praktiken. Rimligt för en liten familjesajt utan konflikthantering.
   function create(name, avatar){
     name = (name || '').trim().slice(0, 20);
     if(!name) return null;
@@ -54,12 +101,14 @@
     l.push(p);
     saveProfiles(l);
     setCurrentId(p.id);
+    apiCreate(p, function(){});
     return p;
   }
   function select(id){ setCurrentId(id); }
   function remove(id){
     saveProfiles(loadProfiles().filter(function(p){ return p.id !== id; }));
     if(getCurrentId() === id) setCurrentId('');
+    apiRemove(id, function(){});
   }
   function update(id, patch){
     var l = loadProfiles();
@@ -68,6 +117,7 @@
     if(patch.name != null) p.name = String(patch.name).trim().slice(0, 20) || p.name;
     if(patch.avatar != null) p.avatar = patch.avatar;
     saveProfiles(l);
+    apiUpdate(id, { name: p.name, avatar: p.avatar }, function(){});
     return p;
   }
 
@@ -121,7 +171,9 @@
   }
   function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
+  var lastRenderOpts = null; // senaste opts, för bakgrundssyncen — se syncAndMaybeRerender
   function renderPicker(opts){
+    lastRenderOpts = opts;
     var el = ensureRoot();
     var manage = !!opts.manage;
     var profiles = list();
@@ -221,13 +273,30 @@
     if(cb) cb(current());
   }
 
+  // Synkar mot servern en gång när väljaren öppnas, inte vid varje
+  // intern omritning (annars skulle re-rendret nedan trigga en ny sync
+  // i all oändlighet). Om svaret kommer tillbaka medan man fortfarande är
+  // kvar på rutnäts-vyn (oavsett om man hunnit växla "Hantera"-läge eller
+  // inte) ritas listan om med färska data — läser lastRenderOpts, inte
+  // det (ev. inaktuella) opts-objektet från när synken startades, annars
+  // kan ett svar som kommer efter att man klickat "Hantera" nollställa
+  // tillbaka till vanligt läge mitt i.
+  function syncAndMaybeRerender(){
+    syncFromServer(function(err, fresh){
+      if(!err && fresh && root && root.classList.contains('show') && root.querySelector('.nh-grid')) renderPicker(lastRenderOpts);
+    });
+  }
   function ensurePicker(cb){
     var p = current();
     if(p){ if(cb) cb(p); return; }
-    renderPicker({ dismissable: false, onDone: cb });
+    var opts = { dismissable: false, onDone: cb };
+    renderPicker(opts);
+    syncAndMaybeRerender();
   }
   function openSwitcher(cb){
-    renderPicker({ dismissable: true, onDone: cb });
+    var opts = { dismissable: true, onDone: cb };
+    renderPicker(opts);
+    syncAndMaybeRerender();
   }
 
   /* ---------- App-inbyggda webbläsare (Messenger m.fl.) ----------
