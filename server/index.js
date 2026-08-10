@@ -82,8 +82,15 @@ if (DATABASE_URL) {
         return r.rows;
       },
       async topBySeed(seed, limit) {
+        // moves hämtas ihopparat med samma rad som gav bästa tiden per
+        // spelare (distinct on), inte ett fristående min() — annars kunde
+        // t.ex. "3 försök" råka visas bredvid någon annan inskicknings tid.
         const r = await pool.query(
-          'select name, min(seconds) as seconds from scores where seed=$1 group by name order by seconds asc limit $2',
+          `select name, seconds, moves from (
+             select distinct on (name) name, seconds, moves
+             from scores where seed=$1
+             order by name, seconds asc
+           ) t order by seconds asc limit $2`,
           [seed, limit]
         );
         return r.rows;
@@ -145,10 +152,9 @@ if (DATABASE_URL) {
     async topBySeed(seed, limit) {
       const best = {};
       mem.filter(x => x.seed === seed).forEach(x => {
-        if (best[x.name] == null || x.seconds < best[x.name]) best[x.name] = x.seconds;
+        if (!best[x.name] || x.seconds < best[x.name].seconds) best[x.name] = { name: x.name, seconds: x.seconds, moves: x.moves };
       });
-      return Object.keys(best).map(name => ({ name, seconds: best[name] }))
-        .sort((a, b) => a.seconds - b.seconds).slice(0, limit);
+      return Object.values(best).sort((a, b) => a.seconds - b.seconds).slice(0, limit);
     },
     async challenges(limit) {
       const bySeed = {};
