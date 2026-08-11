@@ -332,7 +332,11 @@
   // redan har en vald profil (vanligaste fallet efter första gången) —
   // utan den här raden skulle en lokalt skapad profil aldrig laddas upp
   // förrän man råkade klicka på "byt profil"-badgen minst en gång.
-  syncFromServer(function(){});
+  // Måste gå via syncAndMaybeRerender (inte ett eget syncFromServer-anrop)
+  // — annars kapar den här synken mutex-låset innan ensurePickers egen
+  // synk hinner starta, som då bara backar ur tyst utan att någonsin
+  // rita om den tomma rutan när svaret väl kommer.
+  syncAndMaybeRerender();
 
   window.NordhammerProfile = {
     list: list,
