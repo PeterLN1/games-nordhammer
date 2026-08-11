@@ -137,9 +137,6 @@
     + ".nh-tile:active .nh-avatar{transform:scale(.95);}"
     + ".nh-tile-del{position:absolute;top:-6px;right:8px;width:22px;height:22px;border-radius:50%;border:none;background:#e0393e;color:#fff;font-size:11px;cursor:pointer;z-index:2;}"
     + ".nh-tile-edit{position:absolute;top:-6px;left:8px;width:22px;height:22px;border-radius:50%;border:none;background:#4dabf7;color:#fff;font-size:11px;cursor:pointer;z-index:2;}"
-    + ".nh-iab{position:fixed;top:0;left:0;right:0;z-index:10000;display:flex;align-items:center;gap:10px;padding:9px 14px;font-size:12.5px;line-height:1.4;background:#ffb300;color:#1a1200;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}"
-    + ".nh-iab span{flex:1;}"
-    + ".nh-iab button{flex:0 0 auto;border:none;background:rgba(0,0,0,.12);color:inherit;width:22px;height:22px;border-radius:6px;font-size:12px;cursor:pointer;padding:0;}"
     + ".nh-manage,.nh-close,.nh-primary{width:100%;margin-top:8px;padding:12px;border:none;border-radius:11px;font-weight:700;font-size:14.5px;cursor:pointer;font-family:inherit;}"
     + ".nh-primary{background:#ffb300;color:#1a1200;}"
     + ".nh-manage,.nh-close{background:rgba(120,120,140,.16);color:inherit;}"
@@ -298,34 +295,6 @@
     renderPicker(opts);
     syncAndMaybeRerender();
   }
-
-  /* ---------- App-inbyggda webbläsare (Messenger m.fl.) ----------
-     Dessa kör sidan i en isolerad lagringskontext, skild från telefonens
-     vanliga webbläsare — varken profiler eller spelresultat syns där när
-     man senare öppnar samma länk i Safari/Chrome. Går inte att synka i
-     efterhand utan inloggning, så vi varnar innan man väljer/skapar en
-     profil eller spelar istället. Gäller alla sidor som laddar denna
-     modul (hubben, Mahjong, Ordlek). */
-  var IAB_RE = /FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|; wv\)/i;
-  var IAB_DISMISS_KEY = 'nordhammer:iabDismissed';
-  function isInAppBrowser(){ return IAB_RE.test(navigator.userAgent || ''); }
-  function maybeShowIabBanner(){
-    if(!isInAppBrowser()) return;
-    try { if(sessionStorage.getItem(IAB_DISMISS_KEY)) return; } catch(e){}
-    ensureStyle();
-    var el = document.createElement('div');
-    el.className = 'nh-iab';
-    el.innerHTML =
-      '<span>Du öppnade sidan i en app-inbyggd webbläsare (t.ex. Messenger). Profiler och resultat sparas bara här — tryck ⋯ eller webbläsarikonen och välj "Öppna i webbläsare" innan du väljer/skapar profil.</span>' +
-      '<button aria-label="Stäng">✕</button>';
-    function mount(){ document.body.insertBefore(el, document.body.firstChild); }
-    if(document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);
-    el.querySelector('button').addEventListener('click', function(){
-      el.remove();
-      try { sessionStorage.setItem(IAB_DISMISS_KEY, '1'); } catch(e){}
-    });
-  }
-  maybeShowIabBanner();
 
   // Synka tyst i bakgrunden varje sidladdning, inte bara när väljaren
   // öppnas. ensurePicker() hoppar över nätverksanropet helt om enheten
