@@ -593,18 +593,25 @@
     });
   }
   function showAlreadyPlayedElsewhere(hit){
-    // status blir INTE 'playing' (låser tangentbordet) men sparas inte
-    // lokalt som klar — nästa laddning kollar servern på nytt istället
-    // för att permanent gissa sig till vad som hände på den andra enheten.
+    // Sparas till skillnad från tidigare version FAKTISKT lokalt (status
+    // 'blocked' + summeringen) — annars låg det bara i minnet och en
+    // omladdning läste in den gamla, aldrig uppdaterade 'playing'-posten
+    // som lokalt sparades redan innan den här kollen hann köras, vilket
+    // gjorde att man kunde ladda om och spela ändå.
     state.status = 'blocked';
     state.submitted = true; // förhindrar att lbSubmit anropas igen av misstag denna session
-    var summary = (hit.moves != null && hit.moves <= MAX_GUESSES)
-      ? hit.moves + '/' + MAX_GUESSES + ' gissningar, ' + fmtSeconds(hit.seconds)
-      : 'löste inte ordet, ' + fmtSeconds(hit.seconds);
+    state.blockedSummary = { moves: hit.moves, seconds: hit.seconds };
+    saveGame(state);
+    renderBlockedPanel(state.blockedSummary);
+  }
+  function renderBlockedPanel(summary){
+    var text = (summary.moves != null && summary.moves <= MAX_GUESSES)
+      ? summary.moves + '/' + MAX_GUESSES + ' gissningar, ' + fmtSeconds(summary.seconds)
+      : 'löste inte ordet, ' + fmtSeconds(summary.seconds);
     var panel = document.getElementById('panel');
     panel.innerHTML =
       '<div class="emoji">🔁</div><h2>Redan spelat idag</h2>' +
-      '<p>Du (' + esc(getName()) + ') har redan spelat dagens Ordlek idag, troligen på en annan enhet: ' + summary + '.</p>' +
+      '<p>Du (' + esc(getName()) + ') har redan spelat dagens Ordlek idag, troligen på en annan enhet: ' + text + '.</p>' +
       '<div id="lbArea" class="lb-area"><div class="lb-title">🏆 Dagens familjetopplista</div><div class="lb-list">Laddar…</div></div>' +
       '<button id="pClose" class="ghost">Stäng</button>';
     document.getElementById('overlay').classList.add('show');
@@ -712,7 +719,9 @@
 
   /* ---------- Start ---------- */
   render();
-  if(state.status !== 'playing'){
+  if(state.status === 'blocked'){
+    setTimeout(function(){ renderBlockedPanel(state.blockedSummary); }, 200);
+  } else if(state.status !== 'playing'){
     setTimeout(function(){ showResultPanel(state.status === 'won', loadStats()); }, 200);
   } else {
     try {
