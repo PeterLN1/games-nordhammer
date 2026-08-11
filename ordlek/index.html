@@ -717,21 +717,38 @@
     NordhammerProfile.openSwitcher(function(){ renderProfileBadge(); render(); });
   };
 
-  /* ---------- Start ---------- */
-  render();
-  if(state.status === 'blocked'){
-    setTimeout(function(){ renderBlockedPanel(state.blockedSummary); }, 200);
-  } else if(state.status !== 'playing'){
-    setTimeout(function(){ showResultPanel(state.status === 'won', loadStats()); }, 200);
-  } else {
+  function showRulesIfFirstTime(){
     try {
       if(!localStorage.getItem(RULES_KEY)){ localStorage.setItem(RULES_KEY, '1'); showRulesPanel(); }
     } catch(e){}
   }
+
+  /* ---------- Start ---------- */
+  render();
+  if(state.status === 'blocked'){
+    setTimeout(function(){ renderBlockedPanel(state.blockedSummary); }, 200);
+  } else if(state.status === 'playing'){
+    // Ny lokal giv + topplista finns: vi vet ännu inte om profilen redan
+    // spelat på en annan enhet. Lås tangentbordet (status 'checking',
+    // samma spärr som handleKey redan har för allt utom 'playing') tills
+    // den kollen är klar — annars hinner man skriva bokstäver under den
+    // korta stund nätverksanropet tar.
+    if(wasFreshState && hasLeaderboard()) state.status = 'checking';
+    else showRulesIfFirstTime();
+  } else {
+    setTimeout(function(){ showResultPanel(state.status === 'won', loadStats()); }, 200);
+  }
   NordhammerProfile.ensurePicker(function(){
     renderProfileBadge();
-    if(wasFreshState){
-      checkAlreadyPlayedElsewhere(function(hit){ if(hit) showAlreadyPlayedElsewhere(hit); });
+    if(state.status === 'checking'){
+      checkAlreadyPlayedElsewhere(function(hit){
+        if(hit){
+          showAlreadyPlayedElsewhere(hit);
+        } else {
+          state.status = 'playing';
+          showRulesIfFirstTime();
+        }
+      });
     }
   });
   </script>
