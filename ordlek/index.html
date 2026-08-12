@@ -231,7 +231,23 @@
     return h >>> 0;
   }
   function todayIso(){ return new Date().toISOString().slice(0,10); } // UTC, samma dygnsgräns för alla
-  function dailyAnswer(dateStr){ return ORDLEK_ANSWERS[hashStr('ordlek-word:' + dateStr) % ORDLEK_ANSWERS.length]; }
+  // Fastlåsta dagar: ORDLEK_ANSWERS[hash % length] är INTE stabilt mot att
+  // ordlistan redigeras — tar man bort eller lägger till ord i listan
+  // flyttar sig index för alla datum, inklusive redan spelade dagar och
+  // "idag" (upptäckt 2026-08-12: en ordlisterensning mitt på dagen hade
+  // gett olika familjemedlemmar olika ord samma dag om ingen fastlåsning
+  // fanns). Varje datum som redan varit "idag" måste frysas här INNAN
+  // ORDLEK_ANSWERS ändras nästa gång — annars upprepas buggen.
+  var ORDLEK_DAILY_OVERRIDES = {
+    '2026-08-09': 'havre',
+    '2026-08-10': 'slant',
+    '2026-08-11': 'solig',
+    '2026-08-12': 'saker'
+  };
+  function dailyAnswer(dateStr){
+    if(ORDLEK_DAILY_OVERRIDES[dateStr]) return ORDLEK_DAILY_OVERRIDES[dateStr];
+    return ORDLEK_ANSWERS[hashStr('ordlek-word:' + dateStr) % ORDLEK_ANSWERS.length];
+  }
   function dayNumber(dateStr){
     var d = Date.parse(dateStr + 'T00:00:00Z'), e = Date.parse(EPOCH + 'T00:00:00Z');
     return Math.floor((d - e) / 86400000) + 1;
