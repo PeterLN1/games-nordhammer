@@ -1,8 +1,10 @@
-// Simple resource pool (wood/stone/grass). No gathering yet — that's phase
-// 3 — so this just starts with a generous fixed stock (there's no economy
-// to balance yet, so testing the build system shouldn't be bottlenecked
-// by running out) and lets the build system spend it.
-export function createResources(initial = { wood: 300, stone: 300, grass: 300 }) {
+// Simple resource pool (wood/stone/grass). The player wakes up with
+// nothing — see world/gathering.js for how wood/stone actually enter this
+// pool (tapping a tree/rock nearby). Grass has no gathering source yet, so
+// anything that costs grass (roof, ridgeRoof) stays out of reach until
+// that's added — intentional: it's the "later, with better tools" tier,
+// not day-one gear.
+export function createResources(initial = { wood: 0, stone: 0, grass: 0 }) {
   const state = { ...initial };
   const listeners = new Set();
 
@@ -23,11 +25,18 @@ export function createResources(initial = { wood: 300, stone: 300, grass: 300 })
       state.grass -= cost.grass || 0;
       notify();
     },
-    refund(cost) {
-      state.wood += cost.wood || 0;
-      state.stone += cost.stone || 0;
-      state.grass += cost.grass || 0;
+    // Adds resources to the pool — used both by a demolished structure's
+    // refund and by actually gathering wood/stone from the world (see
+    // world/gathering.js). Same operation either way, just a different
+    // caller/reason.
+    add(amounts) {
+      state.wood += amounts.wood || 0;
+      state.stone += amounts.stone || 0;
+      state.grass += amounts.grass || 0;
       notify();
+    },
+    refund(cost) {
+      this.add(cost);
     },
     subscribe(fn) {
       listeners.add(fn);

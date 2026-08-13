@@ -484,6 +484,60 @@ for (const rotY of [0, 0.6, Math.PI / 2]) {
 }
 
 // ---------------------------------------------------------------------
+// 9) The player-wakes-with-nothing starter tier: fire places freely with
+//    no anchor needed, wallBranch corner-chains exactly like wallWood
+//    (same snapMode/width — just cheaper/weaker), and roofBranch spans
+//    between two of them the same way roof does.
+// ---------------------------------------------------------------------
+{
+  const bm = makeBuildMode();
+  bm.toggle(true);
+  const built = place(bm, "fire", { x: 3, z: -2 });
+  check("fire: places freely with no neighbor to snap onto", built);
+  const fire = bm.placed.find((p) => p.structure.id === "fire");
+  // snapMode "free" rounds to the grid (same as "post") rather than the
+  // exact tap point — just check it landed near the tap, not exactly on it.
+  check("fire: lands near the tapped point, grid-snapped", !!fire && Math.hypot(fire.x - 3, fire.z - (-2)) < WALL_SPAN);
+  bm.toggle(false);
+}
+
+{
+  const bm = makeBuildMode();
+  bm.toggle(true);
+  place(bm, "wallBranch", { x: 0, z: 0 });
+  const corner = bm.placed[0];
+  const end = { x: corner.x + Math.cos(corner.rotY) * (WALL_SPAN / 2), z: corner.z - Math.sin(corner.rotY) * (WALL_SPAN / 2) };
+  bm.selectStructure("wallBranch");
+  bm.handleTap(end);
+  bm.rotate(Math.PI / 2); // one 90° turn, same as any wallWood corner
+  const confirmed = bm.confirm();
+  check("wallBranch: chains corner-to-corner exactly like wallWood", confirmed && bm.placed.length === 2);
+  const second = bm.placed[1];
+  check(
+    "wallBranch: the second segment actually turned 90°, not just extended straight",
+    !near(((second.rotY - corner.rotY) % Math.PI + Math.PI) % Math.PI, 0)
+  );
+  bm.toggle(false);
+}
+
+{
+  // Two parallel wallBranch segments a roof-span apart, then a roofBranch
+  // tapped on one should size itself to reach the other — same
+  // spansToOpposite contract buildRoof already relies on.
+  const bm = makeBuildMode();
+  const near0 = fabricate(bm, "wallBranch", 0, 0, 0, 0);
+  fabricate(bm, "wallBranch", 0, 2, 0, 0);
+  bm.toggle(true);
+  bm.selectStructure("roofBranch");
+  bm.handleTap({ x: near0.x, z: near0.z });
+  const confirmed = bm.confirm();
+  check("roofBranch: places on top of a wall like roof does", confirmed);
+  const placedRoof = bm.placed.find((p) => p.structure.id === "roofBranch");
+  check("roofBranch: spans to the parallel wall it found, not the default overhang", !!placedRoof && placedRoof.buildArgs && near(placedRoof.buildArgs.span, 2), JSON.stringify(placedRoof?.buildArgs));
+  bm.toggle(false);
+}
+
+// ---------------------------------------------------------------------
 console.log(`\n${pass} passed, ${fail} failed`);
 if (failures.length) {
   console.log("\nFAILURES:");

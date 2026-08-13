@@ -4,9 +4,10 @@ import { createShadowMaterial } from "./core/shadowDecals.js";
 import { createSky } from "./world/sky.js";
 import { createLighting } from "./world/lighting.js";
 import { buildGround, terrainHeight } from "./world/terrain.js";
-import { buildFire, buildEmbers } from "./world/fire.js";
+import { buildEmbers } from "./world/fire.js";
 import { buildTrees } from "./world/trees.js";
 import { buildRocks } from "./world/rocks.js";
+import { createGathering } from "./world/gathering.js";
 import { Player } from "./player/player.js";
 import { createTouchControls } from "./player/controls.js";
 import { createMoveMarker } from "./player/moveMarker.js";
@@ -48,7 +49,7 @@ const dayNightSlider = document.getElementById("dayNightSlider");
 const dayNightIcon = document.getElementById("dayNightIcon");
 const dayNightLabel = document.getElementById("dayNightLabel");
 
-const PLAY_RADIUS = 17; // how far from camp the player is allowed to walk
+const PLAY_RADIUS = 17; // how far from spawn the player is allowed to walk
 
 // ---------- renderer / scene / camera ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -67,9 +68,7 @@ const followCam = new FollowCamera(camera);
 const shadowMat = createShadowMaterial();
 const sky = createSky(scene, PALETTE);
 const lighting = createLighting(scene);
-const { ground, clearing } = buildGround(scene, PALETTE);
-buildFire(scene, PALETTE, shadowMat);
-const embers = buildEmbers(scene);
+const { ground } = buildGround(scene, PALETTE);
 const treeItems = buildTrees(scene, PALETTE, shadowMat);
 const rockItems = buildRocks(scene, PALETTE);
 
@@ -82,6 +81,34 @@ const resources = createResources(saved?.resources);
 const buildMode = createBuildMode({ scene, palette: PALETTE, shadowMat, resources, terrainHeight, buildRadius: PLAY_RADIUS });
 if (saved?.placed?.length) buildMode.restore(saved.placed);
 const cutaway = createCutaway();
+const gathering = createGathering({ treeItems, rockItems, resources });
+
+// ---------- fires: each built "fire" structure gets its own embers
+// particle system; only one drives the flicker light (see
+// world/lighting.js) since a second dynamic light per campfire isn't
+// worth the render cost here. The player no longer spawns with one
+// already lit — see build/structures.js's "fire" entry.
+const fireEmbers = new Map(); // placed-entry -> embers handle
+function addFireEmbers(entry) {
+  const handle = buildEmbers();
+  handle.points.position.set(entry.x, entry.y, entry.z);
+  scene.add(handle.points);
+  fireEmbers.set(entry, handle);
+  lighting.setFirePosition(entry.x, entry.y, entry.z);
+  lighting.setFireActive(true);
+}
+function removeFireEmbers(entry) {
+  const handle = fireEmbers.get(entry);
+  if (!handle) return;
+  scene.remove(handle.points);
+  fireEmbers.delete(entry);
+  const remaining = fireEmbers.keys().next().value;
+  if (remaining) lighting.setFirePosition(remaining.x, remaining.y, remaining.z);
+  else lighting.setFireActive(false);
+}
+for (const entry of buildMode.placed) {
+  if (entry.structure.id === "fire") addFireEmbers(entry);
+}
 
 // Persisted after every build/demolish/door-toggle (see call sites below)
 // rather than on a timer — those are the only actions that actually
@@ -204,6 +231,8 @@ buildRotateBtn.addEventListener("click", () => {
 
 buildConfirmBtn.addEventListener("click", () => {
   if (buildMode.confirm()) {
+    const last = buildMode.placed[buildMode.placed.length - 1];
+    if (last.structure.id === "fire") addFireEmbers(last);
     buildConfirmBtn.disabled = !buildMode.canConfirm;
     saveGame();
   }
@@ -219,13 +248,17 @@ buildConfirmBtn.addEventListener("click", () => {
 function tapTargets() {
   const faded = cutaway.getFaded();
   const structureMeshes = buildMode.placed.filter((p) => !faded.has(p.mesh)).map((p) => p.mesh);
-  return [ground, clearing, ...structureMeshes];
+  return [ground, ...structureMeshes];
 }
 
 createTouchControls(renderer, camera, tapTargets, {
   onTap(point, hitObject) {
     if (buildMode.demolishActive) {
-      if (buildMode.tryDemolish(point, hitObject)) saveGame();
+      const removed = buildMode.tryDemolish(point, hitObject);
+      if (removed) {
+        if (removed.structure.id === "fire") removeFireEmbers(removed);
+        saveGame();
+      }
       return;
     }
     if (buildMode.active) {
@@ -234,6 +267,22 @@ createTouchControls(renderer, camera, tapTargets, {
       return;
     }
     if (buildMode.tryToggleDoor(point, hitObject)) { saveGame(); return; }
+
+    // Trees/rocks aren't raycast targets themselves (see tapTargets above)
+    // — a tap that visually lands on one still resolves to roughly its
+    // ground position via the ground-plane hit, which is exactly what
+    // gathering.tryGather matches against. Too far away just walks the
+    // player closer instead of gathering, same as tapping any other spot.
+    const gathered = gathering.tryGather(point, player.position);
+    if (gathered) {
+      const gy = terrainHeight(gathered.x, gathered.z);
+      marker.show(gathered.x, gy, gathered.z);
+      if (gathered.gathered) saveGame();
+      else player.moveTo(gathered.x, gathered.z);
+      hint.classList.add("hidden");
+      return;
+    }
+
     const len = Math.hypot(point.x, point.z);
     const p = len > PLAY_RADIUS ? point.clone().multiplyScalar(PLAY_RADIUS / len) : point;
     player.moveTo(p.x, p.z);
@@ -267,7 +316,8 @@ function tick() {
 
   sky.update(dt);
   lighting.updateFireFlicker(clock.elapsedTime);
-  embers.update(dt);
+  fireEmbers.forEach((handle) => handle.update(dt));
+  gathering.advance(dt);
   player.update(dt);
   marker.update(dt);
   followCam.update(player.group.position, dt);

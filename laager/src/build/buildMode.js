@@ -605,9 +605,12 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
     // platform, where its (x,z) can be a fair distance from the point a
     // ground-projected tap infers. Falls back to nearest-by-distance
     // (e.g. a demolished-mid-air miss, or a thin structure the ray missed)
-    // when there's no direct hit.
+    // when there's no direct hit. Returns the removed entry (truthy) or
+    // null — main.js uses the entry itself to know e.g. whether a built
+    // fire's embers need cleaning up too, not just whether *something*
+    // was demolished.
     tryDemolish(point, hitObject) {
-      if (!demolish) return false;
+      if (!demolish) return null;
       let best = null, bestIndex = -1;
       if (hitObject) {
         let obj = hitObject;
@@ -626,12 +629,12 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
           }
         });
       }
-      if (!best) return false;
+      if (!best) return null;
       scene.remove(best.mesh);
       scene.remove(best.shadowMesh);
       resources.refund(best.structure.cost);
       placed.splice(bestIndex, 1);
-      return true;
+      return best;
     },
   };
 }

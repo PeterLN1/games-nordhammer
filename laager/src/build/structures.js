@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { buildFireStructure } from "../world/fire.js";
 
 // A wall's full span, edge-to-edge — deliberately equal to a platform's
 // own width (see structures.platform below) so a single wall segment
@@ -205,6 +206,74 @@ function buildGableWall(palette, span = WALL_SPAN) {
   return new THREE.Mesh(geo, plankMat);
 }
 
+const BRANCH_WALL_HEIGHT = 0.85; // shorter than wallWood's 1.0 — reads as hastily thrown together, not a proper wall
+
+// The primitive first-shelter wall: a row of leaned, unevenly-angled
+// branches lashed with a single crossbar, gaps visible between them —
+// deliberately weaker/cruder-looking than wallWood, and cheaper (no
+// milled planks, just gathered wood). This is what's actually affordable
+// the moment the player wakes up with nothing; wallWood/wallStone are the
+// upgrade once there's more wood/stone/tools to spare.
+function buildBranchWall(palette) {
+  const group = new THREE.Group();
+  const branchMat = mat(palette, "trunk");
+  const stakeGeo = new THREE.CylinderGeometry(0.035, 0.05, BRANCH_WALL_HEIGHT, 5);
+  const count = 5;
+  for (let i = 0; i < count; i++) {
+    const t = (i + 0.5) / count - 0.5; // -0.4..0.4 across the span
+    const branch = new THREE.Mesh(stakeGeo, branchMat);
+    branch.position.set(t * WALL_SPAN * 0.92, BRANCH_WALL_HEIGHT / 2, (Math.random() - 0.5) * 0.03);
+    branch.rotation.z = (Math.random() - 0.5) * 0.14; // slightly uneven, not perfectly upright
+    group.add(branch);
+  }
+  const cross = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, WALL_SPAN, 5), branchMat);
+  cross.rotation.z = Math.PI / 2;
+  cross.position.y = BRANCH_WALL_HEIGHT * 0.6;
+  group.add(cross);
+  return group;
+}
+
+// The primitive first-shelter roof: a few loose cross-branches over the
+// rafters instead of roofWood's solid grass thatch panel — covers most of
+// the gap but leaves real holes (once weather exists, this is the tier
+// that lets rain in, matching the "dåligt tak" the player starts with).
+// Same span/drop contract as buildRoof: local origin is the ridge, sloping
+// down toward the eave, and buildMode passes exact values whenever it
+// finds a second wall/post to span to.
+function buildBranchRoof(palette, span = 0.95, drop = 0.35) {
+  const group = new THREE.Group();
+  const W = WALL_SPAN;
+  const woodMat = mat(palette, "trunk");
+
+  const slopeVec = new THREE.Vector3(0, -drop, span);
+  const slopeLen = slopeVec.length();
+  const slopeDir = slopeVec.clone().normalize();
+  const mid = slopeVec.clone().multiplyScalar(0.5);
+
+  const rafterQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), slopeDir);
+  const rafterGeo = new THREE.CylinderGeometry(0.035, 0.04, slopeLen, 5);
+  [-W / 2 + 0.1, 0, W / 2 - 0.1].forEach((x) => {
+    const rafter = new THREE.Mesh(rafterGeo, woodMat);
+    rafter.position.set(x, mid.y, mid.z);
+    rafter.quaternion.copy(rafterQuat);
+    group.add(rafter);
+  });
+
+  const slopeAngleX = Math.atan2(drop, span);
+  const twigGeo = new THREE.CylinderGeometry(0.025, 0.03, W - 0.15, 4);
+  const twigCount = 4;
+  for (let i = 0; i < twigCount; i++) {
+    const t = (i + 0.5) / twigCount;
+    const along = slopeVec.clone().multiplyScalar(t);
+    const twig = new THREE.Mesh(twigGeo, woodMat);
+    twig.position.set(0, along.y + 0.03, along.z);
+    twig.rotation.z = Math.PI / 2;
+    twig.rotation.x = slopeAngleX;
+    group.add(twig);
+  }
+  return group;
+}
+
 const DOOR_LEAF_WIDTH = WALL_SPAN - 0.16; // narrower than the opening so it clears the frame posts when it swings
 const DOOR_HEIGHT = 1.0; // matches wallWood's height
 
@@ -320,6 +389,49 @@ function buildLadder(palette) {
 }
 
 export const STRUCTURES = {
+  fire: {
+    id: "fire",
+    label: "Eld",
+    icon: "🔥",
+    cost: { wood: 2, stone: 0 },
+    shadowRadius: 0.9,
+    width: 1.1,
+    height: 0.15,
+    snapMode: "free",
+    build(palette) {
+      return buildFireStructure(palette);
+    },
+  },
+
+  wallBranch: {
+    id: "wallBranch",
+    label: "Grenvägg",
+    icon: "🥢",
+    cost: { wood: 2, stone: 0 },
+    shadowRadius: 0.8,
+    width: WALL_SPAN, // same span as wallWood — chains/snaps into the same corners
+    height: BRANCH_WALL_HEIGHT,
+    snapMode: "edge",
+    build(palette) {
+      return buildBranchWall(palette);
+    },
+  },
+
+  roofBranch: {
+    id: "roofBranch",
+    label: "Risigt tak",
+    icon: "🍃",
+    cost: { wood: 2, stone: 0 },
+    shadowRadius: 0.9,
+    width: WALL_SPAN,
+    snapMode: "top", // snaps onto the top of a nearby wall/post — never floats
+    spansToOpposite: true, // buildMode sizes it to reach a wall found across the room, if any
+    build(palette, opts) {
+      const { span, drop } = opts || {};
+      return buildBranchRoof(palette, span, drop);
+    },
+  },
+
   wallWood: {
     id: "wallWood",
     label: "Trävägg",

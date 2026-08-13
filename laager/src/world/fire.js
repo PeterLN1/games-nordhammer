@@ -1,7 +1,12 @@
 import * as THREE from "three";
-import { addShadowBlob } from "../core/shadowDecals.js";
 
-export function buildFire(scene, palette, shadowMat) {
+// A buildable campfire — logs + a stone ring, same shape as before, but
+// now returned as a plain Group (like every other STRUCTURES entry's
+// build()) instead of being added straight to the scene. The player used
+// to spawn with one of these already lit; now it's something they build
+// themselves once they've gathered a little wood — see build/structures.js.
+export function buildFireStructure(palette) {
+  const group = new THREE.Group();
   const logGeo = new THREE.CylinderGeometry(0.09, 0.11, 1.5, 5);
   const logMat = new THREE.MeshStandardMaterial({ color: palette.logs, flatShading: true, roughness: 1 });
   const n = 5;
@@ -11,7 +16,7 @@ export function buildFire(scene, palette, shadowMat) {
     log.position.set(Math.cos(a) * 0.12, 0.35, Math.sin(a) * 0.12);
     log.rotation.z = Math.PI / 2.35;
     log.rotation.y = a;
-    scene.add(log);
+    group.add(log);
   }
   const ring = new THREE.Mesh(
     new THREE.TorusGeometry(0.55, 0.08, 5, 10),
@@ -19,12 +24,16 @@ export function buildFire(scene, palette, shadowMat) {
   );
   ring.rotation.x = Math.PI / 2;
   ring.position.y = 0.05;
-  scene.add(ring);
-  addShadowBlob(scene, shadowMat, 0, 0, 1.6);
+  group.add(ring);
+  return group;
 }
 
-// custom-shader particles (additive, cheap): a handful of glowing embers
-export function buildEmbers(scene) {
+// custom-shader particles (additive, cheap): a handful of glowing embers.
+// Returns the Points object instead of adding it to the scene itself, and
+// takes no position — the caller (main.js) places one of these at each
+// built fire's own (x, y, z) and adds/removes it from the scene alongside
+// that fire, so multiple built fires each get their own embers.
+export function buildEmbers() {
   const count = 70;
   const positions = new Float32Array(count * 3);
   const sizes = new Float32Array(count);
@@ -81,9 +90,9 @@ export function buildEmbers(scene) {
   });
 
   const points = new THREE.Points(geo, mat);
-  scene.add(points);
 
   return {
+    points,
     update(dt) {
       const posAttr = geo.attributes.position, sizeAttr = geo.attributes.aSize, alphaAttr = geo.attributes.aAlpha;
       for (let i = 0; i < count; i++) {
