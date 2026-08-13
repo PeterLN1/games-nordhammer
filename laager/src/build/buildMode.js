@@ -22,18 +22,6 @@ function snap(v) {
 // so no two posts placed at different spots ever agreed on "straight".
 const GRID_ROTATION = 0;
 
-// Orientation whose forward() matches a given (unit) direction — used
-// instead of GRID_ROTATION whenever a drag is actually in progress, so a
-// row painted by dragging follows the finger's own path instead of
-// snapping to the fixed grid default. Rounded to the nearest cardinal
-// (0/90/180/270°) rather than the raw drag angle — building is grid-only,
-// so a diagonal swipe still lays down a straight N/S/E/W row instead of
-// an off-grid wall nothing else can snap onto cleanly.
-function directionRotation(dx, dz) {
-  const raw = Math.atan2(-dz, dx);
-  return Math.round(raw / (Math.PI / 2)) * (Math.PI / 2);
-}
-
 function clampToBuildRadius(point, buildRadius) {
   const len = Math.hypot(point.x, point.z);
   if (len <= buildRadius) return { x: point.x, z: point.z };
@@ -411,17 +399,6 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
     get selectedId() { return selected ? selected.id : null; },
     get canConfirm() { return !!(pending && pending.affordable); },
     get placed() { return placed; },
-    // Whether the currently selected structure makes sense to lay down by
-    // dragging a line across the ground instead of tap-confirm per piece —
-    // true for the two snap modes that chain/grid without needing an
-    // existing anchor to rest on ("edge" walls/doors, "free" posts).
-    // Roofs/platforms/ladders always need something specific to snap onto
-    // (a wall top, a post top, a platform edge) — dragging across open
-    // ground for those would just refuse over and over, so they stay
-    // tap-and-confirm only.
-    get canDragBuild() {
-      return !!selected && (selected.snapMode === "edge" || selected.snapMode === "free");
-    },
 
     // Rebuilds `placed` from a previously-saved plain-data snapshot (see
     // core/save.js) — used once at startup to restore a session. Goes
@@ -476,15 +453,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
       else ghost.clear();
     },
 
-    // dragDir (optional, {x,z} unit vector) is the current direction of
-    // travel during a drag-to-build sweep (see main.js's handleBuildDrag)
-    // — it only affects the *first* piece of a row, freely placed with no
-    // corner to snap onto, so that piece's facing follows the swipe
-    // instead of the tangent-to-camp-center default (see
-    // directionRotation). Every following piece in the row anchors onto
-    // that first piece's open end instead, so the direction naturally
-    // carries forward without needing to be passed again.
-    handleTap(point, dragDir = null) {
+    handleTap(point) {
       if (!active || !selected) return;
       const clamped = clampToBuildRadius(point, buildRadius);
       mode = selected.snapMode;
@@ -499,7 +468,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
           const gx = snap(clamped.x), gz = snap(clamped.z);
           freeCenter = { x: gx, z: gz };
           anchorY = platformSurfaceAt(gx, gz, placed) ?? terrainHeight(gx, gz);
-          currentRotY = dragDir ? directionRotation(dragDir.x, dragDir.z) : GRID_ROTATION;
+          currentRotY = GRID_ROTATION;
         }
         commitGhost();
         return;
@@ -510,7 +479,7 @@ export function createBuildMode({ scene, palette, shadowMat, resources, terrainH
         const gx = snap(clamped.x), gz = snap(clamped.z);
         freeCenter = { x: gx, z: gz };
         anchorY = platformSurfaceAt(gx, gz, placed) ?? terrainHeight(gx, gz);
-        currentRotY = dragDir ? directionRotation(dragDir.x, dragDir.z) : GRID_ROTATION;
+        currentRotY = GRID_ROTATION;
         commitGhost();
         return;
       }

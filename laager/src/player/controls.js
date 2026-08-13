@@ -17,14 +17,11 @@ const DRAG_THRESHOLD_PX = 10;
 // under your finger, which put the inferred point nowhere near an
 // elevated wall/platform and made tapping it directly unreliable. A
 // single finger that moves past a small threshold instead orbits the
-// camera — unless isBuildDragActive() says the current build selection
-// wants to lay down a row instead, in which case the drag paints
-// structures along the swept line rather than turning the camera. Two
-// fingers pinch to zoom the follow camera in/out.
+// camera. Two fingers pinch to zoom the follow camera in/out.
 //
 // getTargets() is called fresh on every tap (not just once) since the
 // set of built structures changes as the player builds/demolishes.
-export function createTouchControls(renderer, camera, getTargets, { onTap, onPinchZoom, onRotateDrag, onBuildDrag, isBuildDragActive }) {
+export function createTouchControls(renderer, camera, getTargets, { onTap, onPinchZoom, onRotateDrag }) {
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const pointers = new Map(); // pointerId -> {x, y}
@@ -32,7 +29,6 @@ export function createTouchControls(renderer, camera, getTargets, { onTap, onPin
   let tapTimer = null;
   let tapPos = null;
   let dragging = false;
-  let buildDragging = false; // this drag is painting a row of structures, not orbiting the camera
   let lastDragPos = null;
 
   function raycastFrom(clientX, clientY) {
@@ -46,11 +42,6 @@ export function createTouchControls(renderer, camera, getTargets, { onTap, onPin
   function pick(clientX, clientY) {
     const hits = raycastFrom(clientX, clientY);
     if (hits.length) onTap(hits[0].point, hits[0].object);
-  }
-
-  function pickForBuildDrag(clientX, clientY, isStart) {
-    const hits = raycastFrom(clientX, clientY);
-    if (hits.length) onBuildDrag(hits[0].point, hits[0].object, isStart);
   }
 
   function pinchDistance() {
@@ -94,14 +85,8 @@ export function createTouchControls(renderer, camera, getTargets, { onTap, onPin
         dragging = true;
         cancelPendingTap();
         lastDragPos = { x: e.clientX, y: e.clientY };
-        buildDragging = isBuildDragActive ? isBuildDragActive() : false;
-        if (buildDragging) pickForBuildDrag(tapPos.x, tapPos.y, true); // don't skip the segment under the drag's starting point
       }
-      if (buildDragging) {
-        pickForBuildDrag(e.clientX, e.clientY, false);
-      } else {
-        onRotateDrag(e.clientX - lastDragPos.x, e.clientY - lastDragPos.y);
-      }
+      onRotateDrag(e.clientX - lastDragPos.x, e.clientY - lastDragPos.y);
       lastDragPos = { x: e.clientX, y: e.clientY };
     } else if (pointers.size === 2) {
       const dist = pinchDistance();
@@ -113,7 +98,7 @@ export function createTouchControls(renderer, camera, getTargets, { onTap, onPin
   function release(e) {
     pointers.delete(e.pointerId);
     if (pointers.size < 2) prevPinchDist = null;
-    if (pointers.size === 0) { dragging = false; buildDragging = false; }
+    if (pointers.size === 0) dragging = false;
   }
   el.addEventListener("pointerup", release);
   el.addEventListener("pointercancel", release);
