@@ -19,7 +19,7 @@ import { createCutaway } from "./build/cutaway.js";
 import { createPlatformClimb } from "./build/platformClimb.js";
 import { createCollision } from "./world/collision.js";
 
-const ROTATE_STEP = Math.PI / 4; // 45° per tap — two taps makes a clean 90° corner
+const ROTATE_STEP = Math.PI / 2; // 90° per tap — building is grid-only, no in-between angles
 const CAMERA_DRAG_SPEED = 0.008; // radians per pixel of drag
 
 /* ---------------------------------------------------------------------

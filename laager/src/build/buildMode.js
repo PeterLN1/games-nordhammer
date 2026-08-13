@@ -25,9 +25,13 @@ const GRID_ROTATION = 0;
 // Orientation whose forward() matches a given (unit) direction — used
 // instead of GRID_ROTATION whenever a drag is actually in progress, so a
 // row painted by dragging follows the finger's own path instead of
-// snapping to the fixed grid default.
+// snapping to the fixed grid default. Rounded to the nearest cardinal
+// (0/90/180/270°) rather than the raw drag angle — building is grid-only,
+// so a diagonal swipe still lays down a straight N/S/E/W row instead of
+// an off-grid wall nothing else can snap onto cleanly.
 function directionRotation(dx, dz) {
-  return Math.atan2(-dz, dx);
+  const raw = Math.atan2(-dz, dx);
+  return Math.round(raw / (Math.PI / 2)) * (Math.PI / 2);
 }
 
 function clampToBuildRadius(point, buildRadius) {
