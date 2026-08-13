@@ -1,6 +1,6 @@
 import * as THREE from "three";
+import { roofCovers } from "./roofCoverage.js";
 
-const ROOF_COVER_MARGIN = 2.0; // how far *past the roof's own footprint* still counts as "under it"
 const FADE_OPACITY = 0.18;
 const FADE_SPEED = 9; // higher = snappier fade
 
@@ -26,19 +26,10 @@ export function createCutaway() {
       lastActive = active;
 
       // roofs: fade if the player is anywhere under the sloped panel's
-      // actual footprint (closest point on its ridge-to-eave centerline,
-      // clamped to its real span — which varies a lot, a ridge/gable roof
-      // over a big room reaches far further than the old fixed one-tile
-      // roof this radius check was originally tuned for) plus a margin.
+      // actual footprint — see roofCoverage.js for the shared math (also
+      // used by world/shelter.js to decide if a roof counts as cover).
       for (const p of placed) {
-        if (!p.structure.spansToOpposite) continue;
-        const outward = { x: Math.sin(p.rotY), z: Math.cos(p.rotY) };
-        const span = p.buildArgs?.span ?? p.structure.width;
-        const dx = playerPos.x - p.x, dz = playerPos.z - p.z;
-        const t = Math.max(0, Math.min(span, dx * outward.x + dz * outward.z));
-        const coverX = p.x + outward.x * t, coverZ = p.z + outward.z * t;
-        const d = Math.hypot(coverX - playerPos.x, coverZ - playerPos.z);
-        if (d < ROOF_COVER_MARGIN) active.add(p.mesh);
+        if (roofCovers(p, playerPos)) active.add(p.mesh);
       }
 
       // walls: fade if they sit between the camera and the player — a

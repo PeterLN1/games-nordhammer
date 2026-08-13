@@ -15,6 +15,8 @@ export const PALETTE = {
   moon: 0xf3ecd6,
   playerCloak: 0x4c7a8a,
   playerHead: 0xe0b98c,
+  water: 0x3d6f93,
+  berry: 0xa3273f,
 };
 
 // direction toward the moon/moonlight, shared by the sky dome and the lights

@@ -7,12 +7,16 @@ import { buildGround, terrainHeight } from "./world/terrain.js";
 import { buildEmbers } from "./world/fire.js";
 import { buildTrees } from "./world/trees.js";
 import { buildRocks } from "./world/rocks.js";
+import { buildBerries } from "./world/berries.js";
+import { buildWater } from "./world/water.js";
 import { createGathering } from "./world/gathering.js";
+import { isSheltered } from "./world/shelter.js";
 import { Player } from "./player/player.js";
 import { createTouchControls } from "./player/controls.js";
 import { createMoveMarker } from "./player/moveMarker.js";
 import { FollowCamera } from "./camera/followCamera.js";
 import { createResources } from "./core/resources.js";
+import { createSurvival } from "./core/survival.js";
 import { loadSave, writeSave, clearSave } from "./core/save.js";
 import { createBuildMode, platformSurfaceAt } from "./build/buildMode.js";
 import { STRUCTURES } from "./build/structures.js";
@@ -22,6 +26,7 @@ import { createCollision } from "./world/collision.js";
 
 const ROTATE_STEP = Math.PI / 2; // 90° per tap — building is grid-only, no in-between angles
 const CAMERA_DRAG_SPEED = 0.008; // radians per pixel of drag
+const DAY_LENGTH_SECONDS = 480; // a full day/night cycle in real time — 8 min: long enough for night to feel like its own stretch, short enough that the cold-night challenge actually comes around
 
 /* ---------------------------------------------------------------------
    Läger — stiliserad low-poly 3D-prototyp
@@ -52,6 +57,13 @@ const resetBtn = document.getElementById("resetGame");
 const dayNightSlider = document.getElementById("dayNightSlider");
 const dayNightIcon = document.getElementById("dayNightIcon");
 const dayNightLabel = document.getElementById("dayNightLabel");
+const healthBarEl = document.getElementById("healthBar");
+const hungerBarEl = document.getElementById("hungerBar");
+const thirstBarEl = document.getElementById("thirstBar");
+const healthRowEl = document.getElementById("healthRow");
+const deathOverlayEl = document.getElementById("deathOverlay");
+const deathMessageEl = document.getElementById("deathMessage");
+const deathRestartBtn = document.getElementById("deathRestart");
 
 const PLAY_RADIUS = 17; // how far from spawn the player is allowed to walk
 
@@ -75,6 +87,8 @@ const lighting = createLighting(scene);
 const { ground } = buildGround(scene, PALETTE);
 const treeItems = buildTrees(scene, PALETTE, shadowMat);
 const rockItems = buildRocks(scene, PALETTE);
+const berryItems = buildBerries(scene, PALETTE);
+const waterItems = buildWater(scene, PALETTE, terrainHeight);
 
 // ---------- build system ----------
 // Loaded once at startup: a previous session's resources/buildings, if
@@ -82,10 +96,11 @@ const rockItems = buildRocks(scene, PALETTE);
 // every reload/revisit.
 const saved = loadSave();
 const resources = createResources(saved?.resources);
+const survival = createSurvival(saved?.survival);
 const buildMode = createBuildMode({ scene, palette: PALETTE, shadowMat, resources, terrainHeight, buildRadius: PLAY_RADIUS });
 if (saved?.placed?.length) buildMode.restore(saved.placed);
 const cutaway = createCutaway();
-const gathering = createGathering({ treeItems, rockItems, resources });
+const gathering = createGathering({ treeItems, rockItems, berryItems, waterItems, resources, survival });
 
 // ---------- fires: each built "fire" structure gets its own embers
 // particle system; only one drives the flicker light (see
@@ -122,6 +137,7 @@ function saveGame() {
   writeSave({
     version: 1,
     resources: { wood: resources.wood, stone: resources.stone, grass: resources.grass },
+    survival: { health: survival.health, hunger: survival.hunger, thirst: survival.thirst, deathCauses: survival.deathCauses },
     placed: buildMode.placed.map((p) => ({
       id: p.structure.id, x: p.x, y: p.y, z: p.z, rotY: p.rotY, buildArgs: p.buildArgs, open: p.open,
     })),
@@ -147,6 +163,32 @@ resources.subscribe(({ wood, stone, grass }) => {
   resWoodHudEl.textContent = wood;
   resStoneHudEl.textContent = stone;
   resGrassHudEl.textContent = grass;
+});
+
+const DEATH_CAUSE_LABELS = { cold: "kylan", hunger: "svält", thirst: "uttorkning" };
+function deathMessage(causes) {
+  const labels = causes.map((c) => DEATH_CAUSE_LABELS[c]).filter(Boolean);
+  if (labels.length === 0) return "Vildmarken tog dig.";
+  if (labels.length === 1) return `Du dog av ${labels[0]}.`;
+  return `Du dog av ${labels.slice(0, -1).join(", ")} och ${labels[labels.length - 1]}.`;
+}
+
+// subscribe() fires immediately with the current state (see
+// core/survival.js), so restoring an already-dead save shows the death
+// screen again right away instead of quietly reviving the player.
+survival.subscribe(({ health, hunger, thirst }) => {
+  healthBarEl.style.width = `${health}%`;
+  hungerBarEl.style.width = `${hunger}%`;
+  thirstBarEl.style.width = `${thirst}%`;
+  if (survival.isDead) {
+    deathMessageEl.textContent = deathMessage(survival.deathCauses);
+    deathOverlayEl.classList.remove("hidden");
+    saveGame();
+  }
+});
+deathRestartBtn.addEventListener("click", () => {
+  clearSave();
+  location.reload();
 });
 
 const GATHER_ICON = { wood: "🪵", stone: "🪨" };
@@ -185,6 +227,9 @@ dayNightSlider.addEventListener("input", () => {
   sky.setHours(parseFloat(dayNightSlider.value));
   refreshDayNightUI();
 });
+// Runs on its own from here — the slider still works as a manual jump
+// (see the listener above), it just no longer stays put afterward.
+sky.setSpeed(24 / DAY_LENGTH_SECONDS);
 
 Object.values(STRUCTURES).forEach((s) => {
   const btn = document.createElement("button");
@@ -334,6 +379,8 @@ followCam.snapTo(player.group.position);
 // ---------- render loop ----------
 const clock = new THREE.Clock();
 let fpsAccum = 0, fpsFrames = 0, fpsTimer = 0;
+let saveTimer = 0;
+const AUTOSAVE_INTERVAL = 8; // seconds — hunger/thirst/health drain on their own between build/gather actions, so those need periodic saving too, just not every single frame
 
 function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
@@ -346,12 +393,29 @@ function tick() {
   marker.update(dt);
   followCam.update(player.group.position, dt);
   cutaway.update(buildMode.placed, player.group.position, camera, dt);
+
+  // Cold only bites at night, and only with nothing to shield against it
+  // — see world/shelter.js. Toggling .cold on the health row is purely
+  // cosmetic (tints the bar icy instead of red) but makes "yes, the cold
+  // is what's hurting you right now" legible at a glance.
+  const cold = sky.isNight && !isSheltered(buildMode.placed, player.group.position);
+  healthRowEl.classList.toggle("cold", cold);
+  survival.tick(dt, { cold });
+
+  saveTimer += dt;
+  if (saveTimer > AUTOSAVE_INTERVAL) {
+    saveTimer = 0;
+    saveGame();
+  }
+
   renderer.render(scene, camera);
 
   fpsAccum += dt; fpsFrames++; fpsTimer += dt;
   if (fpsTimer > 0.5) {
     fpsEl.textContent = Math.round(fpsFrames / fpsAccum) + " fps";
     fpsAccum = 0; fpsFrames = 0; fpsTimer = 0;
+    dayNightSlider.value = sky.hours;
+    refreshDayNightUI();
   }
 
   requestAnimationFrame(tick);

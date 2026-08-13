@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test/buildSystem.test.mjs && node test/pathfinding.test.mjs && node test/gathering.test.mjs"
+    "test": "node test/buildSystem.test.mjs && node test/pathfinding.test.mjs && node test/gathering.test.mjs && node test/survival.test.mjs && node test/shelter.test.mjs"
   },
   "devDependencies": {
     "three": "0.169.0"

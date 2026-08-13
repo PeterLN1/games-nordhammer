@@ -1,6 +1,6 @@
-// Automated regression tests for wood/stone gathering — plain Node, no
-// THREE/DOM needed since gathering.js is pure logic over plain {x,z}
-// lists. Run with:
+// Automated regression tests for wood/stone/food/water gathering — plain
+// Node, no THREE/DOM needed since gathering.js is pure logic over plain
+// {x,z} lists. Run with:
 //   cd laager && npm test
 
 import { findGatherTarget, createGathering } from "../src/world/gathering.js";
@@ -24,25 +24,43 @@ function makeResources() {
   };
 }
 
+function makeSurvival() {
+  const state = { hunger: 50, thirst: 50 };
+  return {
+    state,
+    eat(amount) { state.hunger += amount; },
+    drink(amount) { state.thirst += amount; },
+  };
+}
+
+function sources(treeItems = [], rockItems = [], berryItems = [], waterItems = []) {
+  return [
+    { type: "wood", items: treeItems },
+    { type: "stone", items: rockItems },
+    { type: "food", items: berryItems },
+    { type: "water", items: waterItems },
+  ];
+}
+
 // ---------------------------------------------------------------------
 // 1) findGatherTarget: nearest node within radius, whichever type it is.
 // ---------------------------------------------------------------------
 {
   const trees = [{ x: 5, z: 5 }, { x: 0.3, z: 0 }];
   const rocks = [{ x: -5, z: -5 }];
-  const target = findGatherTarget({ x: 0, z: 0 }, trees, rocks);
+  const target = findGatherTarget({ x: 0, z: 0 }, sources(trees, rocks));
   check("findGatherTarget: picks the nearby tree over far rocks/other trees", target && target.type === "wood" && target.index === 1, JSON.stringify(target));
 }
 
 {
   const trees = [{ x: 5, z: 5 }];
   const rocks = [{ x: 0.2, z: 0.1 }];
-  const target = findGatherTarget({ x: 0, z: 0 }, trees, rocks);
+  const target = findGatherTarget({ x: 0, z: 0 }, sources(trees, rocks));
   check("findGatherTarget: picks a nearby rock when it's the closest thing", target && target.type === "stone", JSON.stringify(target));
 }
 
 {
-  const target = findGatherTarget({ x: 0, z: 0 }, [{ x: 5, z: 5 }], [{ x: -5, z: -5 }]);
+  const target = findGatherTarget({ x: 0, z: 0 }, sources([{ x: 5, z: 5 }], [{ x: -5, z: -5 }]));
   check("findGatherTarget: null when nothing is within the tap radius", target === null);
 }
 
@@ -50,12 +68,23 @@ function makeResources() {
   // Tie-breaking: whichever is actually closer wins, not "wood always first".
   const trees = [{ x: 0.5, z: 0 }];
   const rocks = [{ x: 0.2, z: 0 }];
-  const target = findGatherTarget({ x: 0, z: 0 }, trees, rocks);
+  const target = findGatherTarget({ x: 0, z: 0 }, sources(trees, rocks));
   check("findGatherTarget: closer rock wins over a farther (but still in-radius) tree", target.type === "stone", JSON.stringify(target));
 }
 
+{
+  // Same tie-breaking, but across all four source types now — food/water
+  // aren't a special case bolted on, they compete on distance like
+  // wood/stone do.
+  const berries = [{ x: 5, z: 5 }];
+  const water = [{ x: 0.15, z: 0 }];
+  const target = findGatherTarget({ x: 0, z: 0 }, sources([], [], berries, water));
+  check("findGatherTarget: water wins over a farther berry bush", target.type === "water", JSON.stringify(target));
+}
+
 // ---------------------------------------------------------------------
-// 2) createGathering: range gating, cooldown, actual resource yield.
+// 2) createGathering: range gating, cooldown, actual resource yield —
+//    wood/stone into resources, food/water into survival.
 // ---------------------------------------------------------------------
 {
   const res = makeResources();
@@ -81,6 +110,24 @@ function makeResources() {
   const nearby = { x: 0.3, z: 0.3 };
   const result = gathering.tryGather({ x: 0, z: 0 }, nearby);
   check("tryGather: rocks yield stone, not wood", result.gathered && result.type === "stone" && res.state.stone > 0 && res.state.wood === 0);
+}
+
+{
+  const res = makeResources();
+  const survival = makeSurvival();
+  const gathering = createGathering({ treeItems: [], rockItems: [], berryItems: [{ x: 0, z: 0 }], resources: res, survival });
+  const nearby = { x: 0.3, z: 0.3 };
+  const result = gathering.tryGather({ x: 0, z: 0 }, nearby);
+  check("tryGather: a berry bush yields food, restoring hunger not thirst", result.gathered && result.type === "food" && survival.state.hunger > 50 && survival.state.thirst === 50, JSON.stringify({ result, state: survival.state }));
+  check("tryGather: food doesn't touch the building-material pool", res.state.wood === 0 && res.state.stone === 0);
+}
+
+{
+  const survival = makeSurvival();
+  const gathering = createGathering({ treeItems: [], rockItems: [], waterItems: [{ x: 0, z: 0 }], resources: makeResources(), survival });
+  const nearby = { x: 0.3, z: 0.3 };
+  const result = gathering.tryGather({ x: 0, z: 0 }, nearby);
+  check("tryGather: a pool of water yields water, restoring thirst not hunger", result.gathered && result.type === "water" && survival.state.thirst > 50 && survival.state.hunger === 50, JSON.stringify({ result, state: survival.state }));
 }
 
 {

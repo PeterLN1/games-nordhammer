@@ -61,6 +61,22 @@
     font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
   }
 
+  /* Health/hunger/thirst — always visible, same reasoning as
+     .resources-hud: the player needs to see these draining without
+     having to open a panel first. */
+  .survival-hud {
+    display: flex; flex-direction: column; gap: 5px; width: 132px;
+    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
+    padding: 7px 10px; border-radius: 14px; backdrop-filter: blur(6px);
+  }
+  .survival-row { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .survival-bar { flex: 1; height: 6px; border-radius: 4px; background: rgba(255,255,255,.14); overflow: hidden; }
+  .survival-bar-fill { height: 100%; border-radius: 4px; transition: width .3s ease; }
+  .survival-bar-fill.health { background: #e0665a; }
+  .survival-bar-fill.hunger { background: #c98a3f; }
+  .survival-bar-fill.thirst { background: #4a90c9; }
+  .survival-row.cold .survival-bar-fill.health { background: #8fc7e0; } /* tints icy while cold is actively draining health */
+
   /* Pops in right after a successful gather tap, fades back out — the
      confirmation that a tap actually did something and what it gave. */
   .gather-toast {
@@ -132,6 +148,20 @@
   #buildRotate { flex: 0 0 auto; padding: 10px 16px; }
   #buildConfirm { background: #ffb14a; color: #241505; border-color: transparent; }
   #buildConfirm:disabled { background: rgba(255,255,255,.1); color: rgba(242,238,224,.4); }
+
+  .death-overlay {
+    position: fixed; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(9,5,16,.9); backdrop-filter: blur(4px);
+  }
+  .death-overlay.hidden { display: none; }
+  .death-card { text-align: center; padding: 0 28px; }
+  .death-title { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
+  .death-message { font-size: 14px; color: rgba(242,238,224,.8); margin-bottom: 22px; }
+  #deathRestart {
+    font-size: 14px; font-weight: 700; padding: 11px 22px; border-radius: 999px;
+    border: none; background: #ffb14a; color: #241505;
+  }
 </style>
 </head>
 <body>
@@ -144,6 +174,20 @@
         <span>🪵 <span id="resWoodHud">0</span></span>
         <span>🪨 <span id="resStoneHud">0</span></span>
         <span>🌾 <span id="resGrassHud">0</span></span>
+      </div>
+      <div class="survival-hud" id="survivalHud">
+        <div class="survival-row" id="healthRow">
+          <span>❤️</span>
+          <div class="survival-bar"><div class="survival-bar-fill health" id="healthBar"></div></div>
+        </div>
+        <div class="survival-row">
+          <span>🍗</span>
+          <div class="survival-bar"><div class="survival-bar-fill hunger" id="hungerBar"></div></div>
+        </div>
+        <div class="survival-row">
+          <span>💧</span>
+          <div class="survival-bar"><div class="survival-bar-fill thirst" id="thirstBar"></div></div>
+        </div>
       </div>
     </div>
     <div class="hud-right">
@@ -173,6 +217,14 @@
       <button id="buildCancel">✕ Avbryt</button>
       <button id="buildRotate">↻ Rotera</button>
       <button id="buildConfirm" disabled>✓ Bygg</button>
+    </div>
+  </div>
+
+  <div class="death-overlay hidden" id="deathOverlay">
+    <div class="death-card">
+      <div class="death-title">Du dog</div>
+      <div class="death-message" id="deathMessage"></div>
+      <button id="deathRestart">↺ Börja om</button>
     </div>
   </div>
 
