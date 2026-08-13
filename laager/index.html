@@ -36,6 +36,8 @@
   }
   .hud-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; }
   .hud-right > * { pointer-events: auto; }
+  .hud-left { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
+  .hud-left > * { pointer-events: auto; }
   .hud-reset {
     font-size: 12px; font-weight: 600; color: #f2eee0;
     background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
@@ -48,6 +50,29 @@
     font-size: 11px; font-variant-numeric: tabular-nums;
   }
   .daynight input[type=range] { width: 84px; height: 16px; accent-color: #ffb14a; }
+
+  /* Always-visible resource count — the build panel's own copy only
+     shows while build mode is open, but the player should be able to
+     see what they've gathered any time. */
+  .resources-hud {
+    display: flex; gap: 10px;
+    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
+    padding: 6px 12px; border-radius: 999px; backdrop-filter: blur(6px);
+    font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+
+  /* Pops in right after a successful gather tap, fades back out — the
+     confirmation that a tap actually did something and what it gave. */
+  .gather-toast {
+    position: fixed; left: 50%; top: max(64px, calc(env(safe-area-inset-top) + 64px));
+    transform: translateX(-50%) translateY(-4px);
+    z-index: 7; pointer-events: none;
+    font-size: 14px; font-weight: 700; color: #ffe9b0;
+    background: rgba(20,13,36,.75); border: 1px solid rgba(255,255,255,.2);
+    padding: 6px 14px; border-radius: 999px; backdrop-filter: blur(6px);
+    opacity: 0; transition: opacity .2s ease, transform .2s ease;
+  }
+  .gather-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   .hint {
     position: fixed; left: 50%; bottom: max(22px, env(safe-area-inset-bottom));
@@ -113,7 +138,14 @@
   <div id="app"></div>
 
   <div class="hud">
-    <a href="/">← Spel</a>
+    <div class="hud-left">
+      <a href="/">← Spel</a>
+      <div class="resources-hud" id="resourcesHud">
+        <span>🪵 <span id="resWoodHud">0</span></span>
+        <span>🪨 <span id="resStoneHud">0</span></span>
+        <span>🌾 <span id="resGrassHud">0</span></span>
+      </div>
+    </div>
     <div class="hud-right">
       <h1>Läger · 3D-demo</h1>
       <button class="hud-reset" id="resetGame" aria-label="Börja om från början">↺ Börja om</button>
@@ -124,6 +156,7 @@
       </div>
     </div>
   </div>
+  <div class="gather-toast" id="gatherToast"></div>
   <div class="hint" id="hint">Tryck för att gå dit · dra för att rotera · nyp för att zooma</div>
   <div class="fps" id="fps"></div>
 

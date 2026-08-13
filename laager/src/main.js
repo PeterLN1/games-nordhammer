@@ -44,6 +44,10 @@ const buildConfirmBtn = document.getElementById("buildConfirm");
 const resWoodEl = document.getElementById("resWood");
 const resStoneEl = document.getElementById("resStone");
 const resGrassEl = document.getElementById("resGrass");
+const resWoodHudEl = document.getElementById("resWoodHud");
+const resStoneHudEl = document.getElementById("resStoneHud");
+const resGrassHudEl = document.getElementById("resGrassHud");
+const gatherToastEl = document.getElementById("gatherToast");
 const resetBtn = document.getElementById("resetGame");
 const dayNightSlider = document.getElementById("dayNightSlider");
 const dayNightIcon = document.getElementById("dayNightIcon");
@@ -140,7 +144,23 @@ resources.subscribe(({ wood, stone, grass }) => {
   resWoodEl.textContent = wood;
   resStoneEl.textContent = stone;
   resGrassEl.textContent = grass;
+  resWoodHudEl.textContent = wood;
+  resStoneHudEl.textContent = stone;
+  resGrassHudEl.textContent = grass;
 });
+
+const GATHER_ICON = { wood: "🪵", stone: "🪨" };
+let gatherToastTimer = null;
+
+// Pops the "+N 🪵" toast in and schedules its fade-out — restarting the
+// timer on every call so a quick run of taps keeps it visible instead of
+// having it flicker out mid-streak.
+function showGatherToast(type, amount) {
+  gatherToastEl.textContent = `+${amount} ${GATHER_ICON[type]}`;
+  gatherToastEl.classList.add("show");
+  clearTimeout(gatherToastTimer);
+  gatherToastTimer = setTimeout(() => gatherToastEl.classList.remove("show"), 800);
+}
 
 function costLabel(cost) {
   const parts = [];
@@ -277,8 +297,12 @@ createTouchControls(renderer, camera, tapTargets, {
     if (gathered) {
       const gy = terrainHeight(gathered.x, gathered.z);
       marker.show(gathered.x, gy, gathered.z);
-      if (gathered.gathered) saveGame();
-      else player.moveTo(gathered.x, gathered.z);
+      if (gathered.gathered) {
+        showGatherToast(gathered.type, gathered.amount);
+        saveGame();
+      } else {
+        player.moveTo(gathered.x, gathered.z);
+      }
       hint.classList.add("hidden");
       return;
     }

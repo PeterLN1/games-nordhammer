@@ -1,9 +1,13 @@
 // The player wakes up with nothing (see core/resources.js) — this is
 // where wood/stone actually enter the resource pool: tapping a nearby
-// tree or rock. No node depletion yet (a tree never "runs out" — it's
-// just on a short per-node cooldown so one held finger can't spam a
-// single tree for infinite wood), and no fiber/grass source yet, both
-// intentional simplifications to revisit once this needs more depth.
+// tree or rock. "Stone" here is loose stones/pebbles lying around the
+// rock, not the boulder itself — nobody's quarrying bare-handed, they're
+// just picking up what's already on the ground, which is also why it's
+// a smaller yield than wood (see STONE_PER_GATHER below). No node
+// depletion yet (a tree/rock never "runs out" — it's just on a short
+// per-node cooldown so one held finger can't spam a single node for
+// infinite resources), and no fiber/grass source yet, both intentional
+// simplifications to revisit once this needs more depth.
 
 const TAP_RADIUS = 1.1; // how close a tap must land to a tree/rock to count as aiming at it, not the ground past it
 const GATHER_RANGE = 2.0; // how close the player must actually be standing to gather (vs. just walking closer)
