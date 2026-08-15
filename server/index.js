@@ -160,6 +160,14 @@ if (DATABASE_URL) {
         );
         return r.rows;
       },
+      // Ogiltigförklarar en giv i efterhand (t.ex. en daglig Ordlek-runda
+      // som backades och gjordes om) — tar bort alla resultat för den
+      // specifika seeden så de inte blockerar en omspelning eller blandas
+      // ihop med den nya rundan i topplistan/maratontabellen.
+      async removeScoresBySeed(seed) {
+        const r = await pool.query('delete from scores where seed=$1', [seed]);
+        return r.rowCount;
+      },
       // Ordlek-maraton: en rad per spelare och dag (bästa resultatet den
       // dagen), för computeMarathon() att räkna golfpoäng på.
       async marathon(seasonStart, seasonEnd) {
@@ -253,6 +261,13 @@ if (DATABASE_URL) {
         if (!best[x.name] || x.seconds < best[x.name].seconds) best[x.name] = { name: x.name, seconds: x.seconds, moves: x.moves };
       });
       return Object.values(best).sort((a, b) => a.seconds - b.seconds).slice(0, limit);
+    },
+    async removeScoresBySeed(seed) {
+      let removed = 0;
+      for (let i = mem.length - 1; i >= 0; i--) {
+        if (mem[i].seed === seed) { mem.splice(i, 1); removed++; }
+      }
+      return removed;
     },
     async marathon(seasonStart, seasonEnd) {
       const from = 'ordlek:' + seasonStart, to = 'ordlek:' + seasonEnd;
@@ -453,6 +468,23 @@ app.delete('/api/profiles/:id', async (req, res) => {
   try {
     await store.removeProfile(id);
     res.json({ ok: true });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'databasfel' });
+  }
+});
+
+// Ogiltigförklarar en giv i efterhand — t.ex. en daglig Ordlek-runda som
+// backades och gjordes om för att dagens ord var olämpligt. Tar bort ALLA
+// resultat för den angivna seeden. Samma öppna förtroendemodell som
+// resten av API:t (ingen auth) — se säkerhetsdiskussionen i README/planen.
+app.delete('/api/scores', async (req, res) => {
+  if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
+  const seedRaw = req.query.seed;
+  const seed = (typeof seedRaw === 'string' && seedRaw.length > 0 && seedRaw.length <= 300) ? seedRaw : null;
+  if (!seed) return res.status(400).json({ error: 'seed kravs' });
+  try {
+    const removed = await store.removeScoresBySeed(seed);
+    res.json({ ok: true, removed });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'databasfel' });
   }

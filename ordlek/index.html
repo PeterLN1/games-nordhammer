@@ -245,10 +245,11 @@
     '2026-08-12': 'saker',
     '2026-08-13': 'hitta',
     '2026-08-14': 'major',
-    // "cover" var redan dagens ord innan den här listrensningen — låst kvar
-    // så ingen som redan börjat spela idag får det bytt under sig. Ordet
-    // plockas bort ur listan så det inte kan bli dagens ord igen.
-    '2026-08-15': 'cover'
+    // 15/8 backades och gavs om — "cover" dög inte (inget svenskt ord).
+    // Se nedan: state.answer jämförs mot detta värde vid varje sidladdning,
+    // så alla enheter (inkl. de som redan hann spela "cover") får automatiskt
+    // ett nytt, tomt bräde nästa gång de öppnar sidan — inget manuellt behövs.
+    '2026-08-15': 'gurka'
   };
   function dailyAnswer(dateStr){
     if(ORDLEK_DAILY_OVERRIDES[dateStr]) return ORDLEK_DAILY_OVERRIDES[dateStr];
@@ -317,6 +318,12 @@
   /* ---------- Spelläge ---------- */
   var today = todayIso();
   var state = loadGame(today);
+  // Om dagens ord bytts ut i efterhand (t.ex. ett olämpligt ord upptäcktes
+  // och dagen backades, se ORDLEK_DAILY_OVERRIDES) matchar ett redan sparat
+  // lokalt läge inte längre det riktiga ordet — ogiltigt, kasta det så
+  // spelaren automatiskt får ett nytt, tomt bräde utan att behöva göra
+  // något manuellt.
+  if(state && state.answer !== dailyAnswer(today)) state = null;
   var wasFreshState = !state; // avgör om vi ska fråga servern om profilen redan spelat idag (se Start)
   if(!state){
     state = { date: today, answer: dailyAnswer(today), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: false };
