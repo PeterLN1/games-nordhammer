@@ -242,7 +242,13 @@
     '2026-08-09': 'havre',
     '2026-08-10': 'slant',
     '2026-08-11': 'solig',
-    '2026-08-12': 'saker'
+    '2026-08-12': 'saker',
+    '2026-08-13': 'hitta',
+    '2026-08-14': 'major',
+    // "cover" var redan dagens ord innan den här listrensningen — låst kvar
+    // så ingen som redan börjat spela idag får det bytt under sig. Ordet
+    // plockas bort ur listan så det inte kan bli dagens ord igen.
+    '2026-08-15': 'cover'
   };
   function dailyAnswer(dateStr){
     if(ORDLEK_DAILY_OVERRIDES[dateStr]) return ORDLEK_DAILY_OVERRIDES[dateStr];
