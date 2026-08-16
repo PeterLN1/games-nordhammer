@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#eef1f9" data-light="#eef1f9" data-dark="#0b1020">
+<title>Var är jag?</title>
+<script src="/shared/theme.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root {
+    --bg: radial-gradient(120% 90% at 50% 0%, #eef1f9 0%, #e3e8f4 100%);
+    --chrome: rgba(0,0,0,.06);
+    --ink: #1b2138;
+    --muted: rgba(27,33,56,.6);
+    --key-bg: rgba(27,33,56,.10);
+    --panel-bg: #ffffff;
+    --accent: #ffb300;
+    --accent-ink: #1a1200;
+    --good: #3aa65a;
+    --bad: #c94b4b;
+    --line: rgba(27,33,56,.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --bg: radial-gradient(120% 90% at 50% 0%, #16224a 0%, #0b1020 60%, #070a15 100%);
+      --chrome: rgba(0,0,0,.35);
+      --ink: #eef2ff;
+      --muted: rgba(238,242,255,.6);
+      --key-bg: rgba(238,242,255,.12);
+      --panel-bg: #141a33;
+      --line: rgba(238,242,255,.18);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: radial-gradient(120% 90% at 50% 0%, #16224a 0%, #0b1020 60%, #070a15 100%);
+    --chrome: rgba(0,0,0,.35);
+    --ink: #eef2ff;
+    --muted: rgba(238,242,255,.6);
+    --key-bg: rgba(238,242,255,.12);
+    --panel-bg: #141a33;
+    --line: rgba(238,242,255,.18);
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #0b1020;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    touch-action: manipulation; overscroll-behavior: none;
+  }
+  #app { position: relative; height: 100dvh; width: 100%; background: var(--bg); }
+
+  header {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 20;
+    display: flex; align-items: center; gap: 10px;
+    padding: max(6px, env(safe-area-inset-top)) 12px 6px;
+    background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,0));
+    pointer-events: none;
+  }
+  header > * { pointer-events: auto; }
+  header .back {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 10px; text-decoration: none;
+    color: #fff; background: rgba(0,0,0,.35); font-size: 18px; line-height: 1;
+    border: none; cursor: pointer; font-family: inherit;
+  }
+  header .back:active { background: rgba(255,179,0,.4); }
+  header .info {
+    display: flex; gap: 10px; align-items: center; color: #fff;
+    font-size: 13px; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,.6);
+  }
+  header .pill {
+    background: rgba(0,0,0,.35); border-radius: 999px; padding: 5px 12px;
+  }
+  header .spacer { flex: 1; }
+
+  #pano { position: absolute; inset: 0; background: #000; }
+
+  /* --- guess map (corner + expanded) --- */
+  #guessWrap {
+    position: absolute; z-index: 30;
+    right: 14px; bottom: 14px;
+    width: 190px; height: 140px;
+    border-radius: 12px; overflow: hidden;
+    border: 2px solid rgba(255,255,255,.5);
+    box-shadow: 0 6px 24px rgba(0,0,0,.4);
+    transition: all .2s ease;
+    cursor: pointer;
+  }
+  #guessWrap.expanded {
+    right: 16px; bottom: 16px; left: 16px; top: 16px;
+    width: auto; height: auto;
+    border-radius: 16px;
+    cursor: default;
+  }
+  #guessMap { position: absolute; inset: 0; }
+  #guessHint {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 1000;
+    text-align: center; font-size: 11px; padding: 4px; color: #fff;
+    background: rgba(0,0,0,.5); pointer-events: none;
+  }
+  #guessWrap.expanded #guessHint { font-size: 13px; padding: 8px; }
+
+  #guessBar {
+    position: absolute; z-index: 1000; left: 50%; bottom: 16px; transform: translateX(-50%);
+    display: none;
+  }
+  #guessWrap.expanded #guessBar { display: block; }
+  #guessBar button {
+    font-family: inherit; font-weight: 800; font-size: 15px;
+    padding: 12px 28px; border-radius: 999px; border: none;
+    background: var(--accent); color: var(--accent-ink); cursor: pointer;
+    box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  }
+  #guessBar button:disabled { opacity: .4; cursor: default; }
+
+  /* --- overlays --- */
+  .overlay {
+    position: absolute; inset: 0; z-index: 50;
+    background: rgba(0,0,0,.6);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .hidden { display: none !important; }
+  .panel {
+    background: var(--panel-bg); color: var(--ink); border-radius: 16px;
+    padding: 22px; max-width: 420px; width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    text-align: center;
+  }
+  .panel h2 { margin: 0 0 6px; font-size: 20px; }
+  .panel p { margin: 6px 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .panel .big { font-size: 15px; color: var(--ink); font-weight: 700; }
+  .panel .score { font-size: 40px; font-weight: 800; margin: 10px 0 2px; color: var(--accent); }
+  .panel .resultmap { width: 100%; height: 200px; border-radius: 12px; margin: 14px 0; overflow: hidden; }
+  .panel button.primary {
+    font-family: inherit; font-weight: 800; font-size: 15px; margin-top: 10px;
+    padding: 12px 26px; border-radius: 999px; border: none; width: 100%;
+    background: var(--accent); color: var(--accent-ink); cursor: pointer;
+  }
+  .panel button.ghost {
+    font-family: inherit; font-weight: 700; font-size: 14px; margin-top: 8px;
+    padding: 10px 20px; border-radius: 999px; border: none; width: 100%;
+    background: var(--key-bg); color: var(--ink); cursor: pointer;
+  }
+  .roundtable { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; text-align: left; }
+  .roundtable th, .roundtable td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  .roundtable th { color: var(--muted); font-weight: 600; }
+  .spinner {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid var(--key-bg); border-top-color: var(--accent);
+    margin: 0 auto 14px; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .setup a { color: var(--accent); }
+  .setup code {
+    background: var(--key-bg); padding: 2px 6px; border-radius: 6px; font-size: 12.5px;
+  }
+</style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <a class="back" href="/" aria-label="Till startsidan">‹</a>
+      <div class="spacer"></div>
+      <div class="info">
+        <span class="pill" id="roundPill">Runda 1/5</span>
+        <span class="pill" id="scorePill">Poäng: 0</span>
+      </div>
+    </header>
+
+    <div id="pano"></div>
+
+    <div id="guessWrap">
+      <div id="guessMap"></div>
+      <div id="guessHint">Tryck för att gissa på kartan</div>
+      <div id="guessBar"><button id="lockGuessBtn" disabled>Lås gissning</button></div>
+    </div>
+
+    <!-- Laddar / fel -->
+    <div class="overlay" id="loadingOverlay">
+      <div class="panel">
+        <div class="spinner"></div>
+        <p id="loadingText">Laddar Street View…</p>
+      </div>
+    </div>
+
+    <!-- Konfig saknas -->
+    <div class="overlay hidden" id="setupOverlay">
+      <div class="panel setup">
+        <h2>Konfiguration saknas</h2>
+        <p>Spelet behöver en Google Maps API-nyckel för att visa Street View.</p>
+        <p>Öppna <code>streetview/config.js</code> och ersätt platshållaren med din egen nyckel. Se <code>streetview/README.md</code> för steg-för-steg-instruktioner.</p>
+        <a class="back" href="/" style="position:static;display:inline-flex;margin-top:10px;color:var(--ink);background:var(--key-bg);border-radius:999px;padding:10px 20px;width:auto;height:auto;text-decoration:none;">Till startsidan</a>
+      </div>
+    </div>
+
+    <!-- Rundresultat -->
+    <div class="overlay hidden" id="resultOverlay">
+      <div class="panel">
+        <h2 id="resultTitle">Resultat</h2>
+        <div class="score" id="resultPoints">0 p</div>
+        <p class="big" id="resultDistance"></p>
+        <div class="resultmap" id="resultMap"></div>
+        <button class="primary" id="nextRoundBtn">Nästa runda →</button>
+      </div>
+    </div>
+
+    <!-- Slutresultat -->
+    <div class="overlay hidden" id="finalOverlay">
+      <div class="panel">
+        <h2>Spelet klart!</h2>
+        <div class="score" id="finalScore">0 p</div>
+        <p>av max <span id="finalMax">0</span> poäng</p>
+        <table class="roundtable">
+          <thead><tr><th>Runda</th><th>Plats</th><th>Avstånd</th><th>Poäng</th></tr></thead>
+          <tbody id="roundBody"></tbody>
+        </table>
+        <button class="primary" id="playAgainBtn">Spela igen</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/streetview/config.js"></script>
+  <script src="/streetview/locations.js"></script>
+  <script>
+  (function(){
+    "use strict";
+
+    var TOTAL_ROUNDS = 5;
+    var results = []; // { name, distanceKm, points, actual: {lat,lng}, guess: {lat,lng} }
+    var usedIndexes = new Set();
+    var currentRound = 0;
+    var currentTarget = null; // { name, lat, lng, pano }
+    var totalScore = 0;
+
+    var guessMap, guessMarker, guessLayerGroup;
+    var resultMapInstance = null;
+    var panorama = null;
+
+    var loadingOverlay = document.getElementById('loadingOverlay');
+    var loadingText = document.getElementById('loadingText');
+    var setupOverlay = document.getElementById('setupOverlay');
+    var resultOverlay = document.getElementById('resultOverlay');
+    var finalOverlay = document.getElementById('finalOverlay');
+    var guessWrap = document.getElementById('guessWrap');
+    var lockGuessBtn = document.getElementById('lockGuessBtn');
+    var roundPill = document.getElementById('roundPill');
+    var scorePill = document.getElementById('scorePill');
+
+    function shuffle(arr){
+      for (var i = arr.length - 1; i > 0; i--){
+        var j = Math.floor(Math.random() * (i + 1));
+        var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+      }
+      return arr;
+    }
+
+    function distKm(lat1, lng1, lat2, lng2){
+      var R = 6371;
+      var dLat = (lat2 - lat1) * Math.PI / 180;
+      var dLng = (lng2 - lng1) * Math.PI / 180;
+      var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng/2) * Math.sin(dLng/2);
+      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function pointsForDistance(km){
+      if (km < 0.05) return 5000;
+      var p = Math.round(5000 * Math.exp(-km / 2000));
+      return Math.max(0, Math.min(5000, p));
+    }
+
+    function fmtKm(km){
+      if (km < 1) return Math.round(km * 1000) + " m";
+      if (km < 10) return km.toFixed(1) + " km";
+      return Math.round(km) + " km";
+    }
+
+    // ---- Guess map (Leaflet, no API key needed) ----
+    function initGuessMap(){
+      guessMap = L.map('guessMap', {
+        zoomControl: false,
+        attributionControl: false,
+        worldCopyJump: true
+      }).setView([20, 10], 2);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '© OpenStreetMap'
+      }).addTo(guessMap);
+      L.control.attribution({ prefix: false }).addTo(guessMap);
+      guessLayerGroup = L.layerGroup().addTo(guessMap);
+
+      guessWrap.addEventListener('click', function(e){
+        if (!guessWrap.classList.contains('expanded')){
+          guessWrap.classList.add('expanded');
+          setTimeout(function(){ guessMap.invalidateSize(); }, 210);
+        }
+      });
+
+      guessMap.on('click', function(e){
+        if (!guessWrap.classList.contains('expanded')) return;
+        setGuessMarker(e.latlng.lat, e.latlng.lng);
+      });
+
+      lockGuessBtn.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        lockGuess();
+      });
+    }
+
+    function setGuessMarker(lat, lng){
+      guessLayerGroup.clearLayers();
+      guessMarker = L.circleMarker([lat, lng], {
+        radius: 9, color: '#fff', weight: 2, fillColor: '#4a90e2', fillOpacity: 1
+      }).addTo(guessLayerGroup);
+      lockGuessBtn.disabled = false;
+    }
+
+    function resetGuessMap(){
+      guessWrap.classList.remove('expanded');
+      guessMarker = null;
+      if (guessLayerGroup) guessLayerGroup.clearLayers();
+      lockGuessBtn.disabled = true;
+      if (guessMap) guessMap.setView([20, 10], 2);
+    }
+
+    // ---- Street View ----
+    function loadGoogleMaps(){
+      return new Promise(function(resolve, reject){
+        if (window.google && window.google.maps){ resolve(); return; }
+        window.__svReady = function(){ resolve(); };
+        var s = document.createElement('script');
+        s.src = 'https://maps.googleapis.com/maps/api/js?key=' +
+          encodeURIComponent(window.STREETVIEW_CONFIG.apiKey) +
+          '&callback=__svReady&loading=async';
+        s.async = true;
+        s.onerror = function(){ reject(new Error('load-failed')); };
+        document.head.appendChild(s);
+      });
+    }
+
+    function resolvePanorama(loc, radius){
+      return new Promise(function(resolve){
+        var svc = new google.maps.StreetViewService();
+        svc.getPanorama({
+          location: { lat: loc.lat, lng: loc.lng },
+          radius: radius,
+          source: google.maps.StreetViewSource.OUTDOOR
+        }, function(data, status){
+          if (status === google.maps.StreetViewStatus.OK){
+            resolve({
+              ok: true,
+              pano: data.location.pano,
+              lat: data.location.latLng.lat(),
+              lng: data.location.latLng.lng()
+            });
+          } else {
+            resolve({ ok: false });
+          }
+        });
+      });
+    }
+
+    async function findRoundLocation(){
+      var indexes = [];
+      for (var i = 0; i < window.STREETVIEW_LOCATIONS.length; i++){
+        if (!usedIndexes.has(i)) indexes.push(i);
+      }
+      shuffle(indexes);
+      for (var k = 0; k < indexes.length; k++){
+        var idx = indexes[k];
+        var loc = window.STREETVIEW_LOCATIONS[idx];
+        var res = await resolvePanorama(loc, 50000);
+        if (!res.ok) res = await resolvePanorama(loc, 200000);
+        if (res.ok){
+          usedIndexes.add(idx);
+          return { name: loc.name, lat: res.lat, lng: res.lng, pano: res.pano };
+        }
+      }
+      return null;
+    }
+
+    function renderPanorama(target){
+      panorama = new google.maps.StreetViewPanorama(document.getElementById('pano'), {
+        pano: target.pano,
+        addressControl: false,
+        showRoadLabels: true,
+        linksControl: true,
+        panControl: true,
+        zoomControl: true,
+        fullscreenControl: false,
+        motionTracking: false,
+        motionTrackingControl: false
+      });
+    }
+
+    // ---- Round flow ----
+    async function startRound(){
+      currentRound++;
+      roundPill.textContent = 'Runda ' + currentRound + '/' + TOTAL_ROUNDS;
+      resetGuessMap();
+      loadingText.textContent = 'Laddar plats…';
+      loadingOverlay.classList.remove('hidden');
+
+      var target = await findRoundLocation();
+      if (!target){
+        loadingText.textContent = 'Hittade ingen plats med Street View just nu. Försök igen.';
+        return;
+      }
+      currentTarget = target;
+      renderPanorama(target);
+      loadingOverlay.classList.add('hidden');
+    }
+
+    function lockGuess(){
+      if (!guessMarker) return;
+      var g = guessMarker.getLatLng();
+      var km = distKm(g.lat, g.lng, currentTarget.lat, currentTarget.lng);
+      var pts = pointsForDistance(km);
+      totalScore += pts;
+      results.push({
+        name: currentTarget.name,
+        distanceKm: km,
+        points: pts,
+        actual: { lat: currentTarget.lat, lng: currentTarget.lng },
+        guess: { lat: g.lat, lng: g.lng }
+      });
+      scorePill.textContent = 'Poäng: ' + totalScore;
+      showRoundResult(results[results.length - 1]);
+    }
+
+    function showRoundResult(r){
+      document.getElementById('resultTitle').textContent = r.name;
+      document.getElementById('resultPoints').textContent = r.points + ' p';
+      document.getElementById('resultDistance').textContent =
+        'Din gissning var ' + fmtKm(r.distanceKm) + ' från rätt plats';
+      resultOverlay.classList.remove('hidden');
+
+      if (resultMapInstance){ resultMapInstance.remove(); resultMapInstance = null; }
+      resultMapInstance = L.map('resultMap', { attributionControl: false, zoomControl: false });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(resultMapInstance);
+      var actualMarker = L.circleMarker([r.actual.lat, r.actual.lng], {
+        radius: 8, color: '#fff', weight: 2, fillColor: '#c94b4b', fillOpacity: 1
+      }).addTo(resultMapInstance);
+      var guessMarkerR = L.circleMarker([r.guess.lat, r.guess.lng], {
+        radius: 8, color: '#fff', weight: 2, fillColor: '#4a90e2', fillOpacity: 1
+      }).addTo(resultMapInstance);
+      var line = L.polyline([[r.actual.lat, r.actual.lng], [r.guess.lat, r.guess.lng]], {
+        color: '#ffb300', weight: 2, dashArray: '5,6'
+      }).addTo(resultMapInstance);
+      resultMapInstance.fitBounds(line.getBounds(), { padding: [30, 30] });
+    }
+
+    document.getElementById('nextRoundBtn').addEventListener('click', function(){
+      resultOverlay.classList.add('hidden');
+      if (currentRound >= TOTAL_ROUNDS){
+        showFinal();
+      } else {
+        startRound();
+      }
+    });
+
+    function showFinal(){
+      var body = document.getElementById('roundBody');
+      body.innerHTML = '';
+      results.forEach(function(r, i){
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + (i+1) + '</td><td>' + r.name + '</td><td>' +
+          fmtKm(r.distanceKm) + '</td><td>' + r.points + '</td>';
+        body.appendChild(tr);
+      });
+      document.getElementById('finalScore').textContent = totalScore + ' p';
+      document.getElementById('finalMax').textContent = (TOTAL_ROUNDS * 5000) + ' p';
+      finalOverlay.classList.remove('hidden');
+    }
+
+    document.getElementById('playAgainBtn').addEventListener('click', function(){
+      results = [];
+      usedIndexes = new Set();
+      currentRound = 0;
+      totalScore = 0;
+      scorePill.textContent = 'Poäng: 0';
+      finalOverlay.classList.add('hidden');
+      startRound();
+    });
+
+    // ---- Boot ----
+    async function boot(){
+      var key = window.STREETVIEW_CONFIG && window.STREETVIEW_CONFIG.apiKey;
+      if (!key || key.indexOf('DIN_') === 0){
+        loadingOverlay.classList.add('hidden');
+        setupOverlay.classList.remove('hidden');
+        guessWrap.classList.add('hidden');
+        document.querySelector('header .info').classList.add('hidden');
+        return;
+      }
+      initGuessMap();
+      try {
+        await loadGoogleMaps();
+      } catch (e){
+        loadingText.textContent = 'Kunde inte ladda Google Maps. Kontrollera API-nyckeln i config.js.';
+        return;
+      }
+      startRound();
+    }
+
+    boot();
+  })();
+  </script>
+</body>
+</html>
