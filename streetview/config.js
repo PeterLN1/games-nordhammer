@@ -10,5 +10,5 @@
 //   - Maps JavaScript API
 //   - Street View Static API (används implicit av panorama-visningen)
 window.STREETVIEW_CONFIG = {
-  apiKey: "DIN_GOOGLE_MAPS_API_NYCKEL"
+  apiKey: "AIzaSyDzHicZYe-2x8kxubuduv8zazqVLA22h0Y"
 };
