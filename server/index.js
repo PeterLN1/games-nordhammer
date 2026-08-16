@@ -394,6 +394,37 @@ app.get('/api/marathon', async (req, res) => {
   }
 });
 
+// Hall of fame: fullständig slutställning för varje AVSLUTAD tidigare
+// kalendermånad (inte innevarande, ofärdiga månaden). Går bakåt månad för
+// månad tills vi passerar ORDLEK_SEASON_START; hoppar över månader ingen
+// spelat (rows.length === 0) så listan inte fylls med tomma poster.
+app.get('/api/marathon/history', async (req, res) => {
+  if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
+  const today = new Date().toISOString().slice(0, 10);
+  const seasonStartMonth = ORDLEK_SEASON_START.slice(0, 7);
+  const months = [];
+  try {
+    let cursor = today.slice(0, 7); // 'YYYY-MM', innevarande månad
+    while (true) {
+      const y = +cursor.slice(0, 4), m = +cursor.slice(5, 7);
+      const prevY = m === 1 ? y - 1 : y;
+      const prevM = m === 1 ? 12 : m - 1;
+      cursor = prevY + '-' + String(prevM).padStart(2, '0');
+      if (cursor < seasonStartMonth) break;
+      const { start, end } = seasonBoundsFor(cursor + '-01');
+      const dates = dateRange(start, end);
+      const raw = await store.marathon(start, end);
+      const rows = computeMarathon(raw, dates);
+      if (rows.length) {
+        months.push({ month: cursor, seasonStart: start, seasonEnd: end, champion: rows[0], rows: rows.slice(0, 10) });
+      }
+    }
+    res.json({ months });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'databasfel' });
+  }
+});
+
 // Delade profiler ("Vem spelar?") — samma öppna förtroendemodell som
 // scores: ingen inloggning, id genereras och skickas av klienten
 // (shared/profile.js). Se planen i .claude/plans för bakgrund.

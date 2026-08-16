@@ -77,11 +77,6 @@
   header .back:active, header .icon-btn:active { background: rgba(255,179,0,.3); }
   header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
   header .spacer { flex: 1; }
-  select {
-    font-family: inherit; font-size: 13px; color: var(--ink);
-    background: var(--key-bg); border: none; border-radius: 8px;
-    padding: 7px 26px 7px 10px; -webkit-appearance: none; appearance: none;
-  }
 
   #dayInfo {
     flex: 0 0 auto; text-align: center; font-size: 12.5px; color: var(--muted);
@@ -172,6 +167,8 @@
   .lb-time { font-variant-numeric: tabular-nums; color: var(--muted); }
   .lb-guesses { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; font-weight: 700; background: var(--key-bg); padding: 2px 6px; border-radius: 6px; }
   .lb-empty { color: var(--muted); font-size: 13px; padding: 6px 2px; text-align: left; }
+  button.lb-history-row { width: 100%; border: none; background: none; font-family: inherit; cursor: pointer; color: var(--ink); }
+  .lb-hof-month { font-weight: 400; color: var(--muted); font-size: 12.5px; }
   .lb-entry { display: flex; gap: 8px; text-align: left; }
   .lb-input {
     flex: 1; padding: 11px 12px; border-radius: 9px; border: none;
@@ -199,15 +196,9 @@
       <div class="spacer"></div>
       <button class="icon-btn" id="btnProfile" aria-label="Byt profil"></button>
       <button class="icon-btn" id="btnMarathon" aria-label="Maratontabell">🏁</button>
+      <button class="icon-btn" id="btnHistory" aria-label="Historik">🗓️</button>
       <button class="icon-btn" id="btnStats" aria-label="Statistik">📊</button>
       <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
-      <label class="theme-ctl">
-        <select data-theme-control aria-label="Tema">
-          <option value="auto">Auto</option>
-          <option value="light">Ljust</option>
-          <option value="dark">Mörkt</option>
-        </select>
-      </label>
     </header>
     <div id="dayInfo"></div>
     <div id="boardWrap"><div id="board"></div></div>
@@ -262,6 +253,9 @@
   var SV_MONTHS = ['januari','februari','mars','april','maj','juni','juli','augusti','september','oktober','november','december'];
   function formatDateSv(iso){
     var p = iso.split('-'); return (+p[2]) + ' ' + (SV_MONTHS[(+p[1])-1] || '') + ' ' + p[0];
+  }
+  function formatMonthSv(monthStr){
+    var p = monthStr.split('-'); return (SV_MONTHS[(+p[1])-1] || '') + ' ' + p[0];
   }
 
   function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
@@ -581,9 +575,12 @@
   /* ---------- Maratontabell ---------- */
   function showMarathonPanel(){
     var panel = document.getElementById('panel');
-    panel.innerHTML = '<h2>🏁 Maratontabell</h2><div id="marList" class="lb-list">Laddar…</div><button id="pClose" class="ghost">Stäng</button>';
+    panel.innerHTML = '<h2>🏁 Maratontabell</h2><div id="marList" class="lb-list">Laddar…</div>' +
+      '<button id="pHof" class="ghost">🏆 Hall of fame</button>' +
+      '<button id="pClose" class="ghost">Stäng</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pClose').onclick = hideOverlay;
+    document.getElementById('pHof').onclick = showHallOfFamePanel;
     var el = document.getElementById('marList');
     var base = apiBase();
     if(!base){ el.textContent = 'Ingen topplista kopplad.'; return; }
@@ -604,6 +601,76 @@
                '<span class="lb-time">'+r.points+' p</span></div>';
       }).join('');
     }).catch(function(){ el.textContent = 'Kunde inte hämta tabellen'; });
+  }
+
+  /* ---------- Hall of fame (tidigare avslutade månaders segrare) ---------- */
+  function showHallOfFamePanel(){
+    var panel = document.getElementById('panel');
+    panel.innerHTML = '<h2>🏆 Hall of fame</h2><div id="hofList" class="lb-list">Laddar…</div>' +
+      '<button id="pBack" class="ghost">Tillbaka</button>';
+    document.getElementById('pBack').onclick = showMarathonPanel;
+    var el = document.getElementById('hofList');
+    var base = apiBase();
+    if(!base){ el.textContent = 'Ingen topplista kopplad.'; return; }
+    fetch(base + '/api/marathon/history').then(function(r){ return r.json(); }).then(function(d){
+      if(d.error){ el.textContent = 'Kunde inte hämta historiken'; return; }
+      if(!d.months || !d.months.length){
+        el.innerHTML = '<div class="lb-empty">Ingen avslutad månad än — kommer efter första hela kalendermånaden.</div>';
+        return;
+      }
+      el.innerHTML = d.months.map(function(m){
+        var monthLabel = formatMonthSv(m.month);
+        return '<div class="lb-row"><span class="lb-rank">🥇</span>' +
+               '<span class="lb-name">'+esc(m.champion.name)+' <span class="lb-hof-month">— '+monthLabel+'</span></span>' +
+               '<span class="lb-time">'+m.champion.points+' p</span></div>';
+      }).join('');
+    }).catch(function(){ el.textContent = 'Kunde inte hämta historiken'; });
+  }
+
+  /* ---------- Historik: bläddra i tidigare dagars ord & resultat ---------- */
+  function pastDates(){
+    var dates = [];
+    for(var d = EPOCH; d < today; d = nextDayStr(d)) dates.push(d);
+    return dates.reverse(); // senaste dagen först
+  }
+  function nextDayStr(dateStr){
+    return new Date(Date.parse(dateStr + 'T00:00:00Z') + 86400000).toISOString().slice(0,10);
+  }
+  function showHistoryPanel(){
+    var panel = document.getElementById('panel');
+    var dates = pastDates();
+    if(!dates.length){
+      panel.innerHTML = '<h2>🗓️ Historik</h2><p>Inga tidigare dagar än — kom tillbaka imorgon!</p><button id="pClose" class="ghost">Stäng</button>';
+      document.getElementById('overlay').classList.add('show');
+      document.getElementById('pClose').onclick = hideOverlay;
+      return;
+    }
+    panel.innerHTML = '<h2>🗓️ Historik</h2>' +
+      '<div class="lb-list">' + dates.map(function(d){
+        return '<button class="lb-row lb-history-row" data-date="'+d+'">' +
+          '<span class="lb-name">Dag #'+dayNumber(d)+'</span>' +
+          '<span class="lb-time">'+formatDateSv(d)+'</span></button>';
+      }).join('') + '</div>' +
+      '<button id="pClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+    Array.prototype.forEach.call(document.querySelectorAll('.lb-history-row'), function(btn){
+      btn.addEventListener('click', function(){ showHistoryDayDetail(btn.getAttribute('data-date')); });
+    });
+  }
+  function showHistoryDayDetail(dateStr){
+    var panel = document.getElementById('panel');
+    panel.innerHTML = '<h2>🗓️ Dag #'+dayNumber(dateStr)+' · '+formatDateSv(dateStr)+'</h2>' +
+      '<p>Ordet var <b>'+esc(dailyAnswer(dateStr).toUpperCase())+'</b>.</p>' +
+      '<div id="histList" class="lb-list">Laddar…</div>' +
+      '<button id="pBack" class="ghost">Tillbaka</button>';
+    document.getElementById('pBack').onclick = showHistoryPanel;
+    var el = document.getElementById('histList');
+    lbFetchBySeed(seedFor(dateStr), function(err, list){
+      if(err){ el.textContent = 'Kunde inte hämta resultatet'; return; }
+      var solved = (list || []).filter(function(s){ return s.moves == null || s.moves <= MAX_GUESSES; });
+      lbRenderList(el, solved, getName());
+    });
   }
 
   /* ---------- Redan spelat idag, på en annan enhet? ----------
@@ -725,6 +792,7 @@
   function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
 
   document.getElementById('btnMarathon').onclick = showMarathonPanel;
+  document.getElementById('btnHistory').onclick = showHistoryPanel;
   document.getElementById('btnStats').onclick = showStatsPanel;
   document.getElementById('btnRules').onclick = showRulesPanel;
   document.getElementById('overlay').addEventListener('click', function(e){ if(e.target.id === 'overlay') hideOverlay(); });
