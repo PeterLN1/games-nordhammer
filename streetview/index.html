@@ -80,43 +80,27 @@
 
   #pano { position: absolute; inset: 0; background: #000; }
 
-  /* --- guess map (corner + expanded) --- */
-  #guessWrap {
-    position: absolute; z-index: 30;
-    right: 14px; bottom: 14px;
-    width: 190px; height: 140px;
-    border-radius: 12px; overflow: hidden;
-    border: 2px solid rgba(255,255,255,.5);
+  /* --- guess bar (country text input) --- */
+  .guessbar {
+    position: absolute; z-index: 30; left: 50%; bottom: max(16px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    display: flex; gap: 8px; align-items: center;
+    background: rgba(0,0,0,.55);
+    padding: 6px 6px 6px 16px; border-radius: 999px;
     box-shadow: 0 6px 24px rgba(0,0,0,.4);
-    transition: all .2s ease;
-    cursor: pointer;
+    max-width: calc(100% - 32px);
   }
-  #guessWrap.expanded {
-    right: 16px; bottom: 16px; left: 16px; top: 16px;
-    width: auto; height: auto;
-    border-radius: 16px;
-    cursor: default;
+  .guessbar input {
+    border: none; background: transparent; color: #fff; font-family: inherit; font-size: 15px;
+    outline: none; width: 220px; max-width: 40vw;
   }
-  #guessMap { position: absolute; inset: 0; }
-  #guessHint {
-    position: absolute; left: 0; right: 0; bottom: 0; z-index: 1000;
-    text-align: center; font-size: 11px; padding: 4px; color: #fff;
-    background: rgba(0,0,0,.5); pointer-events: none;
-  }
-  #guessWrap.expanded #guessHint { font-size: 13px; padding: 8px; }
-
-  #guessBar {
-    position: absolute; z-index: 1000; left: 50%; bottom: 16px; transform: translateX(-50%);
-    display: none;
-  }
-  #guessWrap.expanded #guessBar { display: block; }
-  #guessBar button {
-    font-family: inherit; font-weight: 800; font-size: 15px;
-    padding: 12px 28px; border-radius: 999px; border: none;
+  .guessbar input::placeholder { color: rgba(255,255,255,.6); }
+  .guessbar button {
+    font-family: inherit; font-weight: 800; font-size: 14px;
+    padding: 11px 22px; border-radius: 999px; border: none;
     background: var(--accent); color: var(--accent-ink); cursor: pointer;
-    box-shadow: 0 6px 18px rgba(0,0,0,.35);
   }
-  #guessBar button:disabled { opacity: .4; cursor: default; }
+  .guessbar button:disabled { opacity: .4; cursor: default; }
 
   /* --- overlays --- */
   .overlay {
@@ -133,6 +117,8 @@
     text-align: center;
   }
   .panel h2 { margin: 0 0 6px; font-size: 20px; }
+  .panel h2.good { color: var(--good); }
+  .panel h2.bad { color: var(--bad); }
   .panel p { margin: 6px 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
   .panel .big { font-size: 15px; color: var(--ink); font-weight: 700; }
   .panel .score { font-size: 40px; font-weight: 800; margin: 10px 0 2px; color: var(--accent); }
@@ -141,11 +127,6 @@
     font-family: inherit; font-weight: 800; font-size: 15px; margin-top: 10px;
     padding: 12px 26px; border-radius: 999px; border: none; width: 100%;
     background: var(--accent); color: var(--accent-ink); cursor: pointer;
-  }
-  .panel button.ghost {
-    font-family: inherit; font-weight: 700; font-size: 14px; margin-top: 8px;
-    padding: 10px 20px; border-radius: 999px; border: none; width: 100%;
-    background: var(--key-bg); color: var(--ink); cursor: pointer;
   }
   .roundtable { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; text-align: left; }
   .roundtable th, .roundtable td { padding: 6px 4px; border-bottom: 1px solid var(--line); }
@@ -176,17 +157,18 @@
 
     <div id="pano"></div>
 
-    <div id="guessWrap">
-      <div id="guessMap"></div>
-      <div id="guessHint">Tryck för att gissa på kartan</div>
-      <div id="guessBar"><button id="lockGuessBtn" disabled>Lås gissning</button></div>
+    <div class="guessbar" id="guessBar">
+      <input id="guessInput" type="text" list="countryDatalist" placeholder="Vilket land?" autocomplete="off" autocorrect="off" spellcheck="false">
+      <datalist id="countryDatalist"></datalist>
+      <button id="guessBtn" disabled>Gissa</button>
     </div>
 
     <!-- Laddar / fel -->
     <div class="overlay" id="loadingOverlay">
       <div class="panel">
-        <div class="spinner"></div>
+        <div class="spinner" id="loadingSpinner"></div>
         <p id="loadingText">Laddar Street View…</p>
+        <button class="primary hidden" id="retryBtn">Försök igen</button>
       </div>
     </div>
 
@@ -205,7 +187,7 @@
       <div class="panel">
         <h2 id="resultTitle">Resultat</h2>
         <div class="score" id="resultPoints">0 p</div>
-        <p class="big" id="resultDistance"></p>
+        <p class="big" id="resultCountry"></p>
         <div class="resultmap" id="resultMap"></div>
         <button class="primary" id="nextRoundBtn">Nästa runda →</button>
       </div>
@@ -218,7 +200,7 @@
         <div class="score" id="finalScore">0 p</div>
         <p>av max <span id="finalMax">0</span> poäng</p>
         <table class="roundtable">
-          <thead><tr><th>Runda</th><th>Plats</th><th>Avstånd</th><th>Poäng</th></tr></thead>
+          <thead><tr><th>Runda</th><th>Land</th><th>Resultat</th><th>Poäng</th></tr></thead>
           <tbody id="roundBody"></tbody>
         </table>
         <button class="primary" id="playAgainBtn">Spela igen</button>
@@ -228,31 +210,53 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/streetview/config.js"></script>
-  <script src="/streetview/locations.js"></script>
+  <script src="/streetview/countries.js"></script>
   <script>
   (function(){
     "use strict";
 
     var TOTAL_ROUNDS = 5;
-    var results = []; // { name, distanceKm, points, actual: {lat,lng}, guess: {lat,lng} }
+    var POINTS_PER_ROUND = 1000;
+    var MAX_ATTEMPTS_PER_ROUND = 5;
+    var JITTER_KM = 250;
+
+    // Normaliserade synonymer som ska räknas som samma land som varandra.
+    var ALIAS_GROUPS = [
+      ["usa", "amerika", "amerikas forenta stater", "forenta staterna", "us", "united states"],
+      ["storbritannien", "england", "uk", "great britain", "united kingdom", "grossbritannien"],
+      ["sydkorea", "korea", "sodra korea", "south korea"],
+      ["ryssland", "russia"],
+      ["forenade arabemiraten", "uae", "emiraten"],
+      ["tjeckien", "tjeckiska republiken", "czechia"],
+      ["nederlanderna", "holland"],
+      ["elfenbenskusten", "cote divoire", "ivory coast"]
+    ];
+    var ALIAS_LOOKUP = {};
+    ALIAS_GROUPS.forEach(function(group, gi){
+      group.forEach(function(w){ ALIAS_LOOKUP[w] = gi; });
+    });
+
+    var results = []; // { countryName, guessText, correct, points, lat, lng }
     var usedIndexes = new Set();
     var currentRound = 0;
-    var currentTarget = null; // { name, lat, lng, pano }
+    var currentTarget = null; // { lat, lng, pano, countryName }
     var totalScore = 0;
-
-    var guessMap, guessMarker, guessLayerGroup;
-    var resultMapInstance = null;
     var panorama = null;
+    var resultMapInstance = null;
 
     var loadingOverlay = document.getElementById('loadingOverlay');
+    var loadingSpinner = document.getElementById('loadingSpinner');
     var loadingText = document.getElementById('loadingText');
+    var retryBtn = document.getElementById('retryBtn');
     var setupOverlay = document.getElementById('setupOverlay');
     var resultOverlay = document.getElementById('resultOverlay');
     var finalOverlay = document.getElementById('finalOverlay');
-    var guessWrap = document.getElementById('guessWrap');
-    var lockGuessBtn = document.getElementById('lockGuessBtn');
+    var guessBar = document.getElementById('guessBar');
+    var guessInput = document.getElementById('guessInput');
+    var guessBtn = document.getElementById('guessBtn');
     var roundPill = document.getElementById('roundPill');
     var scorePill = document.getElementById('scorePill');
+    var headerInfo = document.querySelector('header .info');
 
     function shuffle(arr){
       for (var i = arr.length - 1; i > 0; i--){
@@ -262,78 +266,36 @@
       return arr;
     }
 
-    function distKm(lat1, lng1, lat2, lng2){
-      var R = 6371;
-      var dLat = (lat2 - lat1) * Math.PI / 180;
-      var dLng = (lng2 - lng1) * Math.PI / 180;
-      var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLng/2) * Math.sin(dLng/2);
-      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
+    function normalize(str){
+      return String(str || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().trim();
     }
 
-    function pointsForDistance(km){
-      if (km < 0.05) return 5000;
-      var p = Math.round(5000 * Math.exp(-km / 2000));
-      return Math.max(0, Math.min(5000, p));
+    function sameCountry(guessNorm, correctNorm){
+      if (!guessNorm) return false;
+      if (guessNorm === correctNorm) return true;
+      var ga = ALIAS_LOOKUP[guessNorm];
+      var gb = ALIAS_LOOKUP[correctNorm];
+      return ga !== undefined && ga === gb;
     }
 
-    function fmtKm(km){
-      if (km < 1) return Math.round(km * 1000) + " m";
-      if (km < 10) return km.toFixed(1) + " km";
-      return Math.round(km) + " km";
+    // Slumpar en punkt inom en cirkel (jämnt fördelad över ytan) runt (lat,lng).
+    function jitterPoint(lat, lng, maxKm){
+      var angle = Math.random() * 2 * Math.PI;
+      var r = maxKm * Math.sqrt(Math.random());
+      var dLat = (r * Math.cos(angle)) / 111;
+      var dLng = (r * Math.sin(angle)) / (111 * Math.cos(lat * Math.PI / 180));
+      return { lat: lat + dLat, lng: lng + dLng };
     }
 
-    // ---- Guess map (Leaflet, no API key needed) ----
-    function initGuessMap(){
-      guessMap = L.map('guessMap', {
-        zoomControl: false,
-        attributionControl: false,
-        worldCopyJump: true
-      }).setView([20, 10], 2);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        attribution: '© OpenStreetMap'
-      }).addTo(guessMap);
-      L.control.attribution({ prefix: false }).addTo(guessMap);
-      guessLayerGroup = L.layerGroup().addTo(guessMap);
-
-      guessWrap.addEventListener('click', function(e){
-        if (!guessWrap.classList.contains('expanded')){
-          guessWrap.classList.add('expanded');
-          setTimeout(function(){ guessMap.invalidateSize(); }, 210);
-        }
-      });
-
-      guessMap.on('click', function(e){
-        if (!guessWrap.classList.contains('expanded')) return;
-        setGuessMarker(e.latlng.lat, e.latlng.lng);
-      });
-
-      lockGuessBtn.addEventListener('click', function(ev){
-        ev.stopPropagation();
-        lockGuess();
-      });
+    function populateDatalist(){
+      var list = document.getElementById('countryDatalist');
+      var names = window.STREETVIEW_COUNTRIES.map(function(c){ return c.name; }).sort();
+      list.innerHTML = names.map(function(n){ return '<option value="' + n.replace(/"/g, '&quot;') + '">'; }).join('');
     }
 
-    function setGuessMarker(lat, lng){
-      guessLayerGroup.clearLayers();
-      guessMarker = L.circleMarker([lat, lng], {
-        radius: 9, color: '#fff', weight: 2, fillColor: '#4a90e2', fillOpacity: 1
-      }).addTo(guessLayerGroup);
-      lockGuessBtn.disabled = false;
-    }
-
-    function resetGuessMap(){
-      guessWrap.classList.remove('expanded');
-      guessMarker = null;
-      if (guessLayerGroup) guessLayerGroup.clearLayers();
-      lockGuessBtn.disabled = true;
-      if (guessMap) guessMap.setView([20, 10], 2);
-    }
-
-    // ---- Street View ----
+    // ---- Street View / Geocoding ----
     function loadGoogleMaps(){
       return new Promise(function(resolve, reject){
         if (window.google && window.google.maps){ resolve(); return; }
@@ -341,7 +303,7 @@
         var s = document.createElement('script');
         s.src = 'https://maps.googleapis.com/maps/api/js?key=' +
           encodeURIComponent(window.STREETVIEW_CONFIG.apiKey) +
-          '&callback=__svReady&loading=async';
+          '&language=sv&callback=__svReady&loading=async';
         s.async = true;
         s.onerror = function(){ reject(new Error('load-failed')); };
         document.head.appendChild(s);
@@ -370,20 +332,45 @@
       });
     }
 
+    function reverseGeocodeCountry(lat, lng){
+      return new Promise(function(resolve){
+        var geocoder = new google.maps.Geocoder();
+        geocoder.geocode({ location: { lat: lat, lng: lng } }, function(res, status){
+          if (status === google.maps.GeocoderStatus.OK && res && res.length){
+            for (var i = 0; i < res.length; i++){
+              var comps = res[i].address_components;
+              for (var j = 0; j < comps.length; j++){
+                if (comps[j].types.indexOf('country') !== -1){
+                  resolve(comps[j].long_name);
+                  return;
+                }
+              }
+            }
+          }
+          resolve(null);
+        });
+      });
+    }
+
     async function findRoundLocation(){
       var indexes = [];
-      for (var i = 0; i < window.STREETVIEW_LOCATIONS.length; i++){
+      for (var i = 0; i < window.STREETVIEW_COUNTRIES.length; i++){
         if (!usedIndexes.has(i)) indexes.push(i);
       }
       shuffle(indexes);
-      for (var k = 0; k < indexes.length; k++){
+      var attempts = Math.min(MAX_ATTEMPTS_PER_ROUND, indexes.length);
+      for (var k = 0; k < attempts; k++){
         var idx = indexes[k];
-        var loc = window.STREETVIEW_LOCATIONS[idx];
-        var res = await resolvePanorama(loc, 50000);
-        if (!res.ok) res = await resolvePanorama(loc, 200000);
+        var seed = window.STREETVIEW_COUNTRIES[idx];
+        var jittered = jitterPoint(seed.lat, seed.lng, JITTER_KM);
+        var res = await resolvePanorama(jittered, 50000);
+        if (!res.ok) res = await resolvePanorama(jittered, 150000);
         if (res.ok){
-          usedIndexes.add(idx);
-          return { name: loc.name, lat: res.lat, lng: res.lng, pano: res.pano };
+          var countryName = await reverseGeocodeCountry(res.lat, res.lng);
+          if (countryName){
+            usedIndexes.add(idx);
+            return { lat: res.lat, lng: res.lng, pano: res.pano, countryName: countryName };
+          }
         }
       }
       return null;
@@ -393,8 +380,9 @@
       panorama = new google.maps.StreetViewPanorama(document.getElementById('pano'), {
         pano: target.pano,
         addressControl: false,
-        showRoadLabels: true,
-        linksControl: true,
+        showRoadLabels: false,
+        linksControl: false,
+        clickToGo: false,
         panControl: true,
         zoomControl: true,
         fullscreenControl: false,
@@ -407,13 +395,22 @@
     async function startRound(){
       currentRound++;
       roundPill.textContent = 'Runda ' + currentRound + '/' + TOTAL_ROUNDS;
-      resetGuessMap();
+      guessInput.value = '';
+      guessBtn.disabled = true;
+      await loadRound();
+    }
+
+    async function loadRound(){
+      loadingSpinner.classList.remove('hidden');
+      retryBtn.classList.add('hidden');
       loadingText.textContent = 'Laddar plats…';
       loadingOverlay.classList.remove('hidden');
 
       var target = await findRoundLocation();
       if (!target){
-        loadingText.textContent = 'Hittade ingen plats med Street View just nu. Försök igen.';
+        loadingSpinner.classList.add('hidden');
+        retryBtn.classList.remove('hidden');
+        loadingText.textContent = 'Hittade ingen Street View-bild just nu.';
         return;
       }
       currentTarget = target;
@@ -421,43 +418,51 @@
       loadingOverlay.classList.add('hidden');
     }
 
+    retryBtn.addEventListener('click', loadRound);
+
     function lockGuess(){
-      if (!guessMarker) return;
-      var g = guessMarker.getLatLng();
-      var km = distKm(g.lat, g.lng, currentTarget.lat, currentTarget.lng);
-      var pts = pointsForDistance(km);
+      var typed = guessInput.value.trim();
+      if (!typed || !currentTarget) return;
+      var correct = sameCountry(normalize(typed), normalize(currentTarget.countryName));
+      var pts = correct ? POINTS_PER_ROUND : 0;
       totalScore += pts;
       results.push({
-        name: currentTarget.name,
-        distanceKm: km,
+        countryName: currentTarget.countryName,
+        guessText: typed,
+        correct: correct,
         points: pts,
-        actual: { lat: currentTarget.lat, lng: currentTarget.lng },
-        guess: { lat: g.lat, lng: g.lng }
+        lat: currentTarget.lat,
+        lng: currentTarget.lng
       });
       scorePill.textContent = 'Poäng: ' + totalScore;
       showRoundResult(results[results.length - 1]);
     }
 
+    guessBtn.addEventListener('click', lockGuess);
+    guessInput.addEventListener('input', function(){
+      guessBtn.disabled = guessInput.value.trim().length === 0;
+    });
+    guessInput.addEventListener('keydown', function(ev){
+      if (ev.key === 'Enter' && !guessBtn.disabled) lockGuess();
+    });
+
     function showRoundResult(r){
-      document.getElementById('resultTitle').textContent = r.name;
+      var titleEl = document.getElementById('resultTitle');
+      titleEl.textContent = r.correct ? 'Rätt!' : 'Fel!';
+      titleEl.className = r.correct ? 'good' : 'bad';
       document.getElementById('resultPoints').textContent = r.points + ' p';
-      document.getElementById('resultDistance').textContent =
-        'Din gissning var ' + fmtKm(r.distanceKm) + ' från rätt plats';
+      document.getElementById('resultCountry').textContent = r.correct ?
+        'Det var ' + r.countryName + '.' :
+        'Du gissade ' + r.guessText + ' — rätt svar var ' + r.countryName + '.';
       resultOverlay.classList.remove('hidden');
 
       if (resultMapInstance){ resultMapInstance.remove(); resultMapInstance = null; }
-      resultMapInstance = L.map('resultMap', { attributionControl: false, zoomControl: false });
+      resultMapInstance = L.map('resultMap', { attributionControl: false, zoomControl: false, dragging: false, scrollWheelZoom: false });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(resultMapInstance);
-      var actualMarker = L.circleMarker([r.actual.lat, r.actual.lng], {
+      L.circleMarker([r.lat, r.lng], {
         radius: 8, color: '#fff', weight: 2, fillColor: '#c94b4b', fillOpacity: 1
       }).addTo(resultMapInstance);
-      var guessMarkerR = L.circleMarker([r.guess.lat, r.guess.lng], {
-        radius: 8, color: '#fff', weight: 2, fillColor: '#4a90e2', fillOpacity: 1
-      }).addTo(resultMapInstance);
-      var line = L.polyline([[r.actual.lat, r.actual.lng], [r.guess.lat, r.guess.lng]], {
-        color: '#ffb300', weight: 2, dashArray: '5,6'
-      }).addTo(resultMapInstance);
-      resultMapInstance.fitBounds(line.getBounds(), { padding: [30, 30] });
+      resultMapInstance.setView([r.lat, r.lng], 5);
     }
 
     document.getElementById('nextRoundBtn').addEventListener('click', function(){
@@ -474,12 +479,12 @@
       body.innerHTML = '';
       results.forEach(function(r, i){
         var tr = document.createElement('tr');
-        tr.innerHTML = '<td>' + (i+1) + '</td><td>' + r.name + '</td><td>' +
-          fmtKm(r.distanceKm) + '</td><td>' + r.points + '</td>';
+        tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + r.countryName + '</td><td>' +
+          (r.correct ? '✅' : '❌') + '</td><td>' + r.points + '</td>';
         body.appendChild(tr);
       });
       document.getElementById('finalScore').textContent = totalScore + ' p';
-      document.getElementById('finalMax').textContent = (TOTAL_ROUNDS * 5000) + ' p';
+      document.getElementById('finalMax').textContent = (TOTAL_ROUNDS * POINTS_PER_ROUND) + ' p';
       finalOverlay.classList.remove('hidden');
     }
 
@@ -499,14 +504,15 @@
       if (!key || key.indexOf('DIN_') === 0){
         loadingOverlay.classList.add('hidden');
         setupOverlay.classList.remove('hidden');
-        guessWrap.classList.add('hidden');
-        document.querySelector('header .info').classList.add('hidden');
+        guessBar.classList.add('hidden');
+        headerInfo.classList.add('hidden');
         return;
       }
-      initGuessMap();
+      populateDatalist();
       try {
         await loadGoogleMaps();
       } catch (e){
+        loadingSpinner.classList.add('hidden');
         loadingText.textContent = 'Kunde inte ladda Google Maps. Kontrollera API-nyckeln i config.js.';
         return;
       }

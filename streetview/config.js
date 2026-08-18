@@ -9,6 +9,7 @@
 // Aktivera minst dessa API:er för nyckeln i Google Cloud Console:
 //   - Maps JavaScript API
 //   - Street View Static API (används implicit av panorama-visningen)
+//   - Geocoding API (avgör vilket land en slumpad plats ligger i)
 window.STREETVIEW_CONFIG = {
   apiKey: "AIzaSyDzHicZYe-2x8kxubuduv8zazqVLA22h0Y"
 };
