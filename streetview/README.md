@@ -7,12 +7,12 @@ Du kan inte förflytta dig, men du kan snurra runt och zooma. Gissa vilket
 
 - Rätt land: 1000 p
 - Fel land men rätt världsdel: 300 p
-- Ledtrådar, fritt valbara i valfri ordning (kostar sammanlagt max 800 p):
-  - 📍 Avstånd till Stockholm (−200 p)
+- Ledtrådar, fritt valbara i valfri ordning (kostar sammanlagt max 700 p):
+  - 📍 Avstånd till Stockholm (−100 p)
   - 🔤 Landets första bokstav (−300 p)
   - 🌐 Grannländer (−300 p)
 
-  Tar man alla tre ledtrådarna och gissar rätt får man ändå 200 p kvar.
+  Tar man alla tre ledtrådarna och gissar rätt får man ändå 300 p kvar.
 
 ## Skaffa en Google Maps API-nyckel
 

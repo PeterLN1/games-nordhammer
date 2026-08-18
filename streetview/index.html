@@ -248,12 +248,12 @@
     var HOME_LAT = 59.33, HOME_LNG = 18.06; // Stockholm, referenspunkt för avstånds-ledtråden
 
     // Ledtrådar, fritt valbara i valfri ordning — var och en kan bara tas
-    // en gång per runda. Summan av alla tre (800p) är mindre än full poäng
-    // (1000p) — tar man alla ledtrådar och gissar rätt får man ändå 200p kvar.
+    // en gång per runda. Summan av alla tre (700p) är mindre än full poäng
+    // (1000p) — tar man alla ledtrådar och gissar rätt får man ändå 300p kvar.
     var HINT_TIERS = [
       {
         icon: '📍',
-        cost: 200,
+        cost: 100,
         compute: function(t){
           var km = Math.round(distKm(HOME_LAT, HOME_LNG, t.lat, t.lng) / 50) * 50;
           return 'Avstånd: ca ' + km + ' km från Stockholm';
