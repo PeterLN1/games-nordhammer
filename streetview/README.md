@@ -7,7 +7,12 @@ Du kan inte förflytta dig, men du kan snurra runt och zooma. Gissa vilket
 
 - Rätt land: 1000 p
 - Fel land men rätt världsdel: 300 p
-- Ledtråd (💡, visar världsdelen): kostar 300 p, dras av från rundans poäng
+- Ledtrådar (💡, tre nivåer i ordning, kostar sammanlagt max 800 p):
+  1. Avstånd till Stockholm (−200 p)
+  2. Landets första bokstav (−300 p)
+  3. Grannländer (−300 p)
+
+  Tar man alla tre ledtrådarna och gissar rätt får man ändå 200 p kvar.
 
 ## Skaffa en Google Maps API-nyckel
 

@@ -109,8 +109,10 @@
     position: absolute; z-index: 30; left: 50%; transform: translateX(-50%);
     bottom: calc(max(16px, env(safe-area-inset-bottom)) + 62px);
     background: rgba(0,0,0,.6); color: #fff; font-size: 13px; font-weight: 700;
-    padding: 6px 14px; border-radius: 999px; white-space: nowrap;
+    padding: 8px 16px; border-radius: 14px; text-align: center;
+    max-width: calc(100% - 32px);
   }
+  .hintlabel div { margin: 3px 0; }
 
   /* --- overlays --- */
   .overlay {
@@ -170,7 +172,7 @@
 
     <div class="hintlabel hidden" id="hintLabel"></div>
     <div class="guessbar" id="guessBar">
-      <button id="hintBtn" class="hint" type="button" title="Visa kontinent (kostar poäng)">💡</button>
+      <button id="hintBtn" class="hint" type="button" disabled title="Ledtråd (kostar poäng)">💡</button>
       <input id="guessInput" type="text" list="countryDatalist" placeholder="Vilket land?" autocomplete="off" autocorrect="off" spellcheck="false">
       <datalist id="countryDatalist"></datalist>
       <button id="guessBtn" disabled>Gissa</button>
@@ -231,9 +233,36 @@
     var TOTAL_ROUNDS = 5;
     var POINTS_PER_ROUND = 1000;
     var CONTINENT_BONUS = 300;
-    var HINT_COST = 300;
     var MAX_ATTEMPTS_PER_ROUND = 5;
     var JITTER_KM = 250;
+    var HOME_LAT = 59.33, HOME_LNG = 18.06; // Stockholm, referenspunkt för avstånds-ledtråden
+
+    // Ledtrådar i den ordning de låses upp, med stigande kostnad. Summan av
+    // alla tre (800p) är mindre än full poäng (1000p) — tar man alla
+    // ledtrådar och gissar rätt får man ändå 200p kvar.
+    var HINT_TIERS = [
+      {
+        cost: 200,
+        compute: function(t){
+          var km = Math.round(distKm(HOME_LAT, HOME_LNG, t.lat, t.lng) / 50) * 50;
+          return 'Avstånd: ca ' + km + ' km från Stockholm';
+        }
+      },
+      {
+        cost: 300,
+        compute: function(t){
+          return 'Landets namn börjar på "' + t.countryName.charAt(0).toUpperCase() + '"';
+        }
+      },
+      {
+        cost: 300,
+        compute: function(t){
+          var borders = bordersLookup[normalize(t.countryName)];
+          if (borders === undefined) return null;
+          return borders.length ? 'Gränsar till: ' + borders.join(', ') : 'Inga landgränser (ö-nation)';
+        }
+      }
+    ];
 
     // Normaliserade synonymer som ska räknas som samma land som varandra.
     var ALIAS_GROUPS = [
@@ -251,15 +280,17 @@
       group.forEach(function(w){ ALIAS_LOOKUP[w] = gi; });
     });
 
-    var results = []; // { countryName, guessText, correct, continentCorrect, hintUsed, points, lat, lng }
+    var results = []; // { countryName, guessText, correct, continentCorrect, hintCostUsed, points, lat, lng }
     var usedIndexes = new Set();
     var currentRound = 0;
     var currentTarget = null; // { lat, lng, pano, countryName, continent }
     var totalScore = 0;
     var panorama = null;
     var resultMapInstance = null;
-    var hintUsed = false;
+    var hintLevel = 0; // antal ledtrådar använda denna runda (0-3)
+    var hintCostUsed = 0;
     var countryContinent = {}; // normaliserat landnamn -> kontinent
+    var bordersLookup = {}; // normaliserat landnamn -> array av grannländer
 
     var loadingOverlay = document.getElementById('loadingOverlay');
     var loadingSpinner = document.getElementById('loadingSpinner');
@@ -308,6 +339,11 @@
         var norm = normalize(name);
         if (!countryContinent[norm]) countryContinent[norm] = fallback[name];
       });
+
+      var borders = window.STREETVIEW_BORDERS || {};
+      Object.keys(borders).forEach(function(name){
+        bordersLookup[normalize(name)] = borders[name];
+      });
     }
 
     // Slår upp kontinent för ett normaliserat landnamn, även om det bara
@@ -320,6 +356,16 @@
         if (ALIAS_LOOKUP[key] === gid) return countryContinent[key];
       }
       return null;
+    }
+
+    function distKm(lat1, lng1, lat2, lng2){
+      var R = 6371;
+      var dLat = (lat2 - lat1) * Math.PI / 180;
+      var dLng = (lng2 - lng1) * Math.PI / 180;
+      var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     // Slumpar en punkt inom en cirkel (jämnt fördelad över ytan) runt (lat,lng).
@@ -439,18 +485,37 @@
       roundPill.textContent = 'Runda ' + currentRound + '/' + TOTAL_ROUNDS;
       guessInput.value = '';
       guessBtn.disabled = true;
-      hintUsed = false;
-      hintBtn.disabled = false;
+      hintLevel = 0;
+      hintCostUsed = 0;
+      hintLabel.innerHTML = '';
       hintLabel.classList.add('hidden');
+      hintBtn.disabled = true;
       await loadRound();
     }
 
+    function updateHintButton(){
+      if (hintLevel >= HINT_TIERS.length || !currentTarget){
+        hintBtn.disabled = true;
+        hintBtn.textContent = '💡';
+      } else {
+        hintBtn.disabled = false;
+        hintBtn.textContent = '💡 −' + HINT_TIERS[hintLevel].cost + 'p';
+      }
+    }
+
     hintBtn.addEventListener('click', function(){
-      if (hintUsed || !currentTarget) return;
-      hintUsed = true;
-      hintBtn.disabled = true;
-      hintLabel.textContent = 'Ledtråd: ' + (currentTarget.continent || 'okänd världsdel');
-      hintLabel.classList.remove('hidden');
+      if (hintLevel >= HINT_TIERS.length || !currentTarget) return;
+      var tier = HINT_TIERS[hintLevel];
+      var text = tier.compute(currentTarget);
+      hintLevel++;
+      if (text !== null){
+        hintCostUsed += tier.cost;
+        var line = document.createElement('div');
+        line.textContent = text;
+        hintLabel.appendChild(line);
+        hintLabel.classList.remove('hidden');
+      }
+      updateHintButton();
     });
 
     async function loadRound(){
@@ -468,6 +533,7 @@
       }
       target.continent = getContinent(normalize(target.countryName));
       currentTarget = target;
+      updateHintButton();
       renderPanorama(target);
       loadingOverlay.classList.add('hidden');
     }
@@ -486,14 +552,14 @@
         continentCorrect = !!guessContinent && !!currentTarget.continent && guessContinent === currentTarget.continent;
       }
       var pts = correct ? POINTS_PER_ROUND : (continentCorrect ? CONTINENT_BONUS : 0);
-      if (hintUsed) pts = Math.max(0, pts - HINT_COST);
+      pts = Math.max(0, pts - hintCostUsed);
       totalScore += pts;
       results.push({
         countryName: currentTarget.countryName,
         guessText: typed,
         correct: correct,
         continentCorrect: continentCorrect,
-        hintUsed: hintUsed,
+        hintCostUsed: hintCostUsed,
         points: pts,
         lat: currentTarget.lat,
         lng: currentTarget.lng
@@ -524,7 +590,7 @@
       } else {
         msg = 'Du gissade ' + r.guessText + ' — rätt svar var ' + r.countryName + '.';
       }
-      if (r.hintUsed) msg += ' (ledtråd använd, −' + HINT_COST + ' p)';
+      if (r.hintCostUsed > 0) msg += ' (ledtrådar använda, −' + r.hintCostUsed + ' p)';
       document.getElementById('resultCountry').textContent = msg;
       resultOverlay.classList.remove('hidden');
 
@@ -553,7 +619,7 @@
         var tr = document.createElement('tr');
         var resultIcon = r.correct ? '✅' : (r.continentCorrect ? '🌍' : '❌');
         tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + r.countryName + '</td><td>' +
-          resultIcon + '</td><td>' + r.points + (r.hintUsed ? ' 💡' : '') + '</td>';
+          resultIcon + '</td><td>' + r.points + (r.hintCostUsed > 0 ? ' 💡' : '') + '</td>';
         body.appendChild(tr);
       });
       document.getElementById('finalScore').textContent = totalScore + ' p';
