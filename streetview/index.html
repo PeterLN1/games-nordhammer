@@ -101,6 +101,16 @@
     background: var(--accent); color: var(--accent-ink); cursor: pointer;
   }
   .guessbar button:disabled { opacity: .4; cursor: default; }
+  .guessbar button.hint {
+    padding: 11px 14px; background: rgba(255,255,255,.14); color: #fff;
+  }
+
+  .hintlabel {
+    position: absolute; z-index: 30; left: 50%; transform: translateX(-50%);
+    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 62px);
+    background: rgba(0,0,0,.6); color: #fff; font-size: 13px; font-weight: 700;
+    padding: 6px 14px; border-radius: 999px; white-space: nowrap;
+  }
 
   /* --- overlays --- */
   .overlay {
@@ -118,6 +128,7 @@
   }
   .panel h2 { margin: 0 0 6px; font-size: 20px; }
   .panel h2.good { color: var(--good); }
+  .panel h2.mid { color: var(--accent); }
   .panel h2.bad { color: var(--bad); }
   .panel p { margin: 6px 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
   .panel .big { font-size: 15px; color: var(--ink); font-weight: 700; }
@@ -157,7 +168,9 @@
 
     <div id="pano"></div>
 
+    <div class="hintlabel hidden" id="hintLabel"></div>
     <div class="guessbar" id="guessBar">
+      <button id="hintBtn" class="hint" type="button" title="Visa kontinent (kostar poäng)">💡</button>
       <input id="guessInput" type="text" list="countryDatalist" placeholder="Vilket land?" autocomplete="off" autocorrect="off" spellcheck="false">
       <datalist id="countryDatalist"></datalist>
       <button id="guessBtn" disabled>Gissa</button>
@@ -217,6 +230,8 @@
 
     var TOTAL_ROUNDS = 5;
     var POINTS_PER_ROUND = 1000;
+    var CONTINENT_BONUS = 300;
+    var HINT_COST = 300;
     var MAX_ATTEMPTS_PER_ROUND = 5;
     var JITTER_KM = 250;
 
@@ -236,13 +251,15 @@
       group.forEach(function(w){ ALIAS_LOOKUP[w] = gi; });
     });
 
-    var results = []; // { countryName, guessText, correct, points, lat, lng }
+    var results = []; // { countryName, guessText, correct, continentCorrect, hintUsed, points, lat, lng }
     var usedIndexes = new Set();
     var currentRound = 0;
-    var currentTarget = null; // { lat, lng, pano, countryName }
+    var currentTarget = null; // { lat, lng, pano, countryName, continent }
     var totalScore = 0;
     var panorama = null;
     var resultMapInstance = null;
+    var hintUsed = false;
+    var countryContinent = {}; // normaliserat landnamn -> kontinent
 
     var loadingOverlay = document.getElementById('loadingOverlay');
     var loadingSpinner = document.getElementById('loadingSpinner');
@@ -254,6 +271,8 @@
     var guessBar = document.getElementById('guessBar');
     var guessInput = document.getElementById('guessInput');
     var guessBtn = document.getElementById('guessBtn');
+    var hintBtn = document.getElementById('hintBtn');
+    var hintLabel = document.getElementById('hintLabel');
     var roundPill = document.getElementById('roundPill');
     var scorePill = document.getElementById('scorePill');
     var headerInfo = document.querySelector('header .info');
@@ -278,6 +297,29 @@
       var ga = ALIAS_LOOKUP[guessNorm];
       var gb = ALIAS_LOOKUP[correctNorm];
       return ga !== undefined && ga === gb;
+    }
+
+    function buildContinentLookup(){
+      window.STREETVIEW_COUNTRIES.forEach(function(c){
+        countryContinent[normalize(c.name)] = c.continent;
+      });
+      var fallback = window.STREETVIEW_CONTINENT_FALLBACK || {};
+      Object.keys(fallback).forEach(function(name){
+        var norm = normalize(name);
+        if (!countryContinent[norm]) countryContinent[norm] = fallback[name];
+      });
+    }
+
+    // Slår upp kontinent för ett normaliserat landnamn, även om det bara
+    // finns som synonym (alias) till ett land vi redan känner kontinenten för.
+    function getContinent(norm){
+      if (countryContinent[norm]) return countryContinent[norm];
+      var gid = ALIAS_LOOKUP[norm];
+      if (gid === undefined) return null;
+      for (var key in countryContinent){
+        if (ALIAS_LOOKUP[key] === gid) return countryContinent[key];
+      }
+      return null;
     }
 
     // Slumpar en punkt inom en cirkel (jämnt fördelad över ytan) runt (lat,lng).
@@ -397,8 +439,19 @@
       roundPill.textContent = 'Runda ' + currentRound + '/' + TOTAL_ROUNDS;
       guessInput.value = '';
       guessBtn.disabled = true;
+      hintUsed = false;
+      hintBtn.disabled = false;
+      hintLabel.classList.add('hidden');
       await loadRound();
     }
+
+    hintBtn.addEventListener('click', function(){
+      if (hintUsed || !currentTarget) return;
+      hintUsed = true;
+      hintBtn.disabled = true;
+      hintLabel.textContent = 'Ledtråd: ' + (currentTarget.continent || 'okänd världsdel');
+      hintLabel.classList.remove('hidden');
+    });
 
     async function loadRound(){
       loadingSpinner.classList.remove('hidden');
@@ -413,6 +466,7 @@
         loadingText.textContent = 'Hittade ingen Street View-bild just nu.';
         return;
       }
+      target.continent = getContinent(normalize(target.countryName));
       currentTarget = target;
       renderPanorama(target);
       loadingOverlay.classList.add('hidden');
@@ -423,13 +477,23 @@
     function lockGuess(){
       var typed = guessInput.value.trim();
       if (!typed || !currentTarget) return;
-      var correct = sameCountry(normalize(typed), normalize(currentTarget.countryName));
-      var pts = correct ? POINTS_PER_ROUND : 0;
+      var guessNorm = normalize(typed);
+      var correctNorm = normalize(currentTarget.countryName);
+      var correct = sameCountry(guessNorm, correctNorm);
+      var continentCorrect = false;
+      if (!correct){
+        var guessContinent = getContinent(guessNorm);
+        continentCorrect = !!guessContinent && !!currentTarget.continent && guessContinent === currentTarget.continent;
+      }
+      var pts = correct ? POINTS_PER_ROUND : (continentCorrect ? CONTINENT_BONUS : 0);
+      if (hintUsed) pts = Math.max(0, pts - HINT_COST);
       totalScore += pts;
       results.push({
         countryName: currentTarget.countryName,
         guessText: typed,
         correct: correct,
+        continentCorrect: continentCorrect,
+        hintUsed: hintUsed,
         points: pts,
         lat: currentTarget.lat,
         lng: currentTarget.lng
@@ -448,12 +512,20 @@
 
     function showRoundResult(r){
       var titleEl = document.getElementById('resultTitle');
-      titleEl.textContent = r.correct ? 'Rätt!' : 'Fel!';
-      titleEl.className = r.correct ? 'good' : 'bad';
+      var titleText = r.correct ? 'Rätt!' : (r.continentCorrect ? 'Nästan!' : 'Fel!');
+      titleEl.textContent = titleText;
+      titleEl.className = r.correct ? 'good' : (r.continentCorrect ? 'mid' : 'bad');
       document.getElementById('resultPoints').textContent = r.points + ' p';
-      document.getElementById('resultCountry').textContent = r.correct ?
-        'Det var ' + r.countryName + '.' :
-        'Du gissade ' + r.guessText + ' — rätt svar var ' + r.countryName + '.';
+      var msg;
+      if (r.correct){
+        msg = 'Det var ' + r.countryName + '.';
+      } else if (r.continentCorrect){
+        msg = 'Du gissade ' + r.guessText + ' — fel land, men rätt världsdel! Rätt svar var ' + r.countryName + '.';
+      } else {
+        msg = 'Du gissade ' + r.guessText + ' — rätt svar var ' + r.countryName + '.';
+      }
+      if (r.hintUsed) msg += ' (ledtråd använd, −' + HINT_COST + ' p)';
+      document.getElementById('resultCountry').textContent = msg;
       resultOverlay.classList.remove('hidden');
 
       if (resultMapInstance){ resultMapInstance.remove(); resultMapInstance = null; }
@@ -479,8 +551,9 @@
       body.innerHTML = '';
       results.forEach(function(r, i){
         var tr = document.createElement('tr');
+        var resultIcon = r.correct ? '✅' : (r.continentCorrect ? '🌍' : '❌');
         tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + r.countryName + '</td><td>' +
-          (r.correct ? '✅' : '❌') + '</td><td>' + r.points + '</td>';
+          resultIcon + '</td><td>' + r.points + (r.hintUsed ? ' 💡' : '') + '</td>';
         body.appendChild(tr);
       });
       document.getElementById('finalScore').textContent = totalScore + ' p';
@@ -509,6 +582,7 @@
         return;
       }
       populateDatalist();
+      buildContinentLookup();
       try {
         await loadGoogleMaps();
       } catch (e){

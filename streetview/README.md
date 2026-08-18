@@ -3,8 +3,11 @@
 Test-prototyp: du ser en riktig Google Street View-bild från en slumpad
 plats var som helst i världen (inte begränsat till städer/kända platser).
 Du kan inte förflytta dig, men du kan snurra runt och zooma. Gissa vilket
-**land** bilden är tagen i. 5 rundor, 1000 p för rätt land, 0 p för fel
-(max 5000 p totalt).
+**land** bilden är tagen i. 5 rundor, max 5000 p totalt:
+
+- Rätt land: 1000 p
+- Fel land men rätt världsdel: 300 p
+- Ledtråd (💡, visar världsdelen): kostar 300 p, dras av från rundans poäng
 
 ## Skaffa en Google Maps API-nyckel
 
