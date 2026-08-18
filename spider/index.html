@@ -239,7 +239,6 @@
     renderAll();
     updateStats();
     saveGame();
-    statStart(numSuits);
   }
 
   // ---- serialization for undo ----
@@ -304,15 +303,16 @@
   // ---- statistik (spelade/vunna/bästa antal drag, per antal färger) ----
   const STORE_STATS = "spider:stats";
   const SUIT_LABELS = { "1":"1 färg", "2":"2 färger", "4":"4 färger" };
+  const STATS_VERSION = 2; // höj vid ändrat räknesätt/format -> gammal (ev. felaktig) statistik nollställs
   function blankSuitStats(){ return { played:0, won:0, bestMoves:null }; }
-  function defaultStats(){ return { v:1, bySuits:{ "1":blankSuitStats(), "2":blankSuitStats(), "4":blankSuitStats() } }; }
+  function defaultStats(){ return { v:STATS_VERSION, bySuits:{ "1":blankSuitStats(), "2":blankSuitStats(), "4":blankSuitStats() } }; }
   function loadStats(){
     if(!canStore) return defaultStats();
     try {
       const raw = localStorage.getItem(STORE_STATS);
       if(!raw) return defaultStats();
       const o = JSON.parse(raw);
-      if(!o || o.v!==1 || !o.bySuits) return defaultStats();
+      if(!o || o.v!==STATS_VERSION || !o.bySuits) return defaultStats();
       for(const k of Object.keys(SUIT_LABELS)) if(!o.bySuits[k]) o.bySuits[k] = blankSuitStats();
       return o;
     } catch(e){ return defaultStats(); }
@@ -375,6 +375,7 @@
     state.columns[toCol].push(...run);
     // flip newly exposed card
     if(src.length && !src[src.length-1].up) src[src.length-1].up = true;
+    if(state.moves === 0) statStart(state.suits); // räkna som "spelat" först vid första faktiska draget
     state.moves++;
     checkCompleted(toCol);
     selection = null;
@@ -409,6 +410,7 @@
     const row = state.stock.pop();
     for(let col=0; col<10; col++){ const card=row[col]; card.up=true; state.columns[col].push(card); }
     for(let col=0; col<10; col++) checkCompleted(col);
+    if(state.moves === 0) statStart(state.suits); // räkna som "spelat" först vid första faktiska draget
     state.moves++;
     renderAll(); updateStats();
     saveGame();  // före checkWin: en vinst rensar sparningen istället
