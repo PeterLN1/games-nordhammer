@@ -125,10 +125,16 @@
   #toast small { display:block; font-weight: 400; font-size: 13px; opacity:.85; margin-top:6px; }
   #fx { position: fixed; inset: 0; pointer-events: none; z-index: 10001; overflow: visible; }
   #fx .card { box-shadow: 0 8px 20px rgba(0,0,0,.55); }
-  .fx-burst {
-    position: fixed; width: 64px; height: 64px; border-radius: 50%; pointer-events: none;
-    background: radial-gradient(circle, rgba(255,214,0,.95) 0%, rgba(255,210,0,.4) 42%, rgba(255,210,0,0) 70%);
+  .fw-flash {
+    position: fixed; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle, #fff 0%, rgba(255,225,120,.95) 28%, rgba(255,180,0,.55) 55%, rgba(255,180,0,0) 76%);
   }
+  .fw-ring {
+    position: fixed; border-radius: 50%; pointer-events: none;
+    border: 3px solid rgba(255,220,120,.9);
+    box-shadow: 0 0 22px rgba(255,200,60,.55), inset 0 0 22px rgba(255,200,60,.35);
+  }
+  .fw-spark { position: fixed; border-radius: 50%; pointer-events: none; }
 
   #overlay {
     position: fixed; inset: 0; z-index: 10002; display: none;
@@ -588,20 +594,76 @@
         .addEventListener("finish", ()=>clone.remove());
       setTimeout(()=>clone.remove(), i*32 + 660 + 300); // väggklocka-backup ifall finish uteblir
     });
-    burst(tx, ty, els.length*32 + 320);
+    const mainDelay = els.length*32 + 300;
+    firework(tx, ty, mainDelay, 1);
+    // ett par mindre följdsmällar runt om för en fylligare fyrverkerikänsla
+    const extras = 2;
+    for(let k=0; k<extras; k++){
+      const ex = clamp(tx + (Math.random()*220 - 110), 60, window.innerWidth - 60);
+      const ey = clamp(ty + 70 + Math.random()*130, 60, window.innerHeight - 60);
+      firework(ex, ey, mainDelay + 160 + k*180, 0.62);
+    }
   }
-  function burst(x, y, delay){
-    const b = document.createElement("div");
-    b.className = "fx-burst";
-    b.style.left = x+"px"; b.style.top = y+"px";
-    getFx().appendChild(b);
-    b.animate([
-      { transform:"translate(-50%,-50%) scale(0.2)", opacity:0 },
-      { transform:"translate(-50%,-50%) scale(1)", opacity:0.95, offset:0.5 },
-      { transform:"translate(-50%,-50%) scale(1.9)", opacity:0 }
-    ], { duration:520, delay:delay, easing:"ease-out", fill:"forwards" })
-      .addEventListener("finish", ()=>b.remove());
-    setTimeout(()=>b.remove(), delay + 520 + 300);
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+  const FIREWORK_COLORS = ["#ffd200","#ffe98a","#fff6d9","#ff9d00","#ffffff","#9fe3ff"];
+  // stor fyrverkeriexplosion: ljusblixt + expanderande ring + gnistor som skjuter ut åt alla håll
+  function firework(x, y, delay, scale){
+    scale = scale || 1;
+    const fx = getFx();
+
+    const flash = document.createElement("div");
+    flash.className = "fw-flash";
+    flash.style.left = x+"px"; flash.style.top = y+"px";
+    flash.style.transform = "scale("+(0.9*scale)+")";
+    fx.appendChild(flash);
+    flash.animate([
+      { transform:"scale("+(0.15*scale)+")", opacity:0 },
+      { transform:"scale("+(1.6*scale)+")", opacity:1, offset:.22 },
+      { transform:"scale("+(4.2*scale)+")", opacity:0 }
+    ], { duration:760, delay, easing:"cubic-bezier(.15,.7,.3,1)", fill:"forwards" })
+      .addEventListener("finish", ()=>flash.remove());
+    setTimeout(()=>flash.remove(), delay+760+300);
+
+    const ringSize = Math.round(300*scale);
+    const ring = document.createElement("div");
+    ring.className = "fw-ring";
+    ring.style.left = x+"px"; ring.style.top = y+"px";
+    ring.style.width = ringSize+"px"; ring.style.height = ringSize+"px";
+    ring.style.margin = (-ringSize/2)+"px 0 0 "+(-ringSize/2)+"px";
+    fx.appendChild(ring);
+    ring.animate([
+      { transform:"scale(0.08)", opacity:.95 },
+      { transform:"scale(1)", opacity:0 }
+    ], { duration:680, delay, easing:"cubic-bezier(.15,.7,.3,1)", fill:"forwards" })
+      .addEventListener("finish", ()=>ring.remove());
+    setTimeout(()=>ring.remove(), delay+680+300);
+
+    const N = Math.round(34*scale);
+    for(let i=0;i<N;i++){
+      const angle = (Math.PI*2*i/N) + (Math.random()*0.4 - 0.2);
+      const dist = (110 + Math.random()*170) * scale;
+      const dx = Math.cos(angle)*dist, dy = Math.sin(angle)*dist;
+      const fall = (26 + Math.random()*46) * scale; // lätt gravitation på vägen ut
+      const color = FIREWORK_COLORS[Math.floor(Math.random()*FIREWORK_COLORS.length)];
+      const size = (4 + Math.random()*5) * Math.max(scale, 0.75);
+      const spark = document.createElement("div");
+      spark.className = "fw-spark";
+      spark.style.left = x+"px"; spark.style.top = y+"px";
+      spark.style.width = size+"px"; spark.style.height = size+"px";
+      spark.style.margin = (-size/2)+"px 0 0 "+(-size/2)+"px";
+      spark.style.background = color;
+      spark.style.boxShadow = "0 0 "+Math.round(size*1.6)+"px "+Math.round(size*0.4)+"px "+color;
+      fx.appendChild(spark);
+      const dur = 680 + Math.random()*320;
+      const spDelay = delay + Math.random()*50;
+      spark.animate([
+        { transform:"translate(0,0) scale(1)", opacity:1 },
+        { transform:"translate("+(dx*0.72)+"px,"+(dy*0.72-14*scale)+"px) scale(1)", opacity:1, offset:.5 },
+        { transform:"translate("+dx+"px,"+(dy+fall)+"px) scale(0.25)", opacity:0 }
+      ], { duration:dur, delay:spDelay, easing:"cubic-bezier(.15,.6,.35,1)", fill:"forwards" })
+        .addEventListener("finish", ()=>spark.remove());
+      setTimeout(()=>spark.remove(), spDelay+dur+400);
+    }
   }
 
   // ---- effekt: nya kort flickas ut från Dela-knappen till varje kolumn ----
