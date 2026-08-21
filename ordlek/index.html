@@ -290,6 +290,34 @@
     return s;
   }
 
+  // Övningsläget har egen statistik under en annan nyckel — resultat i
+  // familjetävlingen (ovan) ska aldrig påverka den, och tvärtom. Sviten här
+  // räknas per omgång (inte per dag) eftersom man kan öva flera gånger
+  // samma dag: "currentStreak" = hur många man klarat i rad just nu.
+  var PRACTICE_STATS_KEY = 'ordlek:practiceStats';
+  function loadPracticeStats(){
+    try {
+      var s = JSON.parse(localStorage.getItem(PRACTICE_STATS_KEY));
+      if(s && s.distribution && s.distribution.length === MAX_GUESSES) return s;
+    } catch(e){}
+    return { played: 0, wins: 0, currentStreak: 0, maxStreak: 0, distribution: [0,0,0,0,0,0] };
+  }
+  function savePracticeStats(s){ try { localStorage.setItem(PRACTICE_STATS_KEY, JSON.stringify(s)); } catch(e){} }
+  function recordPracticeResult(won, guessCount){
+    var s = loadPracticeStats();
+    s.played++;
+    if(won){
+      s.wins++;
+      s.distribution[guessCount-1]++;
+      s.currentStreak++;
+      s.maxStreak = Math.max(s.maxStreak, s.currentStreak);
+    } else {
+      s.currentStreak = 0;
+    }
+    savePracticeStats(s);
+    return s;
+  }
+
   function gameKey(dateStr){ return 'ordlek:game:' + dateStr; }
   function loadGame(dateStr){
     try { var g = JSON.parse(localStorage.getItem(gameKey(dateStr))); if(g && g.answer) return g; } catch(e){}
@@ -517,7 +545,8 @@
     renderKeyboard();
     if(navigator.vibrate) try { navigator.vibrate(won ? [20,40,20] : 60); } catch(e){}
     if(practiceMode){
-      setTimeout(function(){ showPracticeResultPanel(won); }, won ? 900 : 300);
+      var pstats = recordPracticeResult(won, state.guesses.length);
+      setTimeout(function(){ showPracticeResultPanel(won, pstats); }, won ? 900 : 300);
     } else {
       var stats = recordResult(won, state.guesses.length, state.date);
       setTimeout(function(){ showResultPanel(won, stats); }, won ? 900 : 300);
@@ -814,14 +843,16 @@
     document.getElementById('pClose').onclick = hideOverlay;
     setupLeaderboard(document.getElementById('lbArea'), won);
   }
-  function showPracticeResultPanel(won){
+  function showPracticeResultPanel(won, stats){
     var panel = document.getElementById('panel');
     panel.innerHTML =
       '<div class="emoji">'+(won?'🎉':'😔')+'</div>' +
       '<h2>'+(won?'Snyggt!':'Nästa gång!')+'</h2>' +
       '<p>'+(won ? ('Du gissade <b>'+state.answer.toUpperCase()+'</b> på '+state.guesses.length+' av '+MAX_GUESSES+' försök.')
                  : ('Ordet var <b>'+state.answer.toUpperCase()+'</b>.')) + '</p>' +
-      '<p>🎯 Övningsläge — påverkar inte statistik eller topplistor.</p>' +
+      statBlockHtml(stats) +
+      distHtml(stats.distribution, won ? state.guesses.length-1 : -1) +
+      '<p>🎯 Övningsläge — egen statistik, påverkar inte familjetävlingen.</p>' +
       '<button id="pAgain">🔁 Nytt övningsord</button>' +
       '<button id="pDaily" class="ghost">Till dagens ord</button>';
     document.getElementById('overlay').classList.add('show');
@@ -829,13 +860,13 @@
     document.getElementById('pDaily').onclick = exitPractice;
   }
   function showStatsPanel(){
-    var stats = loadStats();
+    var stats = practiceMode ? loadPracticeStats() : loadStats();
     var panel = document.getElementById('panel');
     panel.innerHTML =
-      '<h2>📊 Statistik</h2>' +
+      '<h2>'+(practiceMode ? '📊 Övningsstatistik' : '📊 Statistik')+'</h2>' +
       statBlockHtml(stats) +
       distHtml(stats.distribution, -1) +
-      (dailyState.status !== 'playing' ? '<button id="pShare2">📋 Dela dagens resultat</button>' : '') +
+      (!practiceMode && dailyState.status !== 'playing' ? '<button id="pShare2">📋 Dela dagens resultat</button>' : '') +
       '<button id="pClose" class="ghost">Stäng</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pClose').onclick = hideOverlay;
