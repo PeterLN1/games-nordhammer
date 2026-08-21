@@ -75,6 +75,7 @@
     border: none; cursor: pointer; font-family: inherit;
   }
   header .back:active, header .icon-btn:active { background: rgba(255,179,0,.3); }
+  header .icon-btn.active { background: rgba(255,179,0,.35); }
   header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
   header .spacer { flex: 1; }
 
@@ -195,6 +196,7 @@
       <h1>🟩 Ordlek</h1>
       <div class="spacer"></div>
       <button class="icon-btn" id="btnProfile" aria-label="Byt profil"></button>
+      <button class="icon-btn" id="btnPractice" aria-label="Övningsläge">🎯</button>
       <button class="icon-btn" id="btnMarathon" aria-label="Maratontabell">🏁</button>
       <button class="icon-btn" id="btnHistory" aria-label="Historik">🗓️</button>
       <button class="icon-btn" id="btnStats" aria-label="Statistik">📊</button>
@@ -327,6 +329,39 @@
   var animating = false;
   var keyState = {}; // bokstav -> 'correct'|'present'|'absent'
 
+  /* ---------- Övningsläge ----------
+     Ett separat, icke-sparat spel med ett slumpat ord — för att kunna öva
+     hur många gånger som helst per dag, utan att påverka statistik,
+     familjetopplista eller maratontabell. `state` pekar om till detta
+     tillfälliga läge medan man övar; `dailyState` behåller alltid dagens
+     "riktiga" spel så man kan gå tillbaka till det. */
+  var dailyState = state;
+  var practiceMode = false;
+  function randomPracticeWord(){
+    var todayWord = dailyAnswer(today); // uteslut dagens ord — annars kan ett slumpmässigt sammanträffande spoila det
+    var pool = ORDLEK_ANSWERS.filter(function(w){ return w !== todayWord; });
+    if(!pool.length) pool = ORDLEK_ANSWERS;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+  function startPractice(){
+    if(animating) return;
+    practiceMode = true;
+    state = { date: null, answer: randomPracticeWord(), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: true };
+    current = '';
+    animating = false;
+    hideOverlay();
+    render();
+  }
+  function exitPractice(){
+    practiceMode = false;
+    state = dailyState;
+    current = '';
+    animating = false;
+    hideOverlay();
+    render();
+    if(dailyState.status === 'blocked') renderBlockedPanel(dailyState.blockedSummary);
+  }
+
   function evaluateGuess(guess, answer){
     var marks = new Array(WORD_LEN).fill('absent');
     var remain = {};
@@ -396,10 +431,23 @@
     });
   }
   function renderDayInfo(){
+    var el = document.getElementById('dayInfo');
+    if(practiceMode){
+      el.textContent = '🎯 Övningsläge — tryck här för att gå tillbaka till dagens ord';
+      el.style.cursor = 'pointer';
+      el.onclick = exitPractice;
+      return;
+    }
+    el.style.cursor = '';
+    el.onclick = null;
     var n = dayNumber(state.date);
-    document.getElementById('dayInfo').textContent = 'Dagens ord #' + n + ' · ' + formatDateSv(state.date);
+    el.textContent = 'Dagens ord #' + n + ' · ' + formatDateSv(state.date);
   }
-  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); }
+  function renderPracticeButton(){
+    var btn = document.getElementById('btnPractice');
+    if(btn) btn.classList.toggle('active', practiceMode);
+  }
+  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderPracticeButton(); }
 
   /* ---------- Indata ---------- */
   var LETTER_RE = /^[a-zåäö]$/;
@@ -451,7 +499,7 @@
       } else if(state.guesses.length >= MAX_GUESSES){
         finish(false, rowEl);
       } else {
-        saveGame(state);
+        if(!practiceMode) saveGame(state);
         animating = false;
         rebuildKeyState();
         renderKeyboard();
@@ -463,26 +511,31 @@
   function finish(won, rowEl){
     state.status = won ? 'won' : 'lost';
     state.finishedAt = Date.now();
-    saveGame(state);
+    if(!practiceMode) saveGame(state);
     animating = false;
     rebuildKeyState();
     renderKeyboard();
-    var stats = recordResult(won, state.guesses.length, state.date);
     if(navigator.vibrate) try { navigator.vibrate(won ? [20,40,20] : 60); } catch(e){}
-    setTimeout(function(){ showResultPanel(won, stats); }, won ? 900 : 300);
+    if(practiceMode){
+      setTimeout(function(){ showPracticeResultPanel(won); }, won ? 900 : 300);
+    } else {
+      var stats = recordResult(won, state.guesses.length, state.date);
+      setTimeout(function(){ showResultPanel(won, stats); }, won ? 900 : 300);
+    }
   }
 
   /* ---------- Delning ---------- */
-  function shareText(){
-    var n = dayNumber(state.date);
-    var lines = state.guesses.map(function(g){
+  function shareText(s){
+    s = s || state;
+    var n = dayNumber(s.date);
+    var lines = s.guesses.map(function(g){
       return g.marks.map(function(m){ return m === 'correct' ? '🟩' : (m === 'present' ? '🟨' : '⬛'); }).join('');
     });
-    var scoreLabel = state.status === 'won' ? (state.guesses.length + '/6') : 'X/6';
+    var scoreLabel = s.status === 'won' ? (s.guesses.length + '/6') : 'X/6';
     return 'Ordlek #' + n + ' ' + scoreLabel + '\n\n' + lines.join('\n') + '\n\ngames.nordhammer.se/ordlek/';
   }
-  function doShare(btn){
-    var text = shareText();
+  function doShare(btn, s){
+    var text = shareText(s);
     function flash(){
       toast('Resultat kopierat!');
       if(!btn) return;
@@ -694,11 +747,14 @@
     // omladdning läste in den gamla, aldrig uppdaterade 'playing'-posten
     // som lokalt sparades redan innan den här kollen hann köras, vilket
     // gjorde att man kunde ladda om och spela ändå.
-    state.status = 'blocked';
-    state.submitted = true; // förhindrar att lbSubmit anropas igen av misstag denna session
-    state.blockedSummary = { moves: hit.moves, seconds: hit.seconds };
-    saveGame(state);
-    renderBlockedPanel(state.blockedSummary);
+    // Skriver alltid till dailyState (inte global `state`) — annars kan ett
+    // pågående övningspass (som pekar om `state`) råka bli markerat blockerat
+    // istället för det riktiga dagliga spelet, se startPractice/exitPractice.
+    dailyState.status = 'blocked';
+    dailyState.submitted = true; // förhindrar att lbSubmit anropas igen av misstag denna session
+    dailyState.blockedSummary = { moves: hit.moves, seconds: hit.seconds };
+    saveGame(dailyState);
+    if(!practiceMode) renderBlockedPanel(dailyState.blockedSummary);
   }
   function renderBlockedPanel(summary){
     var text = (summary.moves != null && summary.moves <= MAX_GUESSES)
@@ -758,6 +814,20 @@
     document.getElementById('pClose').onclick = hideOverlay;
     setupLeaderboard(document.getElementById('lbArea'), won);
   }
+  function showPracticeResultPanel(won){
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">'+(won?'🎉':'😔')+'</div>' +
+      '<h2>'+(won?'Snyggt!':'Nästa gång!')+'</h2>' +
+      '<p>'+(won ? ('Du gissade <b>'+state.answer.toUpperCase()+'</b> på '+state.guesses.length+' av '+MAX_GUESSES+' försök.')
+                 : ('Ordet var <b>'+state.answer.toUpperCase()+'</b>.')) + '</p>' +
+      '<p>🎯 Övningsläge — påverkar inte statistik eller topplistor.</p>' +
+      '<button id="pAgain">🔁 Nytt övningsord</button>' +
+      '<button id="pDaily" class="ghost">Till dagens ord</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pAgain').onclick = startPractice;
+    document.getElementById('pDaily').onclick = exitPractice;
+  }
   function showStatsPanel(){
     var stats = loadStats();
     var panel = document.getElementById('panel');
@@ -765,12 +835,12 @@
       '<h2>📊 Statistik</h2>' +
       statBlockHtml(stats) +
       distHtml(stats.distribution, -1) +
-      (state.status !== 'playing' ? '<button id="pShare2">📋 Dela dagens resultat</button>' : '') +
+      (dailyState.status !== 'playing' ? '<button id="pShare2">📋 Dela dagens resultat</button>' : '') +
       '<button id="pClose" class="ghost">Stäng</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pClose').onclick = hideOverlay;
     var ps = document.getElementById('pShare2');
-    if(ps) ps.onclick = function(){ doShare(ps); };
+    if(ps) ps.onclick = function(){ doShare(ps, dailyState); };
   }
   function showRulesPanel(){
     var panel = document.getElementById('panel');
@@ -791,6 +861,7 @@
   }
   function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
 
+  document.getElementById('btnPractice').onclick = startPractice;
   document.getElementById('btnMarathon').onclick = showMarathonPanel;
   document.getElementById('btnHistory').onclick = showHistoryPanel;
   document.getElementById('btnStats').onclick = showStatsPanel;
@@ -820,29 +891,32 @@
     } catch(e){}
   }
 
-  /* ---------- Start ---------- */
+  /* ---------- Start ----------
+     Refererar genomgående dailyState (inte den ombytbara `state`) — annars
+     kan ett övningspass som startas under nätverkskollen nedan råka styra
+     om vad kollen skriver till, se startPractice/showAlreadyPlayedElsewhere. */
   render();
-  if(state.status === 'blocked'){
-    setTimeout(function(){ renderBlockedPanel(state.blockedSummary); }, 200);
-  } else if(state.status === 'playing'){
+  if(dailyState.status === 'blocked'){
+    setTimeout(function(){ renderBlockedPanel(dailyState.blockedSummary); }, 200);
+  } else if(dailyState.status === 'playing'){
     // Ny lokal giv + topplista finns: vi vet ännu inte om profilen redan
     // spelat på en annan enhet. Lås tangentbordet (status 'checking',
     // samma spärr som handleKey redan har för allt utom 'playing') tills
     // den kollen är klar — annars hinner man skriva bokstäver under den
     // korta stund nätverksanropet tar.
-    if(wasFreshState && hasLeaderboard()) state.status = 'checking';
+    if(wasFreshState && hasLeaderboard()) dailyState.status = 'checking';
     else showRulesIfFirstTime();
   } else {
-    setTimeout(function(){ showResultPanel(state.status === 'won', loadStats()); }, 200);
+    setTimeout(function(){ showResultPanel(dailyState.status === 'won', loadStats()); }, 200);
   }
   NordhammerProfile.ensurePicker(function(){
     renderProfileBadge();
-    if(state.status === 'checking'){
+    if(dailyState.status === 'checking'){
       checkAlreadyPlayedElsewhere(function(hit){
         if(hit){
           showAlreadyPlayedElsewhere(hit);
         } else {
-          state.status = 'playing';
+          dailyState.status = 'playing';
           showRulesIfFirstTime();
         }
       });
