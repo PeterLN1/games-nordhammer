@@ -144,20 +144,18 @@ function shuffle(arr) {
 }
 function freshDeck() {
   const deck = [];
-  COLORS.forEach(c => { for (let i = 0; i < 12; i++) deck.push(c); });
-  for (let i = 0; i < 12; i++) deck.push(WILD);
+  COLORS.forEach(c => { for (let i = 0; i < 14; i++) deck.push(c); });
+  for (let i = 0; i < 14; i++) deck.push(WILD);
   return shuffle(deck);
 }
-async function drawTwo(store) {
+async function drawOneFromDeck(store) {
   let deck = await store.getDeck();
-  const drawn = [];
-  for (let i = 0; i < 2; i++) {
-    if (deck.length === 0) deck = freshDeck();
-    drawn.push(deck.pop());
-  }
+  if (deck.length === 0) deck = freshDeck();
+  const card = deck.pop();
   await store.saveDeck(deck);
-  return drawn;
+  return card;
 }
+function freshMarket(drawFn) { return [drawFn(), drawFn(), drawFn(), drawFn(), drawFn()]; }
 function removeCards(hand, cardsToRemove) {
   const h = hand.slice();
   for (const c of cardsToRemove) {
@@ -334,9 +332,24 @@ async function initSchema(pool) {
     game_day date primary key,
     resolved_at timestamptz not null default now()
   );`);
+  // Pass 1 (Action Points + kortmarknad, se .claude/plans):
+  await pool.query(`create table if not exists ghosttrains_market (
+    id int primary key default 1,
+    cards jsonb not null
+  );`);
+  // game_day som text (inte date) — undviker tidszon-/typkonvertering
+  // fram och tillbaka mellan JS Date och SQL date; vi jämför ändå bara
+  // mot gameDay()-strängen (samma mönster som game_day i pending_moves,
+  // fast den kolumnen är date eftersom den bara skrivs, aldrig jämförs
+  // för lat-återställning som denna).
+  await pool.query(`create table if not exists ghosttrains_ap (
+    profile_id text primary key,
+    game_day text not null,
+    remaining int not null default 3
+  );`);
   // Samma öppna förtroendemodell som scores/profiles (se server/index.js):
   // RLS på utan policies stänger Supabases publika REST-API helt.
-  for (const t of ['ghosttrains_hands', 'ghosttrains_deck', 'ghosttrains_routes', 'ghosttrains_pending_moves', 'ghosttrains_resolution_log', 'ghosttrains_resolved_days']) {
+  for (const t of ['ghosttrains_hands', 'ghosttrains_deck', 'ghosttrains_routes', 'ghosttrains_pending_moves', 'ghosttrains_resolution_log', 'ghosttrains_resolved_days', 'ghosttrains_market', 'ghosttrains_ap']) {
     await pool.query(`alter table ${t} enable row level security;`);
   }
 }
@@ -425,6 +438,88 @@ function pgStore(pool) {
         [profileId, sinceId || 0]
       );
       return r.rows;
+    },
+    // Lat-återställd: spenderar `amount` AP om spelaren har råd (annars
+    // null, ingen mutation). amount=0 fungerar som en ren "peek" som
+    // samtidigt initierar dagens rad — se .claude/plans (AP-mönstret).
+    async spendAP(profileId, day, amount) {
+      const r = await pool.query(
+        `insert into ghosttrains_ap (profile_id, game_day, remaining)
+         select $1, $2, 3 - $3 where 3 - $3 >= 0
+         on conflict (profile_id) do update set
+           remaining = case when ghosttrains_ap.game_day = $2 then ghosttrains_ap.remaining - $3 else 3 - $3 end,
+           game_day = $2
+         where (ghosttrains_ap.game_day <> $2 and 3 - $3 >= 0)
+            or (ghosttrains_ap.game_day = $2 and ghosttrains_ap.remaining - $3 >= 0)
+         returning remaining`,
+        [profileId, day, amount]
+      );
+      return r.rows[0] ? r.rows[0].remaining : null;
+    },
+    // Lat-initierar marknaden (5 kort) om den saknas — read-only i övrigt.
+    async getMarketSnapshot() {
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        const mres = await client.query('select cards from ghosttrains_market where id=1 for update');
+        let cards = mres.rows[0] ? mres.rows[0].cards : null;
+        if (!cards) {
+          const dres = await client.query('select remaining from ghosttrains_deck where id=1 for update');
+          let deck = dres.rows[0] ? dres.rows[0].remaining : freshDeck();
+          const draw = () => { if (deck.length === 0) deck = freshDeck(); return deck.pop(); };
+          cards = freshMarket(draw);
+          await client.query('insert into ghosttrains_deck (id, remaining) values (1,$1) on conflict (id) do update set remaining=$1', [JSON.stringify(deck)]);
+          await client.query('insert into ghosttrains_market (id, cards) values (1,$1) on conflict (id) do nothing', [JSON.stringify(cards)]);
+        }
+        await client.query('commit');
+        return cards;
+      } catch (e) { await client.query('rollback'); throw e; }
+      finally { client.release(); }
+    },
+    // Allt i EN transaktion (marknad + kortlek + AP): marknaden är delad,
+    // muterbar state som flera spelare kan träffa samtidigt — utan detta
+    // kunde två samtidiga drag på samma plats ge samma kort till båda
+    // (se .claude/plans, "den enda verkliga tekniska risken"). AP-kostnaden
+    // avgörs av vilket kort som FAKTISKT ligger där just nu (inuti låset),
+    // inte ett tidigare separat peek — annars kunde kostnaden bli fel om
+    // någon annan hann ändra marknaden mellan koll och drag.
+    async drawMarketCard(profileId, day, index) {
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        const mres = await client.query('select cards from ghosttrains_market where id=1 for update');
+        const dres = await client.query('select remaining from ghosttrains_deck where id=1 for update');
+        let cards = mres.rows[0] ? mres.rows[0].cards : null;
+        let deck = dres.rows[0] ? dres.rows[0].remaining : freshDeck();
+        const draw = () => { if (deck.length === 0) deck = freshDeck(); return deck.pop(); };
+        if (!cards) cards = freshMarket(draw);
+        if (!(index >= 0 && index < cards.length)) { await client.query('rollback'); return { error: 'ogiltigt kortval' }; }
+
+        const drawnCard = cards[index];
+        const cost = drawnCard === WILD ? 2 : 1;
+        const apRes = await client.query(
+          `insert into ghosttrains_ap (profile_id, game_day, remaining)
+           select $1, $2, 3 - $3 where 3 - $3 >= 0
+           on conflict (profile_id) do update set
+             remaining = case when ghosttrains_ap.game_day = $2 then ghosttrains_ap.remaining - $3 else 3 - $3 end,
+             game_day = $2
+           where (ghosttrains_ap.game_day <> $2 and 3 - $3 >= 0)
+              or (ghosttrains_ap.game_day = $2 and ghosttrains_ap.remaining - $3 >= 0)
+           returning remaining`,
+          [profileId, day, cost]
+        );
+        if (!apRes.rows[0]) { await client.query('rollback'); return { error: 'ap' }; }
+
+        let newCards = cards.slice();
+        newCards[index] = draw();
+        if (newCards.filter(c => c === WILD).length >= 3) newCards = freshMarket(draw);
+
+        await client.query('insert into ghosttrains_deck (id, remaining) values (1,$1) on conflict (id) do update set remaining=$1', [JSON.stringify(deck)]);
+        await client.query('insert into ghosttrains_market (id, cards) values (1,$1) on conflict (id) do update set cards=$1', [JSON.stringify(newCards)]);
+        await client.query('commit');
+        return { drawnCard, market: newCards, apRemaining: apRes.rows[0].remaining };
+      } catch (e) { await client.query('rollback'); throw e; }
+      finally { client.release(); }
     }
   };
 }
@@ -436,7 +531,10 @@ function memStore() {
   const pending = [];
   const resolvedDays = new Set();
   const log = [];
+  const apState = new Map();
+  let market = null;
   let nextPendingId = 1, nextLogId = 1;
+  function drawOneMem() { if (!deck || deck.length === 0) deck = freshDeck(); return deck.pop(); }
   return {
     async getHand(profileId) { return hands.get(profileId) || []; },
     async saveHand(profileId, hand) { hands.set(profileId, hand); },
@@ -471,6 +569,33 @@ function memStore() {
     async digestSince(profileId, sinceId) {
       return log.filter(e => e.profileId === profileId && e.id > (sinceId || 0))
         .map(e => ({ id: e.id, game_day: e.gameDay, kind: e.kind, route_id: e.routeId, alt_route_id: e.altRouteId, other_players: e.otherPlayers, created_at: e.createdAt }));
+    },
+    async spendAP(profileId, day, amount) {
+      let s = apState.get(profileId);
+      if (!s || s.day !== day) s = { day, remaining: 3 };
+      if (s.remaining - amount < 0) return null;
+      s.remaining -= amount;
+      apState.set(profileId, s);
+      return s.remaining;
+    },
+    async getMarketSnapshot() {
+      if (!market) market = freshMarket(drawOneMem);
+      return market.slice();
+    },
+    async drawMarketCard(profileId, day, index) {
+      if (!market) market = freshMarket(drawOneMem);
+      if (!(index >= 0 && index < market.length)) return { error: 'ogiltigt kortval' };
+      const drawnCard = market[index];
+      const cost = drawnCard === WILD ? 2 : 1;
+      let s = apState.get(profileId);
+      if (!s || s.day !== day) s = { day, remaining: 3 };
+      if (s.remaining - cost < 0) return { error: 'ap' };
+      s.remaining -= cost;
+      apState.set(profileId, s);
+      market = market.slice();
+      market[index] = drawOneMem();
+      if (market.filter(c => c === WILD).length >= 3) market = freshMarket(drawOneMem);
+      return { drawnCard, market: market.slice(), apRemaining: s.remaining };
     }
   };
 }
@@ -490,26 +615,54 @@ function createGhostTrainsRouter(store, resolveSecret) {
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     try {
       const day = gameDay();
-      const [hand, built, pendingMine] = await Promise.all([
-        store.getHand(profileId), store.builtRoutes(), store.pendingForProfileToday(profileId, day)
+      const [hand, built, pendingMine, apRemaining, market] = await Promise.all([
+        store.getHand(profileId), store.builtRoutes(), store.pendingForProfileToday(profileId, day),
+        store.spendAP(profileId, day, 0), store.getMarketSnapshot()
       ]);
       res.json({
         gameDay: day,
         hand,
         built: built.map(b => ({ routeId: b.route_id, track: b.track, ownerProfileId: b.owner_profile_id })),
-        pendingToday: pendingMine.map(p => ({ id: p.id, routeId: p.route_id, fromCity: p.from_city, cards: p.cards }))
+        pendingToday: pendingMine.map(p => ({ id: p.id, routeId: p.route_id, fromCity: p.from_city, cards: p.cards })),
+        apRemaining,
+        market
       });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
+  });
+
+  router.get('/market', async (req, res) => {
+    try { res.json({ cards: await store.getMarketSnapshot() }); }
+    catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 
   router.post('/draw', async (req, res) => {
     const profileId = (req.body || {}).profileId;
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     try {
-      const drawn = await drawTwo(store);
-      const hand = (await store.getHand(profileId)).concat(drawn);
+      const day = gameDay();
+      const apRemaining = await store.spendAP(profileId, day, 1);
+      if (apRemaining == null) return res.status(402).json({ error: 'inte tillrackligt med AP' });
+      const card = await drawOneFromDeck(store);
+      const hand = (await store.getHand(profileId)).concat([card]);
       await store.saveHand(profileId, hand);
-      res.json({ ok: true, drawn, hand });
+      res.json({ ok: true, drawn: [card], hand, apRemaining });
+    } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
+  });
+
+  router.post('/market/draw', async (req, res) => {
+    const b = req.body || {};
+    const profileId = b.profileId;
+    const index = parseInt(b.index, 10);
+    if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
+    if (!(index >= 0 && index <= 4)) return res.status(400).json({ error: 'ogiltigt kortval' });
+    try {
+      const day = gameDay();
+      const result = await store.drawMarketCard(profileId, day, index);
+      if (result.error === 'ap') return res.status(402).json({ error: 'inte tillrackligt med AP' });
+      if (result.error) return res.status(400).json({ error: result.error });
+      const hand = (await store.getHand(profileId)).concat([result.drawnCard]);
+      await store.saveHand(profileId, hand);
+      res.json({ ok: true, drawn: result.drawnCard, hand, apRemaining: result.apRemaining, market: result.market });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 
@@ -529,10 +682,14 @@ function createGhostTrainsRouter(store, resolveSecret) {
       const hand = await store.getHand(profileId);
       const newHand = removeCards(hand, b.cards);
       if (!newHand) return res.status(400).json({ error: 'du har inte de korten' });
-      await store.saveHand(profileId, newHand);
       const day = gameDay();
+      // AP spenderas sist — misslyckas det har varken hand eller PENDING
+      // muterats än (kortvalideringen ovan är ren läsning).
+      const apRemaining = await store.spendAP(profileId, day, 2);
+      if (apRemaining == null) return res.status(402).json({ error: 'inte tillrackligt med AP' });
+      await store.saveHand(profileId, newHand);
       const id = await store.insertPending({ profileId, routeId: route.id, fromCity: b.fromCity, cards: b.cards, gameDay: day });
-      res.json({ ok: true, id, hand: newHand });
+      res.json({ ok: true, id, hand: newHand, apRemaining });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 

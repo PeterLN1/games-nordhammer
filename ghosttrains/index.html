@@ -104,9 +104,30 @@
     background: var(--panel-bg);
   }
   .chip .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(0,0,0,.25); }
+  .ap-badge {
+    font-weight: 800; font-size: 13px; padding: 5px 10px; border-radius: 999px;
+    background: var(--accent); color: #23180a;
+  }
   #drawBtn {
     margin-left: auto; border: none; border-radius: 10px; padding: 9px 14px; font-weight: 700;
     background: var(--accent); color: #23180a; cursor: pointer;
+  }
+  #drawBtn:disabled { opacity: .4; cursor: not-allowed; }
+
+  #marketBar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    background: var(--chrome); flex-wrap: wrap;
+  }
+  .market-card {
+    position: relative; width: 34px; height: 46px; border-radius: 7px; border: 2px solid var(--card-border);
+    cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 11px;
+    font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5);
+  }
+  .market-card.disabled { opacity: .3; cursor: not-allowed; }
+  .market-card .cost {
+    position: absolute; bottom: -6px; right: -6px; background: var(--accent); color: #23180a;
+    border-radius: 999px; width: 17px; height: 17px; font-size: 10px; display: flex;
+    align-items: center; justify-content: center; font-weight: 800;
   }
 
   .overlay {
@@ -172,10 +193,16 @@
   </div>
 </main>
 
+<div id="marketBar">
+  <span class="muted" style="font-size:13px;color:var(--muted)">Marknad:</span>
+  <div id="marketChips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+</div>
+
 <div id="handBar">
+  <span class="ap-badge" id="apBadge">AP: 3/3</span>
   <span class="muted" style="font-size:13px;color:var(--muted)">Din hand:</span>
   <div id="handChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-  <button id="drawBtn">Dra 2 kort</button>
+  <button id="drawBtn">Dra blint (1 AP)</button>
 </div>
 
 <div class="overlay" id="claimOverlay">
@@ -243,7 +270,7 @@
   var map = { cities: [], routes: [] };
   var citiesById = {};
   var routesById = {};
-  var state = { hand: [], built: [], pendingToday: [] };
+  var state = { hand: [], built: [], pendingToday: [], apRemaining: 3, market: [] };
   var profilesById = {};
   var pendingRouteIds = {};
   var currentClaim = null; // { route, fromCity, selectedCards: [] }
@@ -633,6 +660,29 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     });
   }
 
+  function renderAP(){
+    document.getElementById('apBadge').textContent = 'AP: ' + state.apRemaining + '/3';
+    document.getElementById('drawBtn').disabled = state.apRemaining < 1;
+  }
+
+  function renderMarket(){
+    var box = document.getElementById('marketChips');
+    box.innerHTML = '';
+    (state.market || []).forEach(function(color, idx){
+      var cost = color === 'wild' ? 2 : 1;
+      var el = document.createElement('div');
+      el.className = 'market-card' + (state.apRemaining < cost ? ' disabled' : '');
+      el.style.background = colorHex(color);
+      el.title = color + ' — ' + cost + ' AP';
+      var costBadge = document.createElement('span');
+      costBadge.className = 'cost';
+      costBadge.textContent = cost;
+      el.appendChild(costBadge);
+      el.onclick = function(){ if (state.apRemaining >= cost) drawFromMarket(idx); };
+      box.appendChild(el);
+    });
+  }
+
   function renderProfileBadge(){
     var p = NordhammerProfile.current();
     document.getElementById('btnProfile').textContent = p ? p.avatar : '👤';
@@ -704,8 +754,9 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
 
   function updateSubmitState(){
     var route = currentClaim.route;
-    var ok = currentClaim.fromCity && currentClaim.selectedCards.length === route.length;
+    var ok = currentClaim.fromCity && currentClaim.selectedCards.length === route.length && state.apRemaining >= 2;
     document.getElementById('submitClaimBtn').disabled = !ok;
+    document.getElementById('submitClaimBtn').textContent = state.apRemaining < 2 ? 'Räcker inte (kräver 2 AP)' : 'Skicka claim';
   }
 
   document.getElementById('cancelClaimBtn').onclick = function(){
@@ -724,8 +775,9 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       body: JSON.stringify({ profileId: profile.id, routeId: route.id, fromCity: currentClaim.fromCity, cards: cards })
     }).then(function(res){
       state.hand = res.hand;
+      state.apRemaining = res.apRemaining;
       pendingRouteIds[route.id] = true;
-      renderHand(); renderMap();
+      renderHand(); renderMap(); renderAP(); renderMarket();
       document.getElementById('claimOverlay').classList.remove('show');
       toast('Claim skickat — löses upp vid midnatt.');
       currentClaim = null;
@@ -733,6 +785,20 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
   };
 
   /* ---------- Dra kort ---------- */
+  function drawFromMarket(index){
+    var profile = NordhammerProfile.current();
+    if (!profile) return;
+    api('/api/ghosttrains/market/draw', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: profile.id, index: index })
+    }).then(function(res){
+      state.hand = res.hand;
+      state.apRemaining = res.apRemaining;
+      state.market = res.market;
+      renderHand(); renderAP(); renderMarket();
+    }).catch(function(e){ toast(e.message); });
+  }
+
   document.getElementById('drawBtn').onclick = function(){
     var profile = NordhammerProfile.current();
     if (!profile) return;
@@ -741,6 +807,8 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       body: JSON.stringify({ profileId: profile.id })
     }).then(function(res){
       state.hand = res.hand;
+      state.apRemaining = res.apRemaining;
+      renderAP(); renderMarket();
       renderHand();
     }).catch(function(e){ toast(e.message); });
   };
@@ -807,6 +875,8 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       pendingRouteIds = {};
       (state.pendingToday || []).forEach(function(p){ pendingRouteIds[p.routeId] = true; });
       renderHand();
+      renderAP();
+      renderMarket();
       renderMap();
       checkDigest(profile.id);
     }).catch(function(e){ toast(e.message); });
