@@ -36,6 +36,11 @@ export const CITIES = [
 
 export const ROUTES = [
   { id: 'kiruna-lulea', cityA: 'kiruna', cityB: 'lulea', length: 4, color: 'blue', doubleTrack: false },
+  // Kiruna hade annars bara denna enda anslutning — ett problem så fort
+  // destinationsbiljetter (fas 2) kräver att man kan ta sig dit: om
+  // kiruna-lulea claimas av en annan spelare finns ingen alternativ väg
+  // in. En andra, oberoende rutt löser det (se .claude/plans).
+  { id: 'kiruna-umea', cityA: 'kiruna', cityB: 'umea', length: 6, color: 'purple', doubleTrack: false },
   { id: 'lulea-umea', cityA: 'lulea', cityB: 'umea', length: 3, color: 'red', doubleTrack: false },
   { id: 'umea-ostersund', cityA: 'umea', cityB: 'ostersund', length: 3, color: 'green', doubleTrack: false },
   { id: 'umea-sundsvall', cityA: 'umea', cityB: 'sundsvall', length: 3, color: 'yellow', doubleTrack: false },
