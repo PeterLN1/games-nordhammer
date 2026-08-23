@@ -82,6 +82,13 @@ function computeMarathon(rows, seasonDates) {
     };
   });
   table.sort((a, b) => a.points - b.points);
+  // Delad placering vid lika poäng ("standard competition ranking"): två
+  // tvåor ger ingen trea — nästa spelare hoppar direkt till rank 4.
+  let rank = 0;
+  table.forEach((row, i) => {
+    if (i === 0 || row.points !== table[i - 1].points) rank = i + 1;
+    row.rank = rank;
+  });
   return table;
 }
 
@@ -416,7 +423,9 @@ app.get('/api/marathon/history', async (req, res) => {
       const raw = await store.marathon(start, end);
       const rows = computeMarathon(raw, dates);
       if (rows.length) {
-        months.push({ month: cursor, seasonStart: start, seasonEnd: end, champion: rows[0], rows: rows.slice(0, 10) });
+        // Flera kan dela förstaplatsen (samma poäng) — champions är då fler än en.
+        const champions = rows.filter(r => r.rank === 1);
+        months.push({ month: cursor, seasonStart: start, seasonEnd: end, champions, rows: rows.slice(0, 10) });
       }
     }
     res.json({ months });

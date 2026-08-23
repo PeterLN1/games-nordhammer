@@ -674,8 +674,10 @@
       }
       var medals = ['🥇','🥈','🥉'];
       var myName = getName();
-      el.innerHTML = d.rows.map(function(r,i){
-        var rank = i < 3 ? medals[i] : (i+1);
+      el.innerHTML = d.rows.map(function(r){
+        // r.rank kommer från servern och delas vid lika poäng (två tvåor
+        // ger ingen trea) — använd den, inte radens index i listan.
+        var rank = r.rank <= 3 ? medals[r.rank-1] : r.rank;
         var me = (myName && r.name === myName) ? ' me' : '';
         return '<div class="lb-row'+me+'"><span class="lb-rank">'+rank+'</span>' +
                '<span class="lb-name">'+esc(r.name)+'</span>' +
@@ -702,9 +704,12 @@
       }
       el.innerHTML = d.months.map(function(m){
         var monthLabel = formatMonthSv(m.month);
+        // Flera kan ha delat förstaplatsen (samma poäng) den månaden.
+        var names = m.champions.map(function(c){ return esc(c.name); }).join(' & ');
+        var points = m.champions[0].points;
         return '<div class="lb-row"><span class="lb-rank">🥇</span>' +
-               '<span class="lb-name">'+esc(m.champion.name)+' <span class="lb-hof-month">— '+monthLabel+'</span></span>' +
-               '<span class="lb-time">'+m.champion.points+' p</span></div>';
+               '<span class="lb-name">'+names+' <span class="lb-hof-month">— '+monthLabel+'</span></span>' +
+               '<span class="lb-time">'+points+' p</span></div>';
       }).join('');
     }).catch(function(){ el.textContent = 'Kunde inte hämta historiken'; });
   }
