@@ -25,6 +25,13 @@ export const CITIES = [
   { id: 'ostersund', name: 'Östersund', x: 463, y: 504 },
   { id: 'sundsvall', name: 'Sundsvall', x: 578, y: 577 },
   { id: 'gavle', name: 'Gävle', x: 570, y: 737 },
+  // "Inlandsbanan": Gävle var en hård flaskhals — plockar man bort
+  // Gävle delas kartan i två helt oberoende delar (norra klustret
+  // Kiruna/Luleå/Umeå/Östersund/Sundsvall vs. resten). Karlstad hade
+  // dessutom ingen väg norrut alls utom via Gävle. Borlänge/Mora öppnar
+  // en andra, oberoende väg norrut genom Dalarna (se ROUTES nedan).
+  { id: 'borlange', name: 'Borlänge', x: 497, y: 754 },
+  { id: 'mora', name: 'Mora', x: 459, y: 706 },
   { id: 'karlstad', name: 'Karlstad', x: 414, y: 856 },
   { id: 'uppsala', name: 'Uppsala', x: 592, y: 812 },
   { id: 'stockholm', name: 'Stockholm', x: 610, y: 861 },
@@ -63,6 +70,16 @@ export const ROUTES = [
   // Färgbalans: vit (14 rutor) var kraftigt överrepresenterad, röd (6)
   // kraftigt underrepresenterad över hela kartan — bytte denna till röd.
   { id: 'gavle-karlstad', cityA: 'gavle', cityB: 'karlstad', length: 4, color: 'red', doubleTrack: false },
+  // "Inlandsbanan" — separerar flödet väster-/inlandsifrån (Karlstad,
+  // Örebro, Uppsala) från östkustens Gävle-flaskhals, precis som
+  // riktiga Ticket to Ride-kartor separerar regionala flöden. mora-
+  // ostersund gjordes vit (inte lila, som annars hade blivit
+  // kraftigt överrepresenterad igen) för att hålla färgbalansen jämn.
+  { id: 'karlstad-borlange', cityA: 'karlstad', cityB: 'borlange', length: 2, color: 'orange', doubleTrack: false },
+  { id: 'orebro-borlange', cityA: 'orebro', cityB: 'borlange', length: 2, color: 'yellow', doubleTrack: false },
+  { id: 'uppsala-borlange', cityA: 'uppsala', cityB: 'borlange', length: 2, color: 'black', doubleTrack: false },
+  { id: 'borlange-mora', cityA: 'borlange', cityB: 'mora', length: 2, color: 'red', doubleTrack: false },
+  { id: 'mora-ostersund', cityA: 'mora', cityB: 'ostersund', length: 4, color: 'white', doubleTrack: false },
   { id: 'uppsala-stockholm', cityA: 'uppsala', cityB: 'stockholm', length: 1, color: 'red', doubleTrack: true },
   { id: 'karlstad-orebro', cityA: 'karlstad', cityB: 'orebro', length: 2, color: 'green', doubleTrack: false },
   { id: 'karlstad-goteborg', cityA: 'karlstad', cityB: 'goteborg', length: 3, color: 'blue', doubleTrack: false },
