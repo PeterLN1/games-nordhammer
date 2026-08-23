@@ -11,10 +11,12 @@
    ============================================================ */
 import express from 'express';
 import pg from 'pg';
+import { createGhostTrains } from './ghosttrains.js';
 
 const PORT = process.env.PORT || 3000;
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || '*';
+const GHOSTTRAINS_RESOLVE_SECRET = process.env.GHOSTTRAINS_RESOLVE_SECRET || '';
 
 const MODES = new Set(['classic', 'tilematch', 'ordlek']);
 // enkel olämplighetsfilter (utökas vid behov)
@@ -94,9 +96,10 @@ function computeMarathon(rows, seasonDates) {
 
 /* ---------- Lagring (Postgres eller minne) ---------- */
 let store;
+let pool = null;
 if (DATABASE_URL) {
   try {
-    const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+    pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
     await pool.query(`
       create table if not exists scores (
         id bigserial primary key,
@@ -244,6 +247,7 @@ if (DATABASE_URL) {
     // driftsättning/omstart lyckas ansluta.
     console.error('Topplista: kunde inte ansluta till Postgres vid uppstart (kan bero på att Supabase-projektet är pausat):', e.message);
     store = null;
+    pool = null;
   }
 } else {
   const mem = [];
@@ -553,5 +557,8 @@ app.post('/api/scores', async (req, res) => {
     console.error(e); res.status(500).json({ error: 'databasfel' });
   }
 });
+
+const ghostTrains = await createGhostTrains(pool, { resolveSecret: GHOSTTRAINS_RESOLVE_SECRET });
+app.use('/api/ghosttrains', ghostTrains.router);
 
 app.listen(PORT, () => console.log('Topplista-API lyssnar pa port ' + PORT));

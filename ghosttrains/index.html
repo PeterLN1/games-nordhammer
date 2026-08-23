@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#eef1f9" data-light="#eef1f9" data-dark="#0b1020">
+<title>Ghost Trains</title>
+<script src="/shared/theme.js"></script>
+<script src="/shared/profile.js"></script>
+<style>
+  :root {
+    --bg: radial-gradient(120% 90% at 50% 0%, #eef1f9 0%, #e3e8f4 100%);
+    --chrome: rgba(0,0,0,.06);
+    --ink: #1b2138;
+    --muted: rgba(27,33,56,.6);
+    --panel-bg: #ffffff;
+    --accent: #ffb300;
+    --card-border: rgba(27,33,56,.18);
+    --map-bg: #ffffff;
+    --city-fill: #ffffff;
+    --city-stroke: #1b2138;
+    --route-unbuilt-opacity: .55;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --bg: radial-gradient(120% 90% at 50% 0%, #16224a 0%, #0b1020 60%, #070a15 100%);
+      --chrome: rgba(0,0,0,.35);
+      --ink: #eef2ff;
+      --muted: rgba(238,242,255,.6);
+      --panel-bg: #141a33;
+      --card-border: rgba(238,242,255,.22);
+      --map-bg: #0f1530;
+      --city-fill: #1b2138;
+      --city-stroke: #eef2ff;
+      --route-unbuilt-opacity: .5;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: radial-gradient(120% 90% at 50% 0%, #16224a 0%, #0b1020 60%, #070a15 100%);
+    --chrome: rgba(0,0,0,.35);
+    --ink: #eef2ff;
+    --muted: rgba(238,242,255,.6);
+    --panel-bg: #141a33;
+    --card-border: rgba(238,242,255,.22);
+    --map-bg: #0f1530;
+    --city-fill: #1b2138;
+    --city-stroke: #eef2ff;
+    --route-unbuilt-opacity: .5;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    background: var(--chrome); backdrop-filter: blur(6px);
+  }
+  header h1 { font-size: 17px; margin: 0; flex: 1; }
+  .iconbtn {
+    width: 38px; height: 38px; border-radius: 10px; border: none; cursor: pointer;
+    background: var(--panel-bg); color: var(--ink); font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  main { flex: 1; overflow: auto; position: relative; }
+  #mapWrap { width: 100%; padding: 8px; }
+  svg#map { width: 100%; height: auto; display: block; background: var(--map-bg); border-radius: 12px; }
+  .route-hit { cursor: pointer; }
+  .route-hit:hover { opacity: .85; }
+  .city-dot { fill: var(--city-fill); stroke: var(--city-stroke); stroke-width: 2; }
+  .city-label { fill: var(--ink); font-size: 13px; font-weight: 600; pointer-events: none; }
+  .pending-marker { pointer-events: none; }
+
+  #handBar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    background: var(--chrome); flex-wrap: wrap;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; border-radius: 999px;
+    padding: 5px 10px; font-size: 13px; font-weight: 700; border: 1px solid var(--card-border);
+    background: var(--panel-bg);
+  }
+  .chip .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(0,0,0,.25); }
+  #drawBtn {
+    margin-left: auto; border: none; border-radius: 10px; padding: 9px 14px; font-weight: 700;
+    background: var(--accent); color: #23180a; cursor: pointer;
+  }
+
+  .overlay {
+    position: fixed; inset: 0; z-index: 999; display: none; align-items: center; justify-content: center;
+    background: rgba(10,12,20,.65); padding: 16px;
+  }
+  .overlay.show { display: flex; }
+  .panel {
+    background: var(--panel-bg); border-radius: 16px; padding: 20px; max-width: 420px; width: 100%;
+    max-height: 90vh; overflow: auto;
+  }
+  .panel h2 { margin-top: 0; font-size: 18px; }
+  .panel p.muted { color: var(--muted); font-size: 13.5px; }
+  .row { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+  .choice-btn {
+    flex: 1; min-width: 120px; padding: 10px; border-radius: 10px; border: 2px solid var(--card-border);
+    background: transparent; color: var(--ink); font-weight: 700; cursor: pointer; font-size: 14px;
+  }
+  .choice-btn.selected { border-color: var(--accent); background: rgba(255,179,0,.12); }
+  .card-pick {
+    width: 40px; height: 56px; border-radius: 8px; border: 2px solid var(--card-border);
+    cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 11px;
+    font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5);
+  }
+  .card-pick.disabled { opacity: .25; cursor: not-allowed; }
+  .card-pick.selected { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .primary-btn {
+    width: 100%; padding: 12px; border: none; border-radius: 10px; font-weight: 700; font-size: 15px;
+    cursor: pointer; background: var(--accent); color: #23180a; margin-top: 10px;
+  }
+  .primary-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .ghost-btn {
+    width: 100%; padding: 10px; border: none; border-radius: 10px; font-weight: 600; font-size: 14px;
+    cursor: pointer; background: transparent; color: var(--muted); margin-top: 4px;
+  }
+  .digest-entry { border-bottom: 1px solid var(--card-border); padding: 10px 0; font-size: 14px; }
+  .digest-entry:last-child { border-bottom: none; }
+  .toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translate(-50%, 20px);
+    background: var(--panel-bg); color: var(--ink); padding: 10px 16px; border-radius: 10px;
+    opacity: 0; pointer-events: none; transition: all .2s; z-index: 1200; font-size: 14px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.25);
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>👻🚂 Ghost Trains</h1>
+  <button class="iconbtn" id="btnHelp" title="Hur funkar det?">❓</button>
+  <button class="iconbtn" id="btnProfile" title="Byt spelare">👤</button>
+</header>
+
+<main>
+  <div id="mapWrap"><svg id="map" viewBox="0 0 1000 1230" xmlns="http://www.w3.org/2000/svg"></svg></div>
+</main>
+
+<div id="handBar">
+  <span class="muted" style="font-size:13px;color:var(--muted)">Din hand:</span>
+  <div id="handChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+  <button id="drawBtn">Dra 2 kort</button>
+</div>
+
+<div class="overlay" id="claimOverlay">
+  <div class="panel">
+    <h2 id="claimTitle">Rutt</h2>
+    <p class="muted" id="claimSub"></p>
+    <div>
+      <strong style="font-size:13px;">Från vilken stad startar ditt tåg?</strong>
+      <div class="row" id="fromCityRow"></div>
+    </div>
+    <div>
+      <strong style="font-size:13px;">Välj kort (<span id="cardCount">0</span> / <span id="cardNeed">0</span>)</strong>
+      <div class="row" id="cardPickRow"></div>
+    </div>
+    <button class="primary-btn" id="submitClaimBtn" disabled>Skicka claim</button>
+    <button class="ghost-btn" id="cancelClaimBtn">Avbryt</button>
+    <p class="muted" style="margin-top:10px;">Ditt claim hålls hemligt för de andra och avgörs vid midnatt. Korten dras direkt — även om det blir en krock i natt.</p>
+  </div>
+</div>
+
+<div class="overlay" id="digestOverlay">
+  <div class="panel">
+    <h2>Nattens händelser</h2>
+    <div id="digestList"></div>
+    <button class="primary-btn" id="closeDigestBtn">Stäng</button>
+  </div>
+</div>
+
+<div class="overlay" id="helpOverlay">
+  <div class="panel">
+    <h2>Så funkar Ghost Trains</h2>
+    <p class="muted">Bygg familjens tågnät över Sverige tillsammans — men asynkront.</p>
+    <ul style="font-size:14px;line-height:1.5;color:var(--ink);padding-left:18px;">
+      <li>Dra kort, eller claima en rutt genom att klicka på den och betala kort som matchar ruttens färg (jokrar funkar alltid).</li>
+      <li>Dina claim hålls hemliga för de andra hela dagen.</li>
+      <li>Vid midnatt löses dagens claim upp. Om två spelare claimar samma rutt blir det en krock — ingen får rutten, och båda omdirigeras till närmaste lediga rutt istället. Korten är ändå förbrukade.</li>
+      <li>Vissa rutter har dubbelspår — då kan exakt två spelare claima samma sträcka samma dag utan krock (tidigast får spår A, senare spår B).</li>
+    </ul>
+    <button class="primary-btn" id="closeHelpBtn">Okej!</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  var API_BASE = 'https://games-nordhammer-production.up.railway.app';
+  function apiBase(){ try { return (localStorage.getItem('nordhammer:api') || API_BASE || '').replace(/\/+$/, ''); } catch(e){ return API_BASE; } }
+  function api(path, opts){
+    return fetch(apiBase() + path, opts).then(function(r){
+      return r.json().then(function(d){ if(!r.ok) throw new Error(d.error || ('HTTP ' + r.status)); return d; });
+    });
+  }
+
+  var COLOR_HEX = {
+    red: '#e5484d', blue: '#2f7ee0', green: '#2f9e44', yellow: '#e0b400',
+    orange: '#f0883e', purple: '#9c6ade', black: '#4a4f5c', white: '#c9ccd6',
+    wild: 'conic-gradient(#e5484d,#2f7ee0,#2f9e44,#e0b400,#f0883e,#9c6ade)'
+  };
+  function colorHex(c){ return COLOR_HEX[c] || '#888'; }
+
+  var LAST_DIGEST_KEY = 'ghosttrains:lastDigestId:';
+
+  var map = { cities: [], routes: [] };
+  var citiesById = {};
+  var routesById = {};
+  var state = { hand: [], built: [], pendingToday: [] };
+  var profilesById = {};
+  var pendingRouteIds = {};
+  var currentClaim = null; // { route, fromCity, selectedCards: [] }
+
+  var svg = document.getElementById('map');
+
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  function refreshProfilesIndex(){
+    profilesById = {};
+    (NordhammerProfile.list() || []).forEach(function(p){ profilesById[p.id] = p; });
+  }
+
+  function midpoint(a, b){ return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+  function perpOffset(a, b, amount){
+    var dx = b.x - a.x, dy = b.y - a.y;
+    var len = Math.sqrt(dx*dx + dy*dy) || 1;
+    return { x: -dy / len * amount, y: dx / len * amount };
+  }
+
+  function svgEl(tag, attrs){
+    var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  function trackOwner(routeId, track){
+    var hit = state.built.find(function(b){ return b.routeId === routeId && b.track === track; });
+    return hit ? hit.ownerProfileId : null;
+  }
+  function trackSlotsFor(route){ return route.doubleTrack ? ['A', 'B'] : ['single']; }
+
+  function renderMap(){
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    map.routes.forEach(function(route){
+      var a = citiesById[route.cityA], b = citiesById[route.cityB];
+      var slots = trackSlotsFor(route);
+      slots.forEach(function(track, i){
+        var offset = route.doubleTrack ? (i === 0 ? -5 : 5) : 0;
+        var off = perpOffset(a, b, offset);
+        var owner = trackOwner(route.id, track);
+        var ownerColor = owner && profilesById[owner] ? profilesById[owner].color : null;
+
+        var hit = svgEl('line', {
+          x1: a.x + off.x, y1: a.y + off.y, x2: b.x + off.x, y2: b.y + off.y,
+          stroke: ownerColor || colorHex(route.color), 'stroke-width': ownerColor ? 8 : 5,
+          'stroke-linecap': 'round',
+          opacity: ownerColor ? 1 : 'var(--route-unbuilt-opacity, .55)',
+          class: 'route-hit'
+        });
+        hit.dataset.routeId = route.id;
+        hit.addEventListener('click', function(){ openClaim(route); });
+        svg.appendChild(hit);
+
+        // bredare osynlig hit-yta, lättare att träffa på mobil
+        var hitArea = svgEl('line', {
+          x1: a.x + off.x, y1: a.y + off.y, x2: b.x + off.x, y2: b.y + off.y,
+          stroke: 'transparent', 'stroke-width': 20, class: 'route-hit'
+        });
+        hitArea.addEventListener('click', function(){ openClaim(route); });
+        svg.appendChild(hitArea);
+      });
+
+      if (pendingRouteIds[route.id]) {
+        var mid = midpoint(a, b);
+        var marker = svgEl('circle', { cx: mid.x, cy: mid.y, r: 9, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 3, 'stroke-dasharray': '4 3', class: 'pending-marker' });
+        svg.appendChild(marker);
+      }
+    });
+
+    map.cities.forEach(function(city){
+      var dot = svgEl('circle', { cx: city.x, cy: city.y, r: 10, class: 'city-dot' });
+      svg.appendChild(dot);
+      var label = svgEl('text', { x: city.x + 14, y: city.y + 4, class: 'city-label' });
+      label.textContent = city.name;
+      svg.appendChild(label);
+    });
+  }
+
+  function renderHand(){
+    var counts = {};
+    state.hand.forEach(function(c){ counts[c] = (counts[c] || 0) + 1; });
+    var box = document.getElementById('handChips');
+    box.innerHTML = '';
+    if (!state.hand.length) {
+      var empty = document.createElement('span');
+      empty.className = 'muted'; empty.style.fontSize = '13px'; empty.style.color = 'var(--muted)';
+      empty.textContent = 'Inga kort än — dra några!';
+      box.appendChild(empty);
+      return;
+    }
+    Object.keys(counts).forEach(function(color){
+      var chip = document.createElement('span');
+      chip.className = 'chip';
+      var sw = document.createElement('span');
+      sw.className = 'swatch';
+      sw.style.background = colorHex(color);
+      chip.appendChild(sw);
+      chip.appendChild(document.createTextNode('× ' + counts[color]));
+      box.appendChild(chip);
+    });
+  }
+
+  function renderProfileBadge(){
+    var p = NordhammerProfile.current();
+    document.getElementById('btnProfile').textContent = p ? p.avatar : '👤';
+  }
+
+  /* ---------- Claim-dialog ---------- */
+  function openClaim(route){
+    var slots = trackSlotsFor(route).filter(function(t){ return !trackOwner(route.id, t); });
+    if (!slots.length) { toast('Rutten är redan helt byggd.'); return; }
+    currentClaim = { route: route, fromCity: null, selectedCards: [] };
+    document.getElementById('claimTitle').textContent = citiesById[route.cityA].name + ' – ' + citiesById[route.cityB].name;
+    document.getElementById('claimSub').textContent =
+      'Längd ' + route.length + ' · kräver ' + route.length + ' kort i färgen ' + route.color + ' (jokrar går alltid bra).';
+
+    var fromRow = document.getElementById('fromCityRow');
+    fromRow.innerHTML = '';
+    [route.cityA, route.cityB].forEach(function(cityId){
+      var btn = document.createElement('button');
+      btn.className = 'choice-btn';
+      btn.textContent = citiesById[cityId].name;
+      btn.onclick = function(){
+        currentClaim.fromCity = cityId;
+        Array.prototype.forEach.call(fromRow.children, function(c){ c.classList.remove('selected'); });
+        btn.classList.add('selected');
+        updateSubmitState();
+      };
+      fromRow.appendChild(btn);
+    });
+
+    renderCardPicker();
+    document.getElementById('cardNeed').textContent = route.length;
+    updateSubmitState();
+    document.getElementById('claimOverlay').classList.add('show');
+  }
+
+  function renderCardPicker(){
+    var row = document.getElementById('cardPickRow');
+    row.innerHTML = '';
+    var route = currentClaim.route;
+    var counts = {};
+    state.hand.forEach(function(c){ counts[c] = (counts[c] || 0) + 1; });
+    var usable = Object.keys(counts).filter(function(c){ return c === 'wild' || c === route.color; });
+    usable.forEach(function(color){
+      for (var i = 0; i < counts[color]; i++) {
+        (function(color, idx){
+          var el = document.createElement('div');
+          el.className = 'card-pick';
+          el.style.background = colorHex(color);
+          el.textContent = color === 'wild' ? '★' : '';
+          el.onclick = function(){
+            var pos = currentClaim.selectedCards.indexOf(color + '#' + idx);
+            if (pos >= 0) {
+              currentClaim.selectedCards.splice(pos, 1);
+              el.classList.remove('selected');
+            } else {
+              if (currentClaim.selectedCards.length >= route.length) return;
+              currentClaim.selectedCards.push(color + '#' + idx);
+              el.classList.add('selected');
+            }
+            document.getElementById('cardCount').textContent = currentClaim.selectedCards.length;
+            updateSubmitState();
+          };
+          row.appendChild(el);
+        })(color, i);
+      }
+    });
+    document.getElementById('cardCount').textContent = 0;
+  }
+
+  function updateSubmitState(){
+    var route = currentClaim.route;
+    var ok = currentClaim.fromCity && currentClaim.selectedCards.length === route.length;
+    document.getElementById('submitClaimBtn').disabled = !ok;
+  }
+
+  document.getElementById('cancelClaimBtn').onclick = function(){
+    document.getElementById('claimOverlay').classList.remove('show');
+    currentClaim = null;
+  };
+
+  document.getElementById('submitClaimBtn').onclick = function(){
+    if (!currentClaim) return;
+    var route = currentClaim.route;
+    var cards = currentClaim.selectedCards.map(function(s){ return s.split('#')[0]; });
+    var profile = NordhammerProfile.current();
+    if (!profile) return;
+    api('/api/ghosttrains/claim', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: profile.id, routeId: route.id, fromCity: currentClaim.fromCity, cards: cards })
+    }).then(function(res){
+      state.hand = res.hand;
+      pendingRouteIds[route.id] = true;
+      renderHand(); renderMap();
+      document.getElementById('claimOverlay').classList.remove('show');
+      toast('Claim skickat — löses upp vid midnatt.');
+      currentClaim = null;
+    }).catch(function(e){ toast(e.message); });
+  };
+
+  /* ---------- Dra kort ---------- */
+  document.getElementById('drawBtn').onclick = function(){
+    var profile = NordhammerProfile.current();
+    if (!profile) return;
+    api('/api/ghosttrains/draw', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: profile.id })
+    }).then(function(res){
+      state.hand = res.hand;
+      renderHand();
+    }).catch(function(e){ toast(e.message); });
+  };
+
+  /* ---------- Digest ---------- */
+  var KIND_TEXT = {
+    success: function(e){ return 'Din rutt ' + routeLabel(e.route_id) + ' byggdes klart!'; },
+    double_track: function(e){ return 'Dubbelspår: du fick ditt eget spår på ' + routeLabel(e.route_id) + '.'; },
+    rerouted: function(e){
+      var names = (e.other_players || []).map(profileName).join(' och ');
+      return 'Krock med ' + (names || 'någon annan') + ' på ' + routeLabel(e.route_id) +
+        '. Rutten är fri igen, men ditt tåg omdirigerades till ' + routeLabel(e.alt_route_id) + '.';
+    },
+    total_crash: function(e){
+      var names = (e.other_players || []).map(profileName).join(' och ');
+      return 'Krock med ' + (names || 'någon annan') + ' på ' + routeLabel(e.route_id) + '. Ingen ledig rutt hittades — tåget stannade helt denna gång.';
+    }
+  };
+  function routeLabel(routeId){
+    var r = routesById[routeId];
+    if (!r) return routeId;
+    return citiesById[r.cityA].name + '–' + citiesById[r.cityB].name;
+  }
+  function profileName(id){ return profilesById[id] ? profilesById[id].name : 'en annan spelare'; }
+
+  function checkDigest(profileId){
+    var key = LAST_DIGEST_KEY + profileId;
+    var since = parseInt(localStorage.getItem(key) || '0', 10);
+    api('/api/ghosttrains/digest?profileId=' + encodeURIComponent(profileId) + '&since=' + since).then(function(res){
+      if (!res.entries.length) return;
+      var list = document.getElementById('digestList');
+      list.innerHTML = '';
+      var maxId = since;
+      res.entries.forEach(function(e){
+        if (e.id > maxId) maxId = e.id;
+        var div = document.createElement('div');
+        div.className = 'digest-entry';
+        div.textContent = (KIND_TEXT[e.kind] || function(){ return e.kind; })(e);
+        list.appendChild(div);
+      });
+      localStorage.setItem(key, String(maxId));
+      document.getElementById('digestOverlay').classList.add('show');
+    }).catch(function(){});
+  }
+  document.getElementById('closeDigestBtn').onclick = function(){
+    document.getElementById('digestOverlay').classList.remove('show');
+  };
+
+  /* ---------- Hjälp ---------- */
+  document.getElementById('btnHelp').onclick = function(){ document.getElementById('helpOverlay').classList.add('show'); };
+  document.getElementById('closeHelpBtn').onclick = function(){ document.getElementById('helpOverlay').classList.remove('show'); };
+
+  document.getElementById('btnProfile').onclick = function(){
+    NordhammerProfile.openSwitcher(function(){ renderProfileBadge(); loadState(); });
+  };
+
+  /* ---------- Ladda spelet ---------- */
+  function loadState(){
+    var profile = NordhammerProfile.current();
+    if (!profile) return;
+    refreshProfilesIndex();
+    api('/api/ghosttrains/state?profileId=' + encodeURIComponent(profile.id)).then(function(res){
+      state = res;
+      pendingRouteIds = {};
+      (state.pendingToday || []).forEach(function(p){ pendingRouteIds[p.routeId] = true; });
+      renderHand();
+      renderMap();
+      checkDigest(profile.id);
+    }).catch(function(e){ toast(e.message); });
+  }
+
+  function loadMap(){
+    return api('/api/ghosttrains/map').then(function(res){
+      map = res;
+      citiesById = {}; map.cities.forEach(function(c){ citiesById[c.id] = c; });
+      routesById = {}; map.routes.forEach(function(r){ routesById[r.id] = r; });
+    });
+  }
+
+  loadMap().then(function(){
+    renderMap();
+    NordhammerProfile.ensurePicker(function(){
+      renderProfileBadge();
+      loadState();
+    });
+  }).catch(function(e){ toast('Kunde inte ladda kartan: ' + e.message); });
+})();
+</script>
+</body>
+</html>
