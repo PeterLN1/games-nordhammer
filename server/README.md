@@ -1,9 +1,15 @@
-# Mahjong topplista — backend
+# Nordhammer Spel — backend
 
-Litet API för den globala topplistan i Mahjong (Nordhammer Spel).
-**Railway** kör servern, **Supabase** är databasen (Postgres).
+Delad backend för flera spel i Nordhammer Spel. **Railway** kör
+servern, **Supabase** är databasen (Postgres). Startade som enbart
+Mahjongs topplista (därav filnamn/historik nedan), men driver nu även
+Ordleks maratontabell, det gemensamma profilsystemet, och hela
+**Ghost Trains** — se [`../ghosttrains/README.md`](../ghosttrains/README.md)
+för det spelets regler, databasschema och endpoints (`server/ghosttrains.js`,
+mountas på `/api/ghosttrains/*`, egen `node-cron`-schemaläggning för
+midnattsupplösningen).
 
-Endpoints:
+Mahjong-endpoints:
 - `GET /api/health` → `{ ok: true }`
 - `GET /api/leaderboard?tiles=80&mode=classic&limit=20` → topplista för ett bräde
 - `POST /api/scores` med `{ name, mode, tiles, seconds, moves }` → sparar en tid
