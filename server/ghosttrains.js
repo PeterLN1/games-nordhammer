@@ -66,7 +66,9 @@ export const ROUTES = [
   { id: 'lulea-sundsvall', cityA: 'lulea', cityB: 'sundsvall', length: 4, color: 'orange', doubleTrack: false },
   { id: 'umea-ostersund', cityA: 'umea', cityB: 'ostersund', length: 3, color: 'green', doubleTrack: false },
   { id: 'umea-sundsvall', cityA: 'umea', cityB: 'sundsvall', length: 3, color: 'yellow', doubleTrack: false },
-  { id: 'ostersund-sundsvall', cityA: 'ostersund', cityB: 'sundsvall', length: 2, color: 'orange', doubleTrack: false },
+  // Svart istället för orange: orange möttes redan med den nya
+  // lulea-sundsvall i Sundsvall (samma stad, samma färg = förvirrande).
+  { id: 'ostersund-sundsvall', cityA: 'ostersund', cityB: 'sundsvall', length: 2, color: 'black', doubleTrack: false },
   // "Norrlandsporten": Östersund som knutpunkt mellan Norrlands inland
   // och kusten söderut — andra benet (ostersund-sundsvall fanns redan).
   { id: 'ostersund-gavle', cityA: 'ostersund', cityB: 'gavle', length: 3, color: 'blue', doubleTrack: false },
@@ -81,8 +83,10 @@ export const ROUTES = [
   // ostersund gjordes vit (inte lila, som annars hade blivit
   // kraftigt överrepresenterad igen) för att hålla färgbalansen jämn.
   { id: 'karlstad-borlange', cityA: 'karlstad', cityB: 'borlange', length: 2, color: 'orange', doubleTrack: false },
-  { id: 'orebro-borlange', cityA: 'orebro', cityB: 'borlange', length: 2, color: 'yellow', doubleTrack: false },
-  { id: 'uppsala-borlange', cityA: 'uppsala', cityB: 'borlange', length: 2, color: 'black', doubleTrack: false },
+  // Blå istället för gul: gul mötte redan orebro-stockholm i Örebro.
+  { id: 'orebro-borlange', cityA: 'orebro', cityB: 'borlange', length: 2, color: 'blue', doubleTrack: false },
+  // Grön istället för svart: svart mötte redan gavle-uppsala i Uppsala.
+  { id: 'uppsala-borlange', cityA: 'uppsala', cityB: 'borlange', length: 2, color: 'green', doubleTrack: false },
   { id: 'borlange-mora', cityA: 'borlange', cityB: 'mora', length: 2, color: 'red', doubleTrack: false },
   { id: 'mora-ostersund', cityA: 'mora', cityB: 'ostersund', length: 4, color: 'white', doubleTrack: false },
   { id: 'uppsala-stockholm', cityA: 'uppsala', cityB: 'stockholm', length: 1, color: 'red', doubleTrack: true },
