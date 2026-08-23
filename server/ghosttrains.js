@@ -35,8 +35,13 @@ export const CITIES = [
   { id: 'vaxjo', name: 'Växjö', x: 470, y: 1087 },
   { id: 'karlskrona', name: 'Karlskrona', x: 504, y: 1154 },
   { id: 'kristianstad', name: 'Kristianstad', x: 442, y: 1166 },
-  { id: 'lund', name: 'Lund', x: 401, y: 1197 },
-  { id: 'malmo', name: 'Malmö', x: 393, y: 1206 }
+  // Lund och Malmö låg bara 12 enheter isär (verkligt avstånd ~18 km,
+  // kortast av alla stadspar på kartan) — stadsprickarna (radie 10 var)
+  // överlappade då helt och dolde hela rutten mellan dem. Flyttade isär
+  // symmetriskt längs samma geografiska riktning (~30 enheter) tills
+  // linjen syns, utan att ändra deras position i förhållande till varandra.
+  { id: 'lund', name: 'Lund', x: 407, y: 1190 },
+  { id: 'malmo', name: 'Malmö', x: 387, y: 1213 }
 ];
 
 export const ROUTES = [
