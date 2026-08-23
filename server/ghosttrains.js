@@ -14,24 +14,29 @@ export const COLORS = ['red', 'blue', 'green', 'yellow', 'orange', 'purple', 'bl
 export const WILD = 'wild';
 
 export const CITIES = [
-  { id: 'kiruna', name: 'Kiruna', x: 900, y: 30 },
-  { id: 'lulea', name: 'Luleå', x: 820, y: 150 },
-  { id: 'umea', name: 'Umeå', x: 760, y: 270 },
-  { id: 'ostersund', name: 'Östersund', x: 580, y: 380 },
-  { id: 'sundsvall', name: 'Sundsvall', x: 700, y: 420 },
-  { id: 'gavle', name: 'Gävle', x: 630, y: 560 },
-  { id: 'karlstad', name: 'Karlstad', x: 420, y: 630 },
-  { id: 'uppsala', name: 'Uppsala', x: 650, y: 650 },
-  { id: 'stockholm', name: 'Stockholm', x: 690, y: 700 },
-  { id: 'orebro', name: 'Örebro', x: 500, y: 690 },
-  { id: 'norrkoping', name: 'Norrköping', x: 610, y: 780 },
-  { id: 'jonkoping', name: 'Jönköping', x: 490, y: 880 },
-  { id: 'goteborg', name: 'Göteborg', x: 330, y: 860 },
-  { id: 'vaxjo', name: 'Växjö', x: 510, y: 970 },
-  { id: 'karlskrona', name: 'Karlskrona', x: 620, y: 1040 },
-  { id: 'kristianstad', name: 'Kristianstad', x: 500, y: 1080 },
-  { id: 'lund', name: 'Lund', x: 440, y: 1150 },
-  { id: 'malmo', name: 'Malmö', x: 420, y: 1190 }
+  // Koordinater beräknade från städernas verkliga lat/long (enkel
+  // ekvirektangulär projektion mot Sveriges yttre gränser), sedan
+  // passade mot Sverigekonturens bounding box (ghosttrains/index.html) —
+  // annars hamnar städer som Stockholm/Göteborg utanför konturen (se
+  // .claude/plans, felrapport "kartan är inte i synk med städerna").
+  { id: 'kiruna', name: 'Kiruna', x: 702, y: 72 },
+  { id: 'lulea', name: 'Luleå', x: 785, y: 282 },
+  { id: 'umea', name: 'Umeå', x: 704, y: 444 },
+  { id: 'ostersund', name: 'Östersund', x: 463, y: 504 },
+  { id: 'sundsvall', name: 'Sundsvall', x: 578, y: 577 },
+  { id: 'gavle', name: 'Gävle', x: 570, y: 737 },
+  { id: 'karlstad', name: 'Karlstad', x: 414, y: 856 },
+  { id: 'uppsala', name: 'Uppsala', x: 592, y: 812 },
+  { id: 'stockholm', name: 'Stockholm', x: 610, y: 861 },
+  { id: 'orebro', name: 'Örebro', x: 487, y: 866 },
+  { id: 'norrkoping', name: 'Norrköping', x: 529, y: 929 },
+  { id: 'jonkoping', name: 'Jönköping', x: 442, y: 1004 },
+  { id: 'goteborg', name: 'Göteborg', x: 348, y: 1011 },
+  { id: 'vaxjo', name: 'Växjö', x: 470, y: 1087 },
+  { id: 'karlskrona', name: 'Karlskrona', x: 504, y: 1154 },
+  { id: 'kristianstad', name: 'Kristianstad', x: 442, y: 1166 },
+  { id: 'lund', name: 'Lund', x: 401, y: 1197 },
+  { id: 'malmo', name: 'Malmö', x: 393, y: 1206 }
 ];
 
 export const ROUTES = [
