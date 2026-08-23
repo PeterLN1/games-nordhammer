@@ -591,10 +591,12 @@ function pgStore(pool) {
           JSON.stringify(entry.otherPlayers || []), entry.details ? JSON.stringify(entry.details) : null]
       );
     },
-    async digestSince(profileId, sinceId) {
+    // Pass 3: hela familjens händelser för en dag (inte bara en profils
+    // egna) — se .claude/plans, "Stories"-digesten.
+    async logForDay(day) {
       const r = await pool.query(
-        'select id, game_day, kind, route_id, alt_route_id, other_players, details, created_at from ghosttrains_resolution_log where profile_id=$1 and id > $2 order by id asc',
-        [profileId, sinceId || 0]
+        'select id, game_day, profile_id, kind, route_id, alt_route_id, other_players, details, created_at from ghosttrains_resolution_log where game_day=$1 order by id asc',
+        [day]
       );
       return r.rows;
     },
@@ -860,9 +862,9 @@ function memStore() {
         details: entry.details || null, createdAt: new Date().toISOString()
       });
     },
-    async digestSince(profileId, sinceId) {
-      return log.filter(e => e.profileId === profileId && e.id > (sinceId || 0))
-        .map(e => ({ id: e.id, game_day: e.gameDay, kind: e.kind, route_id: e.routeId, alt_route_id: e.altRouteId, other_players: e.otherPlayers, details: e.details, created_at: e.createdAt }));
+    async logForDay(day) {
+      return log.filter(e => e.gameDay === day)
+        .map(e => ({ id: e.id, game_day: e.gameDay, profile_id: e.profileId, kind: e.kind, route_id: e.routeId, alt_route_id: e.altRouteId, other_players: e.otherPlayers, details: e.details, created_at: e.createdAt }));
     },
     async getPlayer(profileId) { const p = getPlayerMem(profileId); return { trainCars: p.trainCars, score: p.score, initialTicketsDealt: p.initialTicketsDealt }; },
     async allPlayers() { return Array.from(players.entries()).map(([profileId, p]) => ({ profileId, trainCars: p.trainCars, score: p.score })); },
@@ -1112,12 +1114,14 @@ function createGhostTrainsRouter(store, resolveSecret) {
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 
-  router.get('/digest', async (req, res) => {
-    const profileId = req.query.profileId;
-    if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
-    const since = parseInt(req.query.since, 10) || 0;
+  // Pass 3: hela familjens händelser för en dag (default igår) — se
+  // .claude/plans, "Stories"-digesten. Ersätter den gamla per-profil
+  // /digest?since=-endpointen.
+  router.get('/digest/day', async (req, res) => {
+    const dayRaw = req.query.day;
+    const day = (typeof dayRaw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dayRaw)) ? dayRaw : prevDay(gameDay());
     try {
-      res.json({ entries: await store.digestSince(profileId, since) });
+      res.json({ day, entries: await store.logForDay(day) });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 

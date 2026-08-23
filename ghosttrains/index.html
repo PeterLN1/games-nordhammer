@@ -156,6 +156,38 @@
     background: rgba(10,12,20,.65); padding: 16px;
   }
   .overlay.show { display: flex; }
+
+  /* ---------- Nattens tågrapport ("Stories") ---------- */
+  #storiesOverlay { position: fixed; inset: 0; z-index: 2000; display: none; color: #fff; }
+  #storiesOverlay.show { display: block; }
+  #storiesProgress { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 3; display: flex; gap: 4px; }
+  .story-seg { flex: 1; height: 3px; border-radius: 3px; background: rgba(255,255,255,.3); }
+  .story-seg.filled { background: #fff; }
+  #storiesCloseBtn {
+    position: absolute; top: 18px; right: 12px; z-index: 3; border: none; background: rgba(0,0,0,.35);
+    color: #fff; width: 32px; height: 32px; border-radius: 50%; font-size: 15px; cursor: pointer;
+  }
+  #storiesCard {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; padding: 60px 28px 40px; box-sizing: border-box;
+  }
+  #storiesCard .story-icon { font-size: 60px; margin-bottom: 18px; }
+  #storiesCard h2 { font-size: 23px; margin: 0 0 14px; }
+  #storiesCard p { font-size: 16px; line-height: 1.5; opacity: .94; max-width: 340px; }
+  #storiesCard .story-cta {
+    margin-top: 28px; border: none; border-radius: 999px; padding: 12px 26px; font-weight: 800;
+    font-size: 15px; background: #fff; color: #111; cursor: pointer;
+  }
+  #storiesTapLeft, #storiesTapRight { position: absolute; top: 0; bottom: 0; z-index: 2; cursor: pointer; }
+  #storiesTapLeft { left: 0; width: 30%; }
+  #storiesTapRight { left: 30%; right: 0; }
+  .story-welcome { background: linear-gradient(160deg, #1b2138, #3a4a7a); }
+  .story-success { background: linear-gradient(160deg, #14532d, #2e9950); }
+  .story-collision { background: linear-gradient(160deg, #7a0d0d, #e5484d); }
+  .story-reroute { background: linear-gradient(160deg, #7a4a00, #e0a300); color: #241800; }
+  .story-crash { background: linear-gradient(160deg, #1a1a1a, #3a3a3a); }
+  .story-final { background: linear-gradient(160deg, #4a1b6b, #9c4ade); }
+  .story-gameover { background: linear-gradient(160deg, #0b1020, #16224a); }
   .panel {
     background: var(--panel-bg); border-radius: 16px; padding: 20px; max-width: 420px; width: 100%;
     max-height: 90vh; overflow: auto;
@@ -184,8 +216,6 @@
     width: 100%; padding: 10px; border: none; border-radius: 10px; font-weight: 600; font-size: 14px;
     cursor: pointer; background: transparent; color: var(--muted); margin-top: 4px;
   }
-  .digest-entry { border-bottom: 1px solid var(--card-border); padding: 10px 0; font-size: 14px; }
-  .digest-entry:last-child { border-bottom: none; }
   .toast {
     position: fixed; left: 50%; bottom: 20px; transform: translate(-50%, 20px);
     background: var(--panel-bg); color: var(--ink); padding: 10px 16px; border-radius: 10px;
@@ -199,6 +229,7 @@
 
 <header>
   <h1>👻🚂 Ghost Trains</h1>
+  <button class="iconbtn" id="btnReport" title="Nattens tågrapport">📰</button>
   <button class="iconbtn" id="btnHelp" title="Hur funkar det?">❓</button>
   <button class="iconbtn" id="btnProfile" title="Byt spelare">👤</button>
 </header>
@@ -261,12 +292,12 @@
   </div>
 </div>
 
-<div class="overlay" id="digestOverlay">
-  <div class="panel">
-    <h2>Nattens händelser</h2>
-    <div id="digestList"></div>
-    <button class="primary-btn" id="closeDigestBtn">Stäng</button>
-  </div>
+<div id="storiesOverlay">
+  <div id="storiesProgress"></div>
+  <button id="storiesCloseBtn" aria-label="Stäng">✕</button>
+  <div id="storiesCard"></div>
+  <div id="storiesTapLeft"></div>
+  <div id="storiesTapRight"></div>
 </div>
 
 <div class="overlay" id="helpOverlay">
@@ -302,8 +333,6 @@
     wild: 'conic-gradient(#e5484d,#2f7ee0,#2f9e44,#e0b400,#f0883e,#9c6ade)'
   };
   function colorHex(c){ return COLOR_HEX[c] || '#888'; }
-
-  var LAST_DIGEST_KEY = 'ghosttrains:lastDigestId:';
 
   var map = { cities: [], routes: [] };
   var citiesById = {};
@@ -944,61 +973,149 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     }).catch(function(e){ toast(e.message); });
   };
 
-  /* ---------- Digest ---------- */
-  var KIND_TEXT = {
-    success: function(e){ return 'Din rutt ' + routeLabel(e.route_id) + ' byggdes klart!'; },
-    double_track: function(e){ return 'Dubbelspår: du fick ditt eget spår på ' + routeLabel(e.route_id) + '.'; },
-    rerouted: function(e){
-      var names = (e.other_players || []).map(profileName).join(' och ');
-      return 'Krock med ' + (names || 'någon annan') + ' på ' + routeLabel(e.route_id) +
-        '. Rutten är fri igen, men ditt tåg omdirigerades till ' + routeLabel(e.alt_route_id) + '.';
-    },
-    total_crash: function(e){
-      var names = (e.other_players || []).map(profileName).join(' och ');
-      return 'Krock med ' + (names || 'någon annan') + ' på ' + routeLabel(e.route_id) + '. Ingen ledig rutt hittades — tåget stannade helt denna gång.';
-    },
-    final_round_triggered: function(e){
-      var cars = e.details ? e.details.trainCars : '?';
-      return 'Sista rundan har börjat! Någon har bara ' + cars + ' tågvagnar kvar — efter nästa upplösning räknas slutpoängen.';
-    },
-    game_over: function(e){
-      var d = e.details || {};
-      var lines = (d.breakdown || []).map(function(b){
-        return (b.success ? '✅ ' : '❌ ') + cityName(b.cityA) + '–' + cityName(b.cityB) + ' (' + (b.success ? '+' : '-') + b.points + 'p)';
-      });
-      return 'Spelet är slut! Slutpoäng: ' + d.total + ' (ruttpoäng ' + d.routeScore + ', biljetter ' +
-        (d.ticketDelta >= 0 ? '+' : '') + d.ticketDelta + '). ' + lines.join(' ');
-    }
-  };
+  /* ---------- Nattens tågrapport ("Stories") ----------
+     Delad familjefeed: /digest/day returnerar ALLA spelares händelser
+     för en dag, inte bara den inloggade profilens (se .claude/plans,
+     Pass 3 — familjen ska se vad alla gjorde, inte bara sig själv). */
+  var STORIES_SEEN_KEY = 'ghosttrains:storiesSeenDay:';
+  var storyCards = [];
+  var storyIndex = 0;
+  var storyDay = null;
+
   function routeLabel(routeId){
     var r = routesById[routeId];
     if (!r) return routeId;
     return citiesById[r.cityA].name + '–' + citiesById[r.cityB].name;
   }
   function profileName(id){ return profilesById[id] ? profilesById[id].name : 'en annan spelare'; }
+  function whoName(profileId, viewerId){ return profileId === viewerId ? 'Du' : profileName(profileId); }
+  function formatSwedishDate(day){
+    var d = new Date(day + 'T12:00:00Z');
+    return new Intl.DateTimeFormat('sv-SE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Stockholm' }).format(d);
+  }
+
+  // Bygger kortlistan i EN pass: grupperar rerouted/total_crash per
+  // route_id (samma rutt samma dag = samma krock) till ETT Collision-
+  // kort + ett utfallskort per inblandad, i den ordning raderna kom.
+  function buildStoryCards(entries, viewerId, day){
+    var cards = [{
+      className: 'story-welcome', icon: '👻🚂',
+      title: 'God morgon!',
+      body: 'Såhär gick det på rälsen i natt — ' + formatSwedishDate(day) + '.'
+    }];
+    var seenRouteGroups = {};
+    entries.forEach(function(e){
+      if (e.kind === 'rerouted' || e.kind === 'total_crash') {
+        if (seenRouteGroups[e.route_id]) return;
+        seenRouteGroups[e.route_id] = true;
+        var group = entries.filter(function(x){ return x.route_id === e.route_id && (x.kind === 'rerouted' || x.kind === 'total_crash'); });
+        var names = group.map(function(g){ return whoName(g.profile_id, viewerId); });
+        cards.push({
+          className: 'story-collision', icon: '💥',
+          title: 'Kollision!',
+          body: names.join(' och ') + ' försökte båda claima ' + routeLabel(e.route_id) + ' samma natt. Rutten är helt fri igen!'
+        });
+        group.forEach(function(g){
+          if (g.kind === 'rerouted') {
+            cards.push({
+              className: 'story-reroute', icon: '🔀',
+              title: 'Omdirigerad',
+              body: whoName(g.profile_id, viewerId) + ' blev omdirigerad från ' + routeLabel(g.route_id) +
+                ' till ' + routeLabel(g.alt_route_id) + ' istället.'
+            });
+          } else {
+            cards.push({
+              className: 'story-crash', icon: '🌑',
+              title: 'Total krasch',
+              body: whoName(g.profile_id, viewerId) + ' kraschade på ' + routeLabel(g.route_id) +
+                ' — ingen ledig rutt (eller inte råd med någon) hittades. Korten gick förlorade.'
+            });
+          }
+        });
+      } else if (e.kind === 'success' || e.kind === 'double_track') {
+        cards.push({
+          className: 'story-success', icon: '🚂',
+          title: e.kind === 'double_track' ? 'Dubbelspår!' : 'Rutt klar!',
+          body: whoName(e.profile_id, viewerId) + (e.kind === 'double_track' ? ' fick sitt eget spår på ' : ' färdigställde ') + routeLabel(e.route_id) + '.'
+        });
+      } else if (e.kind === 'final_round_triggered') {
+        var cars = e.details ? e.details.trainCars : '?';
+        cards.push({
+          className: 'story-final', icon: '⏳',
+          title: 'Sista rundan!',
+          body: whoName(e.profile_id, viewerId) + ' har bara ' + cars + ' tågvagnar kvar. Efter nästa natt räknas slutpoängen ut!'
+        });
+      } else if (e.kind === 'game_over') {
+        var d = e.details || {};
+        var lines = (d.breakdown || []).map(function(b){
+          return (b.success ? '✅ ' : '❌ ') + cityName(b.cityA) + '–' + cityName(b.cityB) + ' (' + (b.success ? '+' : '-') + b.points + 'p)';
+        }).join('<br>');
+        cards.push({
+          className: 'story-gameover', icon: '🏆',
+          title: whoName(e.profile_id, viewerId) + ': ' + d.total + ' poäng',
+          body: 'Ruttpoäng ' + d.routeScore + ', biljetter ' + (d.ticketDelta >= 0 ? '+' : '') + d.ticketDelta + '.<br>' + lines
+        });
+      }
+    });
+    return cards;
+  }
+
+  function renderStoryCard(){
+    var seg = document.getElementById('storiesProgress');
+    seg.innerHTML = '';
+    storyCards.forEach(function(c, i){
+      var s = document.createElement('div');
+      s.className = 'story-seg' + (i <= storyIndex ? ' filled' : '');
+      seg.appendChild(s);
+    });
+    var c = storyCards[storyIndex];
+    var isLast = storyIndex === storyCards.length - 1;
+    var box = document.getElementById('storiesCard');
+    box.className = c.className;
+    box.innerHTML =
+      '<div class="story-icon">' + c.icon + '</div>' +
+      '<h2>' + c.title + '</h2>' +
+      '<p>' + c.body + '</p>' +
+      (isLast ? '<button class="story-cta" id="storiesDoneBtn">Visa kartan</button>' : '');
+    if (isLast) document.getElementById('storiesDoneBtn').onclick = closeStories;
+  }
+  function openStories(entries, day){
+    var profile = NordhammerProfile.current();
+    storyDay = day;
+    storyCards = buildStoryCards(entries, profile ? profile.id : null, day);
+    storyIndex = 0;
+    renderStoryCard();
+    document.getElementById('storiesOverlay').classList.add('show');
+  }
+  function closeStories(){
+    document.getElementById('storiesOverlay').classList.remove('show');
+    var profile = NordhammerProfile.current();
+    if (profile && storyDay) localStorage.setItem(STORIES_SEEN_KEY + profile.id, storyDay);
+  }
+  document.getElementById('storiesCloseBtn').onclick = closeStories;
+  document.getElementById('storiesTapRight').onclick = function(){
+    if (storyIndex < storyCards.length - 1) { storyIndex++; renderStoryCard(); }
+    else closeStories();
+  };
+  document.getElementById('storiesTapLeft').onclick = function(){
+    if (storyIndex > 0) { storyIndex--; renderStoryCard(); }
+  };
+
+  document.getElementById('btnReport').onclick = function(){
+    api('/api/ghosttrains/digest/day').then(function(res){
+      if (!res.entries.length) { toast('Inga händelser att visa än.'); return; }
+      openStories(res.entries, res.day);
+    }).catch(function(e){ toast(e.message); });
+  };
 
   function checkDigest(profileId){
-    var key = LAST_DIGEST_KEY + profileId;
-    var since = parseInt(localStorage.getItem(key) || '0', 10);
-    api('/api/ghosttrains/digest?profileId=' + encodeURIComponent(profileId) + '&since=' + since).then(function(res){
+    api('/api/ghosttrains/digest/day').then(function(res){
       if (!res.entries.length) return;
-      var list = document.getElementById('digestList');
-      list.innerHTML = '';
-      var maxId = since;
-      res.entries.forEach(function(e){
-        if (e.id > maxId) maxId = e.id;
-        var div = document.createElement('div');
-        div.className = 'digest-entry';
-        div.textContent = (KIND_TEXT[e.kind] || function(){ return e.kind; })(e);
-        list.appendChild(div);
-      });
-      localStorage.setItem(key, String(maxId));
-      document.getElementById('digestOverlay').classList.add('show');
+      var seenDay = localStorage.getItem(STORIES_SEEN_KEY + profileId);
+      if (seenDay === res.day) return;
+      openStories(res.entries, res.day);
     }).catch(function(){});
   }
-  document.getElementById('closeDigestBtn').onclick = function(){
-    document.getElementById('digestOverlay').classList.remove('show');
-  };
 
   /* ---------- Hjälp ---------- */
   document.getElementById('btnHelp').onclick = function(){ document.getElementById('helpOverlay').classList.add('show'); };
