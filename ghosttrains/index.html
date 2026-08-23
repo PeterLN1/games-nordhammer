@@ -491,10 +491,9 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     if (ids.length === 0) {
       svg.classList.remove('dragging');
       if (dragState && !dragState.moved) {
-        var el = document.elementFromPoint(e.clientX, e.clientY);
-        if (el && el.dataset && el.dataset.routeId && routesById[el.dataset.routeId]) {
-          openClaim(routesById[el.dataset.routeId]);
-        }
+        var pt = clientToSvgPoint(e.clientX, e.clientY);
+        var nearest = findNearestRoute(pt.x, pt.y);
+        if (nearest) openClaim(nearest);
       }
       dragState = null;
     }
@@ -532,6 +531,34 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     return hit ? hit.ownerProfileId : null;
   }
   function trackSlotsFor(route){ return route.doubleTrack ? ['A', 'B'] : ['single']; }
+
+  function distToSegment(px, py, x1, y1, x2, y2){
+    var dx = x2 - x1, dy = y2 - y1;
+    var lenSq = dx * dx + dy * dy;
+    var t = lenSq ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+    var cx = x1 + t * dx, cy = y1 + t * dy;
+    return Math.hypot(px - cx, py - cy);
+  }
+  // Väljer rutten vars linje faktiskt ligger närmast klicket — inte
+  // bara "vilken osynlig klick-yta råkar ligga överst i DOM:en". Nära
+  // en stad där flera rutter möts (t.ex. Malmö: Lund/Göteborg/Stockholm)
+  // överlappar de breda klick-ytorna varandra, så den gamla
+  // elementFromPoint-baserade träffningen kunde ge fel rutt.
+  var HIT_THRESHOLD = 11;
+  function findNearestRoute(px, py){
+    var best = null, bestDist = Infinity;
+    map.routes.forEach(function(route){
+      var a = citiesById[route.cityA], b = citiesById[route.cityB];
+      trackSlotsFor(route).forEach(function(track, i){
+        var offset = route.doubleTrack ? (i === 0 ? -5 : 5) : 0;
+        var off = perpOffset(a, b, offset);
+        var d = distToSegment(px, py, a.x + off.x, a.y + off.y, b.x + off.x, b.y + off.y);
+        if (d < bestDist) { bestDist = d; best = route; }
+      });
+    });
+    return bestDist <= HIT_THRESHOLD ? best : null;
+  }
 
   function renderMap(){
     while (svg.firstChild) svg.removeChild(svg.firstChild);
