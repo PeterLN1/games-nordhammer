@@ -13,6 +13,36 @@ import cron from 'node-cron';
 export const COLORS = ['red', 'blue', 'green', 'yellow', 'orange', 'purple', 'black', 'white'];
 export const WILD = 'wild';
 
+// Destinationsbiljetter (Pass 2). Poängen är kontrollerade mot faktiska
+// kartavstånd (viktad kortaste väg) — "Öestersund" i ursprungsdatan var
+// en felstavning av Östersund, och kiruna-ostersund var felprissatt som
+// kortast på kartan (5p) trots att den är lika lång som umea-stockholm
+// (9p) — rättad till 9 (se .claude/plans).
+export const TICKETS = [
+  { id: 't1', cityA: 'kiruna', cityB: 'malmo', points: 15 },
+  { id: 't2', cityA: 'lulea', cityB: 'goteborg', points: 14 },
+  { id: 't3', cityA: 'ostersund', cityB: 'karlskrona', points: 12 },
+  { id: 't4', cityA: 'umea', cityB: 'stockholm', points: 9 },
+  { id: 't5', cityA: 'mora', cityB: 'goteborg', points: 9 },
+  { id: 't6', cityA: 'karlstad', cityB: 'malmo', points: 8 },
+  { id: 't7', cityA: 'stockholm', cityB: 'kristianstad', points: 7 },
+  { id: 't8', cityA: 'orebro', cityB: 'lund', points: 7 },
+  { id: 't9', cityA: 'kiruna', cityB: 'ostersund', points: 9 },
+  { id: 't10', cityA: 'goteborg', cityB: 'karlskrona', points: 5 },
+  { id: 't11', cityA: 'sundsvall', cityB: 'karlstad', points: 5 },
+  { id: 't12', cityA: 'jonkoping', cityB: 'malmo', points: 5 },
+  { id: 't13', cityA: 'vaxjo', cityB: 'lund', points: 4 },
+  { id: 't14', cityA: 'uppsala', cityB: 'orebro', points: 4 },
+  { id: 't15', cityA: 'gavle', cityB: 'stockholm', points: 3 }
+];
+const TICKETS_BY_ID = new Map(TICKETS.map(t => [t.id, t]));
+function ticketTier(points) { return points >= 12 ? 'long' : points >= 7 ? 'medium' : 'short'; }
+
+// Officiell Ticket to Ride-poängtabell för ruttlängd.
+const ROUTE_POINTS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 10, 6: 15 };
+const STARTING_TRAIN_CARS = 35;
+const FINAL_ROUND_THRESHOLD = 2;
+
 export const CITIES = [
   // Koordinater beräknade från städernas verkliga lat/long (enkel
   // ekvirektangulär projektion mot Sveriges yttre gränser), sedan
@@ -174,13 +204,15 @@ function validateClaimCards(route, cards) {
 const DAY_FMT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', year: 'numeric', month: '2-digit', day: '2-digit' });
 function gameDay(date = new Date()) { return DAY_FMT.format(date); }
 function prevDay(dateStr) { return new Date(Date.parse(dateStr + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10); }
+function nextDay(dateStr) { return new Date(Date.parse(dateStr + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10); }
 
 /* ---------- Omdirigeringsmotor ----------
    Söker utåt i cirklar (BFS) från krockstaden efter en ledig rutt,
    och faller — om det lokala området redan är fullt — tillbaka på
    närmaste lediga rutt var som helst på kartan. En spelare lämnas
    alltså bara helt utan spår (Total Crash) om HELA kartan är fullbyggd. */
-function findNearestFreeRoute(startCity, excludeRouteId, builtSet) {
+function findNearestFreeRoute(startCity, excludeRouteId, builtSet, maxAffordableLength) {
+  const affordable = r => r.length <= maxAffordableLength;
   const visitedCities = new Set([startCity]);
   let frontier = [startCity];
   const seenRoutes = new Set();
@@ -194,7 +226,7 @@ function findNearestFreeRoute(startCity, excludeRouteId, builtSet) {
           if (edge.routeId !== excludeRouteId) {
             const route = ROUTES_BY_ID.get(edge.routeId);
             const freeSlots = trackSlots(route).filter(t => !builtSet.has(route.id + '|' + t));
-            if (freeSlots.length > 0) candidates.push(route);
+            if (freeSlots.length > 0 && affordable(route)) candidates.push(route);
           }
         }
         if (!visitedCities.has(edge.other)) { visitedCities.add(edge.other); nextFrontier.push(edge.other); }
@@ -208,7 +240,7 @@ function findNearestFreeRoute(startCity, excludeRouteId, builtSet) {
     frontier = nextFrontier;
   }
   // krockstadens sammanhängande del av kartan är helt full — sök globalt.
-  const allFree = ROUTES.filter(r => r.id !== excludeRouteId && trackSlots(r).some(t => !builtSet.has(r.id + '|' + t)));
+  const allFree = ROUTES.filter(r => r.id !== excludeRouteId && affordable(r) && trackSlots(r).some(t => !builtSet.has(r.id + '|' + t)));
   if (!allFree.length) return null;
   return allFree[Math.floor(Math.random() * allFree.length)];
 }
@@ -250,7 +282,7 @@ export async function resolveDay(store, day) {
       group.forEach((claim, i) => {
         const track = freeSlots[i];
         const kind = (n === 2 && route.doubleTrack) ? 'double_track' : 'success';
-        results.push({ profileId: claim.profile_id, kind, routeId, track, submittedAt: claim.submitted_at });
+        results.push({ profileId: claim.profile_id, kind, routeId, track, length: route.length, submittedAt: claim.submitted_at });
         builtSet.add(routeId + '|' + track);
       });
     } else {
@@ -266,18 +298,28 @@ export async function resolveDay(store, day) {
 
   collided.sort((a, b) => new Date(a.submittedAt) - new Date(b.submittedAt));
   for (const c of collided) {
-    const alt = findNearestFreeRoute(c.fromCity, c.routeId, builtSet);
+    // Omdirigering får bara ge en rutt spelaren faktiskt har råd med
+    // (kvarvarande tågvagnar) — annars Total Crash (se .claude/plans,
+    // Pass 2: "reroute constraints").
+    const player = await store.getPlayer(c.profileId);
+    const alt = findNearestFreeRoute(c.fromCity, c.routeId, builtSet, player.trainCars);
     if (alt) {
       const track = trackSlots(alt).filter(t => !builtSet.has(alt.id + '|' + t))[0];
       builtSet.add(alt.id + '|' + track);
-      results.push({ profileId: c.profileId, kind: 'rerouted', routeId: c.routeId, altRouteId: alt.id, track, otherPlayers: c.others });
+      results.push({ profileId: c.profileId, kind: 'rerouted', routeId: c.routeId, altRouteId: alt.id, track, length: alt.length, otherPlayers: c.others });
     } else {
       results.push({ profileId: c.profileId, kind: 'total_crash', routeId: c.routeId, otherPlayers: c.others });
     }
   }
 
   for (const r of results) {
-    if (r.track) await store.buildRoute(r.altRouteId || r.routeId, r.track, r.profileId, day);
+    if (r.track) {
+      await store.buildRoute(r.altRouteId || r.routeId, r.track, r.profileId, day);
+      // Tågvagnar och poäng dras/läggs på den FAKTISKA ruttens längd —
+      // alt-ruttens vid omdirigering, annars den claimade ruttens.
+      await store.deductTrainCars(r.profileId, r.length);
+      await store.addScore(r.profileId, ROUTE_POINTS[r.length] || 0);
+    }
     await store.insertLog({
       gameDay: day, profileId: r.profileId, kind: r.kind,
       routeId: r.routeId, altRouteId: r.altRouteId || null, otherPlayers: r.otherPlayers || []
@@ -285,7 +327,91 @@ export async function resolveDay(store, day) {
   }
   await store.markResolved(resolvedIds);
   await store.markDayResolved(day);
+  await checkFinalRoundAndGameOver(store, day, results);
   return { day, results };
+}
+
+// Enkel BFS över bara EN spelares egna byggda rutter — avgör om en
+// destinationsbiljett är uppfylld vid spelslut.
+function isConnectedForProfile(ownedRouteIds, cityA, cityB) {
+  if (cityA === cityB) return true;
+  const adj = new Map();
+  ROUTES.forEach(r => {
+    if (!ownedRouteIds.has(r.id)) return;
+    if (!adj.has(r.cityA)) adj.set(r.cityA, []);
+    if (!adj.has(r.cityB)) adj.set(r.cityB, []);
+    adj.get(r.cityA).push(r.cityB);
+    adj.get(r.cityB).push(r.cityA);
+  });
+  const seen = new Set([cityA]);
+  const stack = [cityA];
+  while (stack.length) {
+    const cur = stack.pop();
+    for (const n of (adj.get(cur) || [])) if (!seen.has(n)) { seen.add(n); stack.push(n); }
+  }
+  return seen.has(cityB);
+}
+
+// Efter varje upplösning: kolla om någon spelares tågvagnar gått i
+// botten (utlöser en sista spelrunda), och — om den sista rundans dag
+// just upplöstes — räkna ut slutpoäng (ruttpoäng + biljetter) och
+// avsluta spelet. Se .claude/plans, Pass 2.
+async function checkFinalRoundAndGameOver(store, day, results) {
+  let gameState = await store.getGameState();
+  if (gameState.status === 'active') {
+    const touched = Array.from(new Set(results.filter(r => r.track).map(r => r.profileId)));
+    for (const profileId of touched) {
+      const player = await store.getPlayer(profileId);
+      if (player.trainCars <= FINAL_ROUND_THRESHOLD) {
+        const finalDay = nextDay(day);
+        await store.setGameState('final_round', finalDay);
+        await store.insertLog({
+          gameDay: day, profileId, kind: 'final_round_triggered',
+          routeId: null, altRouteId: null, otherPlayers: [], details: { trainCars: player.trainCars }
+        });
+        gameState = { status: 'final_round', finalDay };
+        break;
+      }
+    }
+  }
+
+  if (gameState.status === 'final_round' && gameState.finalDay && day >= gameState.finalDay) {
+    const built = await store.builtRoutes();
+    const ownedByProfile = new Map();
+    built.forEach(b => {
+      if (!ownedByProfile.has(b.owner_profile_id)) ownedByProfile.set(b.owner_profile_id, new Set());
+      ownedByProfile.get(b.owner_profile_id).add(b.route_id);
+    });
+
+    const allTickets = await store.allPlayerTickets();
+    const ticketsByProfile = new Map();
+    allTickets.forEach(t => {
+      if (!ticketsByProfile.has(t.profileId)) ticketsByProfile.set(t.profileId, []);
+      ticketsByProfile.get(t.profileId).push(t.ticketId);
+    });
+
+    const allPlayers = await store.allPlayers();
+    for (const p of allPlayers) {
+      const ownedRouteIds = ownedByProfile.get(p.profileId) || new Set();
+      const ticketIds = ticketsByProfile.get(p.profileId) || [];
+      const breakdown = [];
+      let ticketDelta = 0;
+      ticketIds.forEach(ticketId => {
+        const ticket = TICKETS_BY_ID.get(ticketId);
+        if (!ticket) return;
+        const ok = isConnectedForProfile(ownedRouteIds, ticket.cityA, ticket.cityB);
+        ticketDelta += ok ? ticket.points : -ticket.points;
+        breakdown.push({ ticketId, cityA: ticket.cityA, cityB: ticket.cityB, points: ticket.points, success: ok });
+      });
+      const total = p.score + ticketDelta;
+      await store.insertLog({
+        gameDay: day, profileId: p.profileId, kind: 'game_over',
+        routeId: null, altRouteId: null, otherPlayers: [],
+        details: { routeScore: p.score, ticketDelta, total, breakdown }
+      });
+    }
+    await store.setGameState('finished', gameState.finalDay);
+  }
 }
 
 /* ---------- Lagring (Postgres eller minne, samma dubbla mönster som server/index.js) ---------- */
@@ -347,9 +473,41 @@ async function initSchema(pool) {
     game_day text not null,
     remaining int not null default 3
   );`);
+  // Pass 2 (tågvagnar, biljetter, poäng, se .claude/plans):
+  await pool.query(`alter table ghosttrains_resolution_log add column if not exists details jsonb;`);
+  await pool.query(`create table if not exists ghosttrains_players (
+    profile_id text primary key,
+    train_cars int not null default ${STARTING_TRAIN_CARS},
+    score int not null default 0,
+    initial_tickets_dealt boolean not null default false
+  );`);
+  await pool.query(`create table if not exists ghosttrains_player_tickets (
+    profile_id text not null,
+    ticket_id text not null,
+    primary key (profile_id, ticket_id)
+  );`);
+  await pool.query(`create table if not exists ghosttrains_ticket_offers (
+    profile_id text primary key,
+    ticket_ids jsonb not null,
+    min_keep int not null
+  );`);
+  await pool.query(`create table if not exists ghosttrains_ticket_deck (
+    id int primary key default 1,
+    remaining jsonb not null
+  );`);
+  await pool.query(`create table if not exists ghosttrains_game_state (
+    id int primary key default 1,
+    status text not null default 'active',
+    final_day text
+  );`);
   // Samma öppna förtroendemodell som scores/profiles (se server/index.js):
   // RLS på utan policies stänger Supabases publika REST-API helt.
-  for (const t of ['ghosttrains_hands', 'ghosttrains_deck', 'ghosttrains_routes', 'ghosttrains_pending_moves', 'ghosttrains_resolution_log', 'ghosttrains_resolved_days', 'ghosttrains_market', 'ghosttrains_ap']) {
+  for (const t of [
+    'ghosttrains_hands', 'ghosttrains_deck', 'ghosttrains_routes', 'ghosttrains_pending_moves',
+    'ghosttrains_resolution_log', 'ghosttrains_resolved_days', 'ghosttrains_market', 'ghosttrains_ap',
+    'ghosttrains_players', 'ghosttrains_player_tickets', 'ghosttrains_ticket_offers',
+    'ghosttrains_ticket_deck', 'ghosttrains_game_state'
+  ]) {
     await pool.query(`alter table ${t} enable row level security;`);
   }
 }
@@ -427,17 +585,138 @@ function pgStore(pool) {
     },
     async insertLog(entry) {
       await pool.query(
-        `insert into ghosttrains_resolution_log (game_day, profile_id, kind, route_id, alt_route_id, other_players)
-         values ($1,$2,$3,$4,$5,$6)`,
-        [entry.gameDay, entry.profileId, entry.kind, entry.routeId || null, entry.altRouteId || null, JSON.stringify(entry.otherPlayers || [])]
+        `insert into ghosttrains_resolution_log (game_day, profile_id, kind, route_id, alt_route_id, other_players, details)
+         values ($1,$2,$3,$4,$5,$6,$7)`,
+        [entry.gameDay, entry.profileId, entry.kind, entry.routeId || null, entry.altRouteId || null,
+          JSON.stringify(entry.otherPlayers || []), entry.details ? JSON.stringify(entry.details) : null]
       );
     },
     async digestSince(profileId, sinceId) {
       const r = await pool.query(
-        'select id, game_day, kind, route_id, alt_route_id, other_players, created_at from ghosttrains_resolution_log where profile_id=$1 and id > $2 order by id asc',
+        'select id, game_day, kind, route_id, alt_route_id, other_players, details, created_at from ghosttrains_resolution_log where profile_id=$1 and id > $2 order by id asc',
         [profileId, sinceId || 0]
       );
       return r.rows;
+    },
+    async getPlayer(profileId) {
+      const r = await pool.query('select train_cars, score, initial_tickets_dealt from ghosttrains_players where profile_id=$1', [profileId]);
+      if (r.rows[0]) return { trainCars: r.rows[0].train_cars, score: r.rows[0].score, initialTicketsDealt: r.rows[0].initial_tickets_dealt };
+      await pool.query('insert into ghosttrains_players (profile_id) values ($1) on conflict (profile_id) do nothing', [profileId]);
+      return { trainCars: STARTING_TRAIN_CARS, score: 0, initialTicketsDealt: false };
+    },
+    async allPlayers() {
+      const r = await pool.query('select profile_id, train_cars, score from ghosttrains_players');
+      return r.rows.map(row => ({ profileId: row.profile_id, trainCars: row.train_cars, score: row.score }));
+    },
+    async deductTrainCars(profileId, amount) {
+      await pool.query(
+        `insert into ghosttrains_players (profile_id, train_cars) values ($1, ${STARTING_TRAIN_CARS} - $2)
+         on conflict (profile_id) do update set train_cars = ghosttrains_players.train_cars - $2`,
+        [profileId, amount]
+      );
+    },
+    async addScore(profileId, amount) {
+      await pool.query(
+        `insert into ghosttrains_players (profile_id, score) values ($1, $2)
+         on conflict (profile_id) do update set score = ghosttrains_players.score + $2`,
+        [profileId, amount]
+      );
+    },
+    async setInitialTicketsDealt(profileId) {
+      await pool.query(
+        `insert into ghosttrains_players (profile_id, initial_tickets_dealt) values ($1, true)
+         on conflict (profile_id) do update set initial_tickets_dealt = true`,
+        [profileId]
+      );
+    },
+    async getPlayerTickets(profileId) {
+      const r = await pool.query('select ticket_id from ghosttrains_player_tickets where profile_id=$1', [profileId]);
+      return r.rows.map(row => row.ticket_id);
+    },
+    async allPlayerTickets() {
+      const r = await pool.query('select profile_id, ticket_id from ghosttrains_player_tickets');
+      return r.rows.map(row => ({ profileId: row.profile_id, ticketId: row.ticket_id }));
+    },
+    async addPlayerTickets(profileId, ticketIds) {
+      for (const ticketId of ticketIds) {
+        await pool.query('insert into ghosttrains_player_tickets (profile_id, ticket_id) values ($1,$2) on conflict do nothing', [profileId, ticketId]);
+      }
+    },
+    async getTicketOffer(profileId) {
+      const r = await pool.query('select ticket_ids, min_keep from ghosttrains_ticket_offers where profile_id=$1', [profileId]);
+      return r.rows[0] ? { ticketIds: r.rows[0].ticket_ids, minKeep: r.rows[0].min_keep } : null;
+    },
+    async setTicketOffer(profileId, ticketIds, minKeep) {
+      await pool.query(
+        `insert into ghosttrains_ticket_offers (profile_id, ticket_ids, min_keep) values ($1,$2,$3)
+         on conflict (profile_id) do update set ticket_ids=$2, min_keep=$3`,
+        [profileId, JSON.stringify(ticketIds), minKeep]
+      );
+    },
+    async clearTicketOffer(profileId) {
+      await pool.query('delete from ghosttrains_ticket_offers where profile_id=$1', [profileId]);
+    },
+    async getGameState() {
+      const r = await pool.query('select status, final_day from ghosttrains_game_state where id=1');
+      if (!r.rows[0]) return { status: 'active', finalDay: null };
+      return { status: r.rows[0].status, finalDay: r.rows[0].final_day };
+    },
+    async setGameState(status, finalDay) {
+      await pool.query(
+        `insert into ghosttrains_game_state (id, status, final_day) values (1,$1,$2)
+         on conflict (id) do update set status=$1, final_day=$2`,
+        [status, finalDay || null]
+      );
+    },
+    // Delad, cirkulerande biljettlek — samma FOR UPDATE-transaktionsmönster
+    // som kortmarknaden i Pass 1 (delad, muterbar state, samma racerisk).
+    async dealTickets(count) {
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        const r = await client.query('select remaining from ghosttrains_ticket_deck where id=1 for update');
+        let deck = r.rows[0] ? r.rows[0].remaining : shuffle(TICKETS.map(t => t.id));
+        const dealt = [];
+        for (let i = 0; i < count && deck.length > 0; i++) dealt.push(deck.pop());
+        await client.query('insert into ghosttrains_ticket_deck (id, remaining) values (1,$1) on conflict (id) do update set remaining=$1', [JSON.stringify(deck)]);
+        await client.query('commit');
+        return dealt;
+      } catch (e) { await client.query('rollback'); throw e; }
+      finally { client.release(); }
+    },
+    // Dealar EXAKT en biljett per given tier (initial gratis-deal).
+    async dealTicketsByTier(tiers) {
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        const r = await client.query('select remaining from ghosttrains_ticket_deck where id=1 for update');
+        let deck = r.rows[0] ? r.rows[0].remaining : shuffle(TICKETS.map(t => t.id));
+        const dealt = [];
+        for (const tier of tiers) {
+          let idx = -1;
+          for (let i = deck.length - 1; i >= 0; i--) {
+            if (ticketTier(TICKETS_BY_ID.get(deck[i]).points) === tier) { idx = i; break; }
+          }
+          if (idx >= 0) dealt.push(deck.splice(idx, 1)[0]);
+        }
+        await client.query('insert into ghosttrains_ticket_deck (id, remaining) values (1,$1) on conflict (id) do update set remaining=$1', [JSON.stringify(deck)]);
+        await client.query('commit');
+        return dealt;
+      } catch (e) { await client.query('rollback'); throw e; }
+      finally { client.release(); }
+    },
+    async returnTicketsToDeck(ticketIds) {
+      if (!ticketIds.length) return;
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        const r = await client.query('select remaining from ghosttrains_ticket_deck where id=1 for update');
+        let deck = r.rows[0] ? r.rows[0].remaining : shuffle(TICKETS.map(t => t.id));
+        ticketIds.forEach(id => deck.unshift(id));
+        await client.query('insert into ghosttrains_ticket_deck (id, remaining) values (1,$1) on conflict (id) do update set remaining=$1', [JSON.stringify(deck)]);
+        await client.query('commit');
+      } catch (e) { await client.query('rollback'); throw e; }
+      finally { client.release(); }
     },
     // Lat-återställd: spenderar `amount` AP om spelaren har råd (annars
     // null, ingen mutation). amount=0 fungerar som en ren "peek" som
@@ -533,8 +812,19 @@ function memStore() {
   const log = [];
   const apState = new Map();
   let market = null;
+  const players = new Map();
+  const playerTickets = new Map();
+  const ticketOffers = new Map();
+  let ticketDeck = null;
+  let gameState = { status: 'active', finalDay: null };
   let nextPendingId = 1, nextLogId = 1;
   function drawOneMem() { if (!deck || deck.length === 0) deck = freshDeck(); return deck.pop(); }
+  function getPlayerMem(profileId) {
+    let p = players.get(profileId);
+    if (!p) { p = { trainCars: STARTING_TRAIN_CARS, score: 0, initialTicketsDealt: false }; players.set(profileId, p); }
+    return p;
+  }
+  function ensureTicketDeck() { if (!ticketDeck) ticketDeck = shuffle(TICKETS.map(t => t.id)); return ticketDeck; }
   return {
     async getHand(profileId) { return hands.get(profileId) || []; },
     async saveHand(profileId, hand) { hands.set(profileId, hand); },
@@ -564,11 +854,58 @@ function memStore() {
     async isDayResolved(day) { return resolvedDays.has(day); },
     async markDayResolved(day) { resolvedDays.add(day); },
     async insertLog(entry) {
-      log.push({ id: nextLogId++, gameDay: entry.gameDay, profileId: entry.profileId, kind: entry.kind, routeId: entry.routeId || null, altRouteId: entry.altRouteId || null, otherPlayers: entry.otherPlayers || [], createdAt: new Date().toISOString() });
+      log.push({
+        id: nextLogId++, gameDay: entry.gameDay, profileId: entry.profileId, kind: entry.kind,
+        routeId: entry.routeId || null, altRouteId: entry.altRouteId || null, otherPlayers: entry.otherPlayers || [],
+        details: entry.details || null, createdAt: new Date().toISOString()
+      });
     },
     async digestSince(profileId, sinceId) {
       return log.filter(e => e.profileId === profileId && e.id > (sinceId || 0))
-        .map(e => ({ id: e.id, game_day: e.gameDay, kind: e.kind, route_id: e.routeId, alt_route_id: e.altRouteId, other_players: e.otherPlayers, created_at: e.createdAt }));
+        .map(e => ({ id: e.id, game_day: e.gameDay, kind: e.kind, route_id: e.routeId, alt_route_id: e.altRouteId, other_players: e.otherPlayers, details: e.details, created_at: e.createdAt }));
+    },
+    async getPlayer(profileId) { const p = getPlayerMem(profileId); return { trainCars: p.trainCars, score: p.score, initialTicketsDealt: p.initialTicketsDealt }; },
+    async allPlayers() { return Array.from(players.entries()).map(([profileId, p]) => ({ profileId, trainCars: p.trainCars, score: p.score })); },
+    async deductTrainCars(profileId, amount) { getPlayerMem(profileId).trainCars -= amount; },
+    async addScore(profileId, amount) { getPlayerMem(profileId).score += amount; },
+    async setInitialTicketsDealt(profileId) { getPlayerMem(profileId).initialTicketsDealt = true; },
+    async getPlayerTickets(profileId) { return Array.from(playerTickets.get(profileId) || []); },
+    async allPlayerTickets() {
+      const out = [];
+      playerTickets.forEach((set, profileId) => set.forEach(ticketId => out.push({ profileId, ticketId })));
+      return out;
+    },
+    async addPlayerTickets(profileId, ticketIds) {
+      if (!playerTickets.has(profileId)) playerTickets.set(profileId, new Set());
+      const set = playerTickets.get(profileId);
+      ticketIds.forEach(id => set.add(id));
+    },
+    async getTicketOffer(profileId) { return ticketOffers.get(profileId) || null; },
+    async setTicketOffer(profileId, ticketIds, minKeep) { ticketOffers.set(profileId, { ticketIds, minKeep }); },
+    async clearTicketOffer(profileId) { ticketOffers.delete(profileId); },
+    async getGameState() { return gameState; },
+    async setGameState(status, finalDay) { gameState = { status, finalDay: finalDay || null }; },
+    async dealTickets(count) {
+      const d = ensureTicketDeck();
+      const dealt = [];
+      for (let i = 0; i < count && d.length > 0; i++) dealt.push(d.pop());
+      return dealt;
+    },
+    async dealTicketsByTier(tiers) {
+      const d = ensureTicketDeck();
+      const dealt = [];
+      tiers.forEach(tier => {
+        let idx = -1;
+        for (let i = d.length - 1; i >= 0; i--) {
+          if (ticketTier(TICKETS_BY_ID.get(d[i]).points) === tier) { idx = i; break; }
+        }
+        if (idx >= 0) dealt.push(d.splice(idx, 1)[0]);
+      });
+      return dealt;
+    },
+    async returnTicketsToDeck(ticketIds) {
+      const d = ensureTicketDeck();
+      ticketIds.forEach(id => d.unshift(id));
     },
     async spendAP(profileId, day, amount) {
       let s = apState.get(profileId);
@@ -615,17 +952,43 @@ function createGhostTrainsRouter(store, resolveSecret) {
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     try {
       const day = gameDay();
-      const [hand, built, pendingMine, apRemaining, market] = await Promise.all([
+      const [hand, built, pendingMine, apRemaining, market, player, ticketIds, gameState] = await Promise.all([
         store.getHand(profileId), store.builtRoutes(), store.pendingForProfileToday(profileId, day),
-        store.spendAP(profileId, day, 0), store.getMarketSnapshot()
+        store.spendAP(profileId, day, 0), store.getMarketSnapshot(), store.getPlayer(profileId),
+        store.getPlayerTickets(profileId), store.getGameState()
       ]);
+
+      // Gratis startbiljetter (1 lång + 1 medium + 1 kort) delas ut lat,
+      // första gången någon läser /state för profilen — se .claude/plans.
+      let ticketOffer = await store.getTicketOffer(profileId);
+      if (!ticketOffer && !player.initialTicketsDealt) {
+        const dealt = await store.dealTicketsByTier(['long', 'medium', 'short']);
+        if (dealt.length) {
+          await store.setTicketOffer(profileId, dealt, 2);
+          await store.setInitialTicketsDealt(profileId);
+          ticketOffer = { ticketIds: dealt, minKeep: 2 };
+        }
+      }
+
+      let finalScores = null;
+      if (gameState.status === 'finished') {
+        const all = await store.allPlayers();
+        finalScores = all.map(p => ({ profileId: p.profileId, score: p.score }));
+      }
+
       res.json({
         gameDay: day,
         hand,
         built: built.map(b => ({ routeId: b.route_id, track: b.track, ownerProfileId: b.owner_profile_id })),
         pendingToday: pendingMine.map(p => ({ id: p.id, routeId: p.route_id, fromCity: p.from_city, cards: p.cards })),
         apRemaining,
-        market
+        market,
+        trainCars: player.trainCars,
+        score: player.score,
+        tickets: ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean),
+        ticketOffer: ticketOffer ? { tickets: ticketOffer.ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean), minKeep: ticketOffer.minKeep } : null,
+        gameStatus: gameState.status,
+        finalScores
       });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
@@ -639,6 +1002,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
     const profileId = (req.body || {}).profileId;
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     try {
+      if ((await store.getGameState()).status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
       const day = gameDay();
       const apRemaining = await store.spendAP(profileId, day, 1);
       if (apRemaining == null) return res.status(402).json({ error: 'inte tillrackligt med AP' });
@@ -656,6 +1020,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     if (!(index >= 0 && index <= 4)) return res.status(400).json({ error: 'ogiltigt kortval' });
     try {
+      if ((await store.getGameState()).status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
       const day = gameDay();
       const result = await store.drawMarketCard(profileId, day, index);
       if (result.error === 'ap') return res.status(402).json({ error: 'inte tillrackligt med AP' });
@@ -675,10 +1040,13 @@ function createGhostTrainsRouter(store, resolveSecret) {
     if (b.fromCity !== route.cityA && b.fromCity !== route.cityB) return res.status(400).json({ error: 'ogiltig startstad' });
     if (!validateClaimCards(route, b.cards)) return res.status(400).json({ error: 'ogiltiga kort for denna rutt' });
     try {
+      if ((await store.getGameState()).status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
       const built = await store.builtRoutes();
       const builtSet = new Set(built.map(r => r.route_id + '|' + r.track));
       const freeSlots = trackSlots(route).filter(t => !builtSet.has(route.id + '|' + t));
       if (freeSlots.length === 0) return res.status(409).json({ error: 'rutten ar redan helt byggd' });
+      const player = await store.getPlayer(profileId);
+      if (player.trainCars < route.length) return res.status(400).json({ error: 'inte tillrackligt med tagvagnar kvar' });
       const hand = await store.getHand(profileId);
       const newHand = removeCards(hand, b.cards);
       if (!newHand) return res.status(400).json({ error: 'du har inte de korten' });
@@ -690,6 +1058,45 @@ function createGhostTrainsRouter(store, resolveSecret) {
       await store.saveHand(profileId, newHand);
       const id = await store.insertPending({ profileId, routeId: route.id, fromCity: b.fromCity, cards: b.cards, gameDay: day });
       res.json({ ok: true, id, hand: newHand, apRemaining });
+    } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
+  });
+
+  router.post('/tickets/draw', async (req, res) => {
+    const profileId = (req.body || {}).profileId;
+    if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
+    try {
+      if ((await store.getGameState()).status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
+      const existing = await store.getTicketOffer(profileId);
+      if (existing) return res.status(409).json({ error: 'du har redan olästa biljetter att välja bland' });
+      const day = gameDay();
+      const apRemaining = await store.spendAP(profileId, day, 1);
+      if (apRemaining == null) return res.status(402).json({ error: 'inte tillrackligt med AP' });
+      const dealt = await store.dealTickets(3);
+      if (!dealt.length) return res.json({ ok: true, offer: null, apRemaining, note: 'inga fler biljetter kvar i leken' });
+      await store.setTicketOffer(profileId, dealt, 1);
+      res.json({ ok: true, offer: { tickets: dealt.map(id => TICKETS_BY_ID.get(id)).filter(Boolean), minKeep: 1 }, apRemaining });
+    } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
+  });
+
+  router.post('/tickets/choose', async (req, res) => {
+    const b = req.body || {};
+    const profileId = b.profileId;
+    if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
+    const keepIds = Array.isArray(b.keepIds) ? b.keepIds : [];
+    try {
+      const offer = await store.getTicketOffer(profileId);
+      if (!offer) return res.status(400).json({ error: 'ingen biljett-offer att svara pa' });
+      const offeredSet = new Set(offer.ticketIds);
+      const validKeep = keepIds.filter(id => offeredSet.has(id));
+      if (validKeep.length !== keepIds.length || keepIds.length < offer.minKeep) {
+        return res.status(400).json({ error: 'maste behalla minst ' + offer.minKeep + ' av de erbjudna biljetterna' });
+      }
+      const discard = offer.ticketIds.filter(id => !keepIds.includes(id));
+      await store.addPlayerTickets(profileId, keepIds);
+      await store.returnTicketsToDeck(discard);
+      await store.clearTicketOffer(profileId);
+      const ticketIds = await store.getPlayerTickets(profileId);
+      res.json({ ok: true, tickets: ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean) });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 

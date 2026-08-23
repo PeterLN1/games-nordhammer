@@ -130,6 +130,27 @@
     align-items: center; justify-content: center; font-weight: 800;
   }
 
+  #ticketBar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    background: var(--chrome); flex-wrap: wrap;
+  }
+  #drawTicketsBtn {
+    margin-left: auto; border: none; border-radius: 10px; padding: 9px 14px; font-weight: 700;
+    background: var(--accent); color: #23180a; cursor: pointer;
+  }
+  #drawTicketsBtn:disabled { opacity: .4; cursor: not-allowed; }
+  .ticket-chip {
+    display: inline-flex; align-items: center; gap: 6px; border-radius: 10px;
+    padding: 6px 10px; font-size: 12.5px; font-weight: 700; border: 1px solid var(--card-border);
+    background: var(--panel-bg);
+  }
+  .ticket-choice {
+    width: 100%; text-align: left; padding: 12px; border-radius: 10px; border: 2px solid var(--card-border);
+    background: transparent; color: var(--ink); font-weight: 700; cursor: pointer; font-size: 14px;
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+  }
+  .ticket-choice.selected { border-color: var(--accent); background: rgba(255,179,0,.12); }
+
   .overlay {
     position: fixed; inset: 0; z-index: 999; display: none; align-items: center; justify-content: center;
     background: rgba(10,12,20,.65); padding: 16px;
@@ -198,11 +219,28 @@
   <div id="marketChips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
 </div>
 
+<div id="ticketBar">
+  <span class="muted" style="font-size:13px;color:var(--muted)">Biljetter:</span>
+  <div id="ticketChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+  <button id="drawTicketsBtn">Dra biljetter (1 AP)</button>
+</div>
+
 <div id="handBar">
   <span class="ap-badge" id="apBadge">AP: 3/3</span>
+  <span class="ap-badge" id="carsBadge" title="Tågvagnar kvar">🚂 35</span>
+  <span class="ap-badge" id="scoreBadge" title="Poäng">⭐ 0</span>
   <span class="muted" style="font-size:13px;color:var(--muted)">Din hand:</span>
   <div id="handChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
   <button id="drawBtn">Dra blint (1 AP)</button>
+</div>
+
+<div class="overlay" id="ticketOfferOverlay">
+  <div class="panel">
+    <h2>Välj biljetter att behålla</h2>
+    <p class="muted" id="ticketOfferSub"></p>
+    <div class="row" id="ticketOfferRow"></div>
+    <button class="primary-btn" id="submitTicketOfferBtn" disabled>Bekräfta</button>
+  </div>
 </div>
 
 <div class="overlay" id="claimOverlay">
@@ -270,7 +308,11 @@
   var map = { cities: [], routes: [] };
   var citiesById = {};
   var routesById = {};
-  var state = { hand: [], built: [], pendingToday: [], apRemaining: 3, market: [] };
+  var state = {
+    hand: [], built: [], pendingToday: [], apRemaining: 3, market: [],
+    trainCars: 35, score: 0, tickets: [], gameStatus: 'active', finalScores: null
+  };
+  var currentTicketOffer = null;
   var profilesById = {};
   var pendingRouteIds = {};
   var currentClaim = null; // { route, fromCity, selectedCards: [] }
@@ -662,23 +704,51 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
 
   function renderAP(){
     document.getElementById('apBadge').textContent = 'AP: ' + state.apRemaining + '/3';
-    document.getElementById('drawBtn').disabled = state.apRemaining < 1;
+    var gameOver = state.gameStatus === 'finished';
+    document.getElementById('drawBtn').disabled = state.apRemaining < 1 || gameOver;
+    document.getElementById('drawTicketsBtn').disabled = state.apRemaining < 1 || gameOver;
+  }
+
+  function cityName(id){ return citiesById[id] ? citiesById[id].name : id; }
+  function ticketLabel(t){ return cityName(t.cityA) + ' – ' + cityName(t.cityB) + ' (' + t.points + 'p)'; }
+
+  function renderCarsScore(){
+    document.getElementById('carsBadge').textContent = '🚂 ' + state.trainCars;
+    document.getElementById('scoreBadge').textContent = '⭐ ' + state.score;
+  }
+
+  function renderTickets(){
+    var box = document.getElementById('ticketChips');
+    box.innerHTML = '';
+    if (!(state.tickets || []).length) {
+      var empty = document.createElement('span');
+      empty.className = 'muted'; empty.style.fontSize = '13px'; empty.style.color = 'var(--muted)';
+      empty.textContent = 'Inga biljetter än.';
+      box.appendChild(empty);
+    }
+    (state.tickets || []).forEach(function(t){
+      var chip = document.createElement('span');
+      chip.className = 'ticket-chip';
+      chip.textContent = ticketLabel(t);
+      box.appendChild(chip);
+    });
   }
 
   function renderMarket(){
     var box = document.getElementById('marketChips');
     box.innerHTML = '';
+    var gameOver = state.gameStatus === 'finished';
     (state.market || []).forEach(function(color, idx){
       var cost = color === 'wild' ? 2 : 1;
       var el = document.createElement('div');
-      el.className = 'market-card' + (state.apRemaining < cost ? ' disabled' : '');
+      el.className = 'market-card' + (state.apRemaining < cost || gameOver ? ' disabled' : '');
       el.style.background = colorHex(color);
       el.title = color + ' — ' + cost + ' AP';
       var costBadge = document.createElement('span');
       costBadge.className = 'cost';
       costBadge.textContent = cost;
       el.appendChild(costBadge);
-      el.onclick = function(){ if (state.apRemaining >= cost) drawFromMarket(idx); };
+      el.onclick = function(){ if (state.apRemaining >= cost && !gameOver) drawFromMarket(idx); };
       box.appendChild(el);
     });
   }
@@ -754,9 +824,15 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
 
   function updateSubmitState(){
     var route = currentClaim.route;
-    var ok = currentClaim.fromCity && currentClaim.selectedCards.length === route.length && state.apRemaining >= 2;
+    var gameOver = state.gameStatus === 'finished';
+    var notEnoughCars = state.trainCars < route.length;
+    var notEnoughAP = state.apRemaining < 2;
+    var ok = currentClaim.fromCity && currentClaim.selectedCards.length === route.length && !notEnoughAP && !notEnoughCars && !gameOver;
     document.getElementById('submitClaimBtn').disabled = !ok;
-    document.getElementById('submitClaimBtn').textContent = state.apRemaining < 2 ? 'Räcker inte (kräver 2 AP)' : 'Skicka claim';
+    document.getElementById('submitClaimBtn').textContent = gameOver ? 'Spelet är slut'
+      : notEnoughCars ? 'Räcker inte (för få tågvagnar)'
+      : notEnoughAP ? 'Räcker inte (kräver 2 AP)'
+      : 'Skicka claim';
   }
 
   document.getElementById('cancelClaimBtn').onclick = function(){
@@ -799,6 +875,61 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     }).catch(function(e){ toast(e.message); });
   }
 
+  /* ---------- Biljetter ---------- */
+  function openTicketOffer(offer){
+    currentTicketOffer = { tickets: offer.tickets, minKeep: offer.minKeep, selected: {} };
+    document.getElementById('ticketOfferSub').textContent =
+      'Behåll minst ' + offer.minKeep + ' av dessa ' + offer.tickets.length + '.';
+    var row = document.getElementById('ticketOfferRow');
+    row.innerHTML = '';
+    offer.tickets.forEach(function(t){
+      var btn = document.createElement('button');
+      btn.className = 'ticket-choice';
+      btn.innerHTML = '<span>' + ticketLabel(t) + '</span>';
+      btn.onclick = function(){
+        currentTicketOffer.selected[t.id] = !currentTicketOffer.selected[t.id];
+        btn.classList.toggle('selected', !!currentTicketOffer.selected[t.id]);
+        updateTicketOfferSubmit();
+      };
+      row.appendChild(btn);
+    });
+    updateTicketOfferSubmit();
+    document.getElementById('ticketOfferOverlay').classList.add('show');
+  }
+  function updateTicketOfferSubmit(){
+    var kept = Object.keys(currentTicketOffer.selected).filter(function(id){ return currentTicketOffer.selected[id]; });
+    document.getElementById('submitTicketOfferBtn').disabled = kept.length < currentTicketOffer.minKeep;
+  }
+  document.getElementById('submitTicketOfferBtn').onclick = function(){
+    var profile = NordhammerProfile.current();
+    if (!profile || !currentTicketOffer) return;
+    var keepIds = Object.keys(currentTicketOffer.selected).filter(function(id){ return currentTicketOffer.selected[id]; });
+    api('/api/ghosttrains/tickets/choose', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: profile.id, keepIds: keepIds })
+    }).then(function(res){
+      state.tickets = res.tickets;
+      renderTickets();
+      document.getElementById('ticketOfferOverlay').classList.remove('show');
+      currentTicketOffer = null;
+      toast('Biljetter sparade.');
+    }).catch(function(e){ toast(e.message); });
+  };
+
+  document.getElementById('drawTicketsBtn').onclick = function(){
+    var profile = NordhammerProfile.current();
+    if (!profile) return;
+    api('/api/ghosttrains/tickets/draw', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: profile.id })
+    }).then(function(res){
+      state.apRemaining = res.apRemaining;
+      renderAP();
+      if (res.offer) openTicketOffer(res.offer);
+      else toast(res.note || 'Inga fler biljetter kvar.');
+    }).catch(function(e){ toast(e.message); });
+  };
+
   document.getElementById('drawBtn').onclick = function(){
     var profile = NordhammerProfile.current();
     if (!profile) return;
@@ -825,6 +956,18 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     total_crash: function(e){
       var names = (e.other_players || []).map(profileName).join(' och ');
       return 'Krock med ' + (names || 'någon annan') + ' på ' + routeLabel(e.route_id) + '. Ingen ledig rutt hittades — tåget stannade helt denna gång.';
+    },
+    final_round_triggered: function(e){
+      var cars = e.details ? e.details.trainCars : '?';
+      return 'Sista rundan har börjat! Någon har bara ' + cars + ' tågvagnar kvar — efter nästa upplösning räknas slutpoängen.';
+    },
+    game_over: function(e){
+      var d = e.details || {};
+      var lines = (d.breakdown || []).map(function(b){
+        return (b.success ? '✅ ' : '❌ ') + cityName(b.cityA) + '–' + cityName(b.cityB) + ' (' + (b.success ? '+' : '-') + b.points + 'p)';
+      });
+      return 'Spelet är slut! Slutpoäng: ' + d.total + ' (ruttpoäng ' + d.routeScore + ', biljetter ' +
+        (d.ticketDelta >= 0 ? '+' : '') + d.ticketDelta + '). ' + lines.join(' ');
     }
   };
   function routeLabel(routeId){
@@ -877,7 +1020,10 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       renderHand();
       renderAP();
       renderMarket();
+      renderCarsScore();
+      renderTickets();
       renderMap();
+      if (state.ticketOffer) openTicketOffer(state.ticketOffer);
       checkDigest(profile.id);
     }).catch(function(e){ toast(e.message); });
   }
