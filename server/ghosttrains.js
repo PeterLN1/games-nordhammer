@@ -59,6 +59,11 @@ export const ROUTES = [
   // in. En andra, oberoende rutt löser det (se .claude/plans).
   { id: 'kiruna-umea', cityA: 'kiruna', cityB: 'umea', length: 6, color: 'purple', doubleTrack: false },
   { id: 'lulea-umea', cityA: 'lulea', cityB: 'umea', length: 3, color: 'red', doubleTrack: false },
+  // Umeå var en enda felpunkt för Kiruna+Luleå: plockar man bort Umeå
+  // blev de två helt avskurna från resten av kartan (samma mönster som
+  // Gävle hade för hela Norrland). Kustexpress-genväg löser det —
+  // orange var lägsta färgen (9), håller balansen jämn (9->13).
+  { id: 'lulea-sundsvall', cityA: 'lulea', cityB: 'sundsvall', length: 4, color: 'orange', doubleTrack: false },
   { id: 'umea-ostersund', cityA: 'umea', cityB: 'ostersund', length: 3, color: 'green', doubleTrack: false },
   { id: 'umea-sundsvall', cityA: 'umea', cityB: 'sundsvall', length: 3, color: 'yellow', doubleTrack: false },
   { id: 'ostersund-sundsvall', cityA: 'ostersund', cityB: 'sundsvall', length: 2, color: 'orange', doubleTrack: false },
@@ -83,7 +88,10 @@ export const ROUTES = [
   { id: 'uppsala-stockholm', cityA: 'uppsala', cityB: 'stockholm', length: 1, color: 'red', doubleTrack: true },
   { id: 'karlstad-orebro', cityA: 'karlstad', cityB: 'orebro', length: 2, color: 'green', doubleTrack: false },
   { id: 'karlstad-goteborg', cityA: 'karlstad', cityB: 'goteborg', length: 3, color: 'blue', doubleTrack: false },
-  { id: 'orebro-stockholm', cityA: 'orebro', cityB: 'stockholm', length: 2, color: 'yellow', doubleTrack: false },
+  // Örebro har grad 5, samma som Stockholm, men hade 0 dubbelspår mot
+  // Stockholms 4 av 5 — ojämnt jämfört med sin lika stora hubb-granne.
+  // Speglar Uppsala-Stockholm som redan är dubbelspår.
+  { id: 'orebro-stockholm', cityA: 'orebro', cityB: 'stockholm', length: 2, color: 'yellow', doubleTrack: true },
   { id: 'orebro-jonkoping', cityA: 'orebro', cityB: 'jonkoping', length: 3, color: 'orange', doubleTrack: false },
   { id: 'orebro-norrkoping', cityA: 'orebro', cityB: 'norrkoping', length: 2, color: 'white', doubleTrack: false },
   { id: 'stockholm-norrkoping', cityA: 'stockholm', cityB: 'norrkoping', length: 2, color: 'purple', doubleTrack: true },
