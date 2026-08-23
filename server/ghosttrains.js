@@ -50,6 +50,9 @@ export const ROUTES = [
   { id: 'umea-ostersund', cityA: 'umea', cityB: 'ostersund', length: 3, color: 'green', doubleTrack: false },
   { id: 'umea-sundsvall', cityA: 'umea', cityB: 'sundsvall', length: 3, color: 'yellow', doubleTrack: false },
   { id: 'ostersund-sundsvall', cityA: 'ostersund', cityB: 'sundsvall', length: 2, color: 'orange', doubleTrack: false },
+  // "Norrlandsporten": Östersund som knutpunkt mellan Norrlands inland
+  // och kusten söderut — andra benet (ostersund-sundsvall fanns redan).
+  { id: 'ostersund-gavle', cityA: 'ostersund', cityB: 'gavle', length: 3, color: 'blue', doubleTrack: false },
   { id: 'sundsvall-gavle', cityA: 'sundsvall', cityB: 'gavle', length: 3, color: 'purple', doubleTrack: false },
   { id: 'gavle-uppsala', cityA: 'gavle', cityB: 'uppsala', length: 2, color: 'black', doubleTrack: false },
   { id: 'gavle-karlstad', cityA: 'gavle', cityB: 'karlstad', length: 4, color: 'white', doubleTrack: false },
@@ -69,7 +72,10 @@ export const ROUTES = [
   { id: 'kristianstad-lund', cityA: 'kristianstad', cityB: 'lund', length: 2, color: 'orange', doubleTrack: false },
   { id: 'lund-malmo', cityA: 'lund', cityB: 'malmo', length: 1, color: 'purple', doubleTrack: false },
   { id: 'stockholm-goteborg', cityA: 'stockholm', cityB: 'goteborg', length: 5, color: 'black', doubleTrack: true },
-  { id: 'stockholm-malmo', cityA: 'stockholm', cityB: 'malmo', length: 6, color: 'white', doubleTrack: true }
+  { id: 'stockholm-malmo', cityA: 'stockholm', cityB: 'malmo', length: 6, color: 'white', doubleTrack: true },
+  // "Västkustlinjen": direktförbindelse längs västkusten mellan de två
+  // städerna, utöver den längre vägen via Jönköping/Karlstad/Örebro.
+  { id: 'goteborg-malmo', cityA: 'goteborg', cityB: 'malmo', length: 3, color: 'green', doubleTrack: false }
 ];
 
 const ROUTES_BY_ID = new Map(ROUTES.map(r => [r.id, r]));
