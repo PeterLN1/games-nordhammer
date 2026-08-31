@@ -65,6 +65,12 @@
     background: var(--chrome); backdrop-filter: blur(6px);
   }
   header h1 { font-size: 17px; margin: 0; flex: 1; }
+  header .back {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; border-radius: 10px; text-decoration: none;
+    color: var(--ink); background: var(--panel-bg); font-size: 18px; line-height: 1;
+  }
+  header .back:active { background: rgba(255,179,0,.3); }
   .iconbtn {
     width: 38px; height: 38px; border-radius: 10px; border: none; cursor: pointer;
     background: var(--panel-bg); color: var(--ink); font-size: 18px;
@@ -223,6 +229,7 @@
 <body>
 
 <header>
+  <a class="back" href="/" aria-label="Till startsidan">‹</a>
   <h1>👻🚂 Ghost Trains</h1>
   <button class="iconbtn" id="btnReport" title="Nattens tågrapport">📰</button>
   <button class="iconbtn" id="btnHelp" title="Hur funkar det?">❓</button>
