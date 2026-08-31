@@ -349,6 +349,10 @@
     wild: 'conic-gradient(#e5484d,#2f7ee0,#2f9e44,#e0b400,#f0883e,#9c6ade)'
   };
   function colorHex(c){ return COLOR_HEX[c] || '#888'; }
+  var COLOR_NAME_SV = {
+    red: 'rött', blue: 'blått', green: 'grönt', yellow: 'gult',
+    orange: 'orange', purple: 'lila', black: 'svart', white: 'vitt'
+  };
 
   var map = { cities: [], routes: [] };
   var citiesById = {};
@@ -615,11 +619,19 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
   svg.addEventListener('pointerup', endPointer);
   svg.addEventListener('pointercancel', endPointer);
 
-  function toast(msg){
+  function toast(msg, isHtml){
     var t = document.getElementById('toast');
-    t.textContent = msg; t.classList.add('show');
+    if (isHtml) t.innerHTML = msg; else t.textContent = msg;
+    t.classList.add('show');
     clearTimeout(toast._timer);
     toast._timer = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  function toastCard(card){
+    var swatch = '<span style="display:inline-block;width:14px;height:14px;border-radius:4px;' +
+      'vertical-align:-2px;margin-right:6px;background:' + colorHex(card) + ';border:1px solid rgba(0,0,0,.25)"></span>';
+    var text = card === 'wild' ? 'Du drog en lokomotiv-joker!' : 'Du drog ett ' + COLOR_NAME_SV[card] + ' kort!';
+    toast(swatch + text, true);
   }
 
   function refreshProfilesIndex(){
@@ -902,6 +914,7 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       state.apRemaining = res.apRemaining;
       state.market = res.market;
       renderHand(); renderAP(); renderMarket();
+      toastCard(res.drawn);
     }).catch(function(e){ toast(e.message); });
   }
 
@@ -971,6 +984,7 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       state.apRemaining = res.apRemaining;
       renderAP(); renderMarket();
       renderHand();
+      toastCard(res.drawn[0]);
     }).catch(function(e){ toast(e.message); });
   };
 
