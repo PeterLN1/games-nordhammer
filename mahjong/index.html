@@ -892,6 +892,13 @@
       }
     }
     tray.innerHTML = html;
+    // Facket är tomt (bara padding, ingen höjd från de 7 platserna) tills
+    // just den här raden kört första gången. Vid spelstart anropas
+    // applyModeUI()->fitBoard() INNAN dess, så brädet skalas då mot en för
+    // liten uppskattad tray-höjd. Räkna om nu när facket har sin
+    // slutgiltiga höjd — annars hamnar nedersta raden brickor utanför
+    // synligt område på mobil.
+    fitBoard();
   }
   function resolveTray(id){
     var same = state.tray.filter(function(ix){ return state.faces[ix] === id; });
@@ -1682,6 +1689,12 @@
     document.getElementById('tray').style.display = tm ? 'flex' : 'none';
     document.getElementById('btnHint').style.display = tm ? 'none' : '';
     document.getElementById('statMidLabel').textContent = tm ? 'Kvar' : 'Par kvar';
+    // Facket (tray) tar plats i layouten och krymper boardWrap. fitBoard()
+    // hann redan köras (via setLayout->buildBoard) INNAN facket syns/döljs
+    // här, så brädets skala måste räknas om nu mot den slutgiltiga ytan —
+    // annars hamnar nedersta raden brickor utanför synligt område,
+    // särskilt märkbart på mobil där varje pixel höjd räknas.
+    fitBoard();
   }
   // opts.seedInfo (från en delad länk/utmaning) → spela exakt den givan.
   // Annars: en helt ny giv, men hela slumpsekvensen (mönstervalet vid
