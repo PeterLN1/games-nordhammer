@@ -164,6 +164,23 @@ const ADJACENCY = buildAdjacency();
 
 function trackSlots(route) { return route.doubleTrack ? ['A', 'B'] : ['single']; }
 
+// Origin-stad för ett claim väljs automatiskt (ingen prompt i UI):
+// äger spelaren redan en rutt som rör vid EN av ändstäderna, blir den
+// staden origin (för omdirigerings-BFS:en vid krock). Rör spelaren
+// vid båda eller ingen, lottas det mellan de två ändstäderna.
+function pickOriginCity(route, profileId, builtRoutesList) {
+  const ownsCity = (city) => builtRoutesList.some((r) => {
+    if (r.owner_profile_id !== profileId) return false;
+    const owned = ROUTES_BY_ID.get(r.route_id);
+    return owned && (owned.cityA === city || owned.cityB === city);
+  });
+  const touchesA = ownsCity(route.cityA);
+  const touchesB = ownsCity(route.cityB);
+  if (touchesA && !touchesB) return route.cityA;
+  if (touchesB && !touchesA) return route.cityB;
+  return Math.random() < 0.5 ? route.cityA : route.cityB;
+}
+
 /* ---------- Kortlek ---------- */
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -1039,7 +1056,6 @@ function createGhostTrainsRouter(store, resolveSecret) {
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     const route = ROUTES_BY_ID.get(b.routeId);
     if (!route) return res.status(400).json({ error: 'okand rutt' });
-    if (b.fromCity !== route.cityA && b.fromCity !== route.cityB) return res.status(400).json({ error: 'ogiltig startstad' });
     if (!validateClaimCards(route, b.cards)) return res.status(400).json({ error: 'ogiltiga kort for denna rutt' });
     try {
       if ((await store.getGameState()).status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
@@ -1052,13 +1068,14 @@ function createGhostTrainsRouter(store, resolveSecret) {
       const hand = await store.getHand(profileId);
       const newHand = removeCards(hand, b.cards);
       if (!newHand) return res.status(400).json({ error: 'du har inte de korten' });
+      const fromCity = pickOriginCity(route, profileId, built);
       const day = gameDay();
       // AP spenderas sist — misslyckas det har varken hand eller PENDING
       // muterats än (kortvalideringen ovan är ren läsning).
       const apRemaining = await store.spendAP(profileId, day, 2);
       if (apRemaining == null) return res.status(402).json({ error: 'inte tillrackligt med AP' });
       await store.saveHand(profileId, newHand);
-      const id = await store.insertPending({ profileId, routeId: route.id, fromCity: b.fromCity, cards: b.cards, gameDay: day });
+      const id = await store.insertPending({ profileId, routeId: route.id, fromCity, cards: b.cards, gameDay: day });
       res.json({ ok: true, id, hand: newHand, apRemaining });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });

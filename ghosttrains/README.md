@@ -147,8 +147,14 @@ PENDING-claims per rutt:
    krock för alla, inte "två vinner, resten krockar".
 
 ### Omdirigering (efter en krock)
+`fromCity` väljs INTE av spelaren längre (togs bort som prompt i UI:t
+— dålig UX). `POST /claim` beräknar det automatiskt i `pickOriginCity`:
+äger spelaren redan en byggd rutt som rör vid EN av ruttens ändstäder
+blir den staden origin; rör spelaren vid båda eller ingen städerna
+lottas det mellan de två.
+
 Krockade spelare söks en ersättningsrutt via BFS utåt från deras
-`fromCity` (den ändstation de valde vid claimet) genom kartgrafen —
+`fromCity` (denna automatiskt valda ändstation) genom kartgrafen —
 först rutter direkt vid `fromCity`, sedan en station bort, osv., tills
 en ledig OCH prisvärd rutt hittas. Prisvärd = `route.length <=`
 spelarens kvarvarande tågvagnar. Om det lokala området är fullt/för
@@ -208,7 +214,7 @@ begäran oavsett flagga.
 | `/market` | GET | Marknadens 5 kort (lat-initieras vid behov). |
 | `/draw` | POST | `{profileId}` — blint kort, 1 AP. |
 | `/market/draw` | POST | `{profileId, index}` — draget kort från marknaden, 1 eller 2 AP. |
-| `/claim` | POST | `{profileId, routeId, fromCity, cards}` — skapar en PENDING-rad. |
+| `/claim` | POST | `{profileId, routeId, cards}` — skapar en PENDING-rad. `fromCity` väljs automatiskt server-sidan (se nedan), inte av klienten. |
 | `/tickets/draw` | POST | `{profileId}` — 1 AP, skapar en biljett-offer. |
 | `/tickets/choose` | POST | `{profileId, keepIds}` — löser en öppen offer. |
 | `/resolve` | POST | Hemlig header `x-resolve-secret` (miljövariabel `GHOSTTRAINS_RESOLVE_SECRET`, se `server/.env.example`). Kör upplösning för en dag (default igår), idempotent. |
