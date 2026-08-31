@@ -49,7 +49,9 @@
     padding: 8px max(18px, env(safe-area-inset-right)) 4px max(18px, env(safe-area-inset-left));
     justify-content: center;
   }
-  .col { position: relative; flex: 1 1 0; min-width: 0; }
+  .col { position: relative; flex: 1 1 0; min-width: 0; border-radius: 8px; transition: background-color .08s ease, box-shadow .08s ease; }
+  .col.drop-ok { background-color: rgba(255,210,0,.16); box-shadow: inset 0 0 0 2px #ffd200; }
+  .col.drop-bad { background-color: rgba(255,255,255,.05); box-shadow: inset 0 0 0 2px rgba(255,255,255,.25); }
   .card {
     position: absolute; left: 0; width: 100%;
     border-radius: 6px;
@@ -734,6 +736,25 @@
     return best;
   }
 
+  // ---- visuell markering av mållingen under drag (tydligare nu när korten är smalare) ----
+  let dropHighlightCol = -1;
+  function clearDropHighlight(){
+    if(dropHighlightCol>=0){
+      const el = board.children[dropHighlightCol];
+      if(el) el.classList.remove("drop-ok","drop-bad");
+    }
+    dropHighlightCol = -1;
+  }
+  function setDropHighlight(col){
+    if(col === dropHighlightCol) return;
+    clearDropHighlight();
+    if(col<0) return;
+    const el = board.children[col];
+    if(!el) return;
+    el.classList.add(canDrop(drag.col, drag.idx, col) ? "drop-ok" : "drop-bad");
+    dropHighlightCol = col;
+  }
+
   board.addEventListener("pointerdown", (e)=>{
     const cardEl = cardAt(e.target);
     if(!cardEl) return;
@@ -769,12 +790,15 @@
       drag.els.forEach((el,i)=>{
         el.style.transform = drag.baseTransforms[i] + " translate("+dx+"px,"+dy+"px)";
       });
+      const toCol = colFromX(e.clientX);
+      setDropHighlight(toCol>=0 && toCol!==drag.col ? toCol : -1);
     }
   });
 
   board.addEventListener("pointerup",(e)=>{
     if(!drag){ return; }
     const d = drag; drag=null;
+    clearDropHighlight();
     if(d.moved){
       // drop
       d.els.forEach((el,i)=>{ el.classList.remove("dragging"); el.style.zIndex=""; });
@@ -790,7 +814,7 @@
       handleTap(d.col, d.idx);
     }
   });
-  board.addEventListener("pointercancel",()=>{ if(drag){ drag=null; renderAll(); } });
+  board.addEventListener("pointercancel",()=>{ if(drag){ drag=null; clearDropHighlight(); renderAll(); } });
 
   function handleTap(col, idx){
     // If something selected and this is a valid destination column -> move
