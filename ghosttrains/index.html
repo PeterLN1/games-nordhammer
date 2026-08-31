@@ -100,6 +100,16 @@
     box-shadow: 0 2px 10px rgba(0,0,0,.18);
   }
 
+  #drawer { background: var(--chrome); flex-shrink: 0; }
+  .drawer-handle {
+    width: 100%; display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    border: none; background: transparent; color: var(--ink); font: inherit; cursor: pointer;
+  }
+  .drawer-hint { flex: 1; text-align: left; font-size: 13px; color: var(--muted); }
+  .drawer-chevron { font-size: 12px; color: var(--muted); transition: transform .2s; }
+  #drawer.expanded .drawer-chevron { transform: rotate(180deg); }
+  .drawer-content { max-height: 0; overflow: hidden; transition: max-height .25s ease; }
+  #drawer.expanded .drawer-content { max-height: 70vh; overflow-y: auto; }
   #handBar {
     display: flex; align-items: center; gap: 8px; padding: 8px 12px;
     background: var(--chrome); flex-wrap: wrap;
@@ -247,24 +257,32 @@
   </div>
 </main>
 
-<div id="marketBar">
-  <span class="muted" style="font-size:13px;color:var(--muted)">Marknad:</span>
-  <div id="marketChips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
-</div>
+<div id="drawer">
+  <button id="drawerHandle" class="drawer-handle" aria-expanded="false" aria-controls="drawerContent">
+    <span class="ap-badge" id="apBadge">AP: 3/3</span>
+    <span class="ap-badge" id="carsBadge" title="Tågvagnar kvar">🚂 35</span>
+    <span class="ap-badge" id="scoreBadge" title="Poäng">⭐ 0</span>
+    <span class="drawer-hint">Marknad · Biljetter · Hand</span>
+    <span class="drawer-chevron">▾</span>
+  </button>
+  <div id="drawerContent" class="drawer-content">
+    <div id="marketBar">
+      <span class="muted" style="font-size:13px;color:var(--muted)">Marknad:</span>
+      <div id="marketChips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+    </div>
 
-<div id="ticketBar">
-  <span class="muted" style="font-size:13px;color:var(--muted)">Biljetter:</span>
-  <div id="ticketChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-  <button id="drawTicketsBtn">Dra biljetter (1 AP)</button>
-</div>
+    <div id="ticketBar">
+      <span class="muted" style="font-size:13px;color:var(--muted)">Biljetter:</span>
+      <div id="ticketChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <button id="drawTicketsBtn">Dra biljetter (1 AP)</button>
+    </div>
 
-<div id="handBar">
-  <span class="ap-badge" id="apBadge">AP: 3/3</span>
-  <span class="ap-badge" id="carsBadge" title="Tågvagnar kvar">🚂 35</span>
-  <span class="ap-badge" id="scoreBadge" title="Poäng">⭐ 0</span>
-  <span class="muted" style="font-size:13px;color:var(--muted)">Din hand:</span>
-  <div id="handChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-  <button id="drawBtn">Dra blint (1 AP)</button>
+    <div id="handBar">
+      <span class="muted" style="font-size:13px;color:var(--muted)">Din hand:</span>
+      <div id="handChips" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <button id="drawBtn">Dra blint (1 AP)</button>
+    </div>
+  </div>
 </div>
 
 <div class="overlay" id="ticketOfferOverlay">
@@ -1099,6 +1117,13 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       openStories(res.entries, res.day);
     }).catch(function(){});
   }
+
+  /* ---------- Drawer (marknad/biljetter/hand) ---------- */
+  document.getElementById('drawerHandle').onclick = function(){
+    var drawer = document.getElementById('drawer');
+    var expanded = drawer.classList.toggle('expanded');
+    document.getElementById('drawerHandle').setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  };
 
   /* ---------- Hjälp ---------- */
   document.getElementById('btnHelp').onclick = function(){ document.getElementById('helpOverlay').classList.add('show'); };
