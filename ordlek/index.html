@@ -187,6 +187,16 @@
     font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  #glitter { position: fixed; inset: 0; z-index: 200; pointer-events: none; overflow: hidden; }
+  .glitter-piece { position: absolute; top: -20px; left: 0; will-change: transform, opacity; animation: glitterFall linear forwards; }
+  @keyframes glitterFall {
+    0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    100% { transform: translate(var(--drift, 0px), 110vh) rotate(360deg); opacity: .85; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .glitter-piece { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -208,6 +218,7 @@
   </div>
   <div id="overlay"><div class="panel" id="panel"></div></div>
   <div id="toast"></div>
+  <div id="glitter" aria-hidden="true"></div>
 
   <script src="words.js"></script>
   <script>
@@ -687,8 +698,42 @@
     }).catch(function(){ el.textContent = 'Kunde inte hämta tabellen'; });
   }
 
+  /* ---------- Fallande glitter (firande t.ex. när Hall of fame öppnas) ---------- */
+  var GLITTER_COLORS = ['#ffb300','#3aa65a','#c9962c','#5b8def','#e05d5d','#ffffff'];
+  function spawnGlitter(count){
+    var layer = document.getElementById('glitter');
+    if(!layer) return;
+    count = count || 60;
+    for(var i=0;i<count;i++){
+      var el = document.createElement('div');
+      el.className = 'glitter-piece';
+      var size = 6 + Math.random()*8;
+      var duration = 2.2 + Math.random()*2;
+      var delay = Math.random()*0.6;
+      el.style.left = (Math.random()*100) + 'vw';
+      el.style.animationDuration = duration + 's';
+      el.style.animationDelay = delay + 's';
+      el.style.setProperty('--drift', (Math.random()*80 - 40) + 'px');
+      if(Math.random() < 0.25){
+        el.textContent = Math.random() < 0.5 ? '✨' : '🎉';
+        el.style.fontSize = (size+8) + 'px';
+      } else {
+        el.style.width = size + 'px';
+        el.style.height = (size*0.4) + 'px';
+        el.style.background = GLITTER_COLORS[Math.floor(Math.random()*GLITTER_COLORS.length)];
+        el.style.borderRadius = '1px';
+      }
+      layer.appendChild(el);
+      // setTimeout istället för 'animationend' — det senare kan utebli om
+      // fliken/vyn är bakgrundad och webbläsaren struntar i att rendera
+      // animationsramar, vilket annars lämnar kvar döda element i DOM:en.
+      setTimeout(function(node){ node.remove(); }, (duration+delay)*1000 + 100, el);
+    }
+  }
+
   /* ---------- Hall of fame (tidigare avslutade månaders segrare) ---------- */
   function showHallOfFamePanel(){
+    spawnGlitter();
     var panel = document.getElementById('panel');
     panel.innerHTML = '<h2>🏆 Hall of fame</h2><div id="hofList" class="lb-list">Laddar…</div>' +
       '<button id="pBack" class="ghost">Tillbaka</button>';
