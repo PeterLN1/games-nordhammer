@@ -67,7 +67,10 @@
   .wrap {
     max-width: 880px; margin: 0 auto;
     padding: max(28px, env(safe-area-inset-top)) 20px 60px;
+    position: relative; z-index: 1;
   }
+  #seasonFx { position: fixed; inset: 0; z-index: 50; pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) { #seasonFx { display: none; } }
   .topbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 4px; }
   .theme-ctl { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; opacity: .8; }
   .theme-ctl select {
@@ -126,6 +129,7 @@
 </style>
 </head>
 <body>
+  <canvas id="seasonFx" aria-hidden="true"></canvas>
   <div class="wrap">
     <div class="topbar">
       <button class="nh-badge" id="profileBadge" aria-label="Byt profil"></button>
@@ -212,6 +216,200 @@
     </footer>
   </div>
   <script>
+    // ---------- Säsongstema baserat på månad ----------
+    (function(){
+      var SEASON_EFFECTS = {
+        8: initFallingLeaves // september (0-indexerad månad)
+      };
+      var effect = SEASON_EFFECTS[new Date().getMonth()];
+      if (!effect) return;
+      if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      effect();
+
+      function initFallingLeaves(){
+        var canvas = document.getElementById('seasonFx');
+        if (!canvas || !canvas.getContext) return;
+        var ctx = canvas.getContext('2d');
+        var dpr = Math.min(window.devicePixelRatio || 1, 2);
+        var w = 0, h = 0;
+
+        function resize(){
+          w = window.innerWidth; h = window.innerHeight;
+          canvas.width = Math.round(w * dpr);
+          canvas.height = Math.round(h * dpr);
+          canvas.style.width = w + 'px';
+          canvas.style.height = h + 'px';
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        var SHAPES = [
+          { path: pathOval, tip: 1, base: 1 },
+          { path: pathMaple, tip: 1.05, base: 0.62 },
+          { path: pathSlim, tip: 1.15, base: 1.15 }
+        ];
+
+        function rand(a, b){ return a + Math.random() * (b - a); }
+
+        function randomAutumnColor(){
+          var r = Math.random();
+          if (r < 0.35) return { hue: rand(40, 55), sat: rand(60, 85), light: rand(42, 55) };
+          if (r < 0.65) return { hue: rand(20, 38), sat: rand(60, 85), light: rand(38, 50) };
+          if (r < 0.85) return { hue: rand(3, 15), sat: rand(55, 80), light: rand(34, 46) };
+          return { hue: rand(18, 28), sat: rand(25, 45), light: rand(24, 38) };
+        }
+
+        function makeLeaf(spawnAnywhere){
+          var depth = Math.random();
+          var c = randomAutumnColor();
+          return {
+            depth: depth,
+            baseX: rand(-40, w + 40),
+            windDrift: 0,
+            y: spawnAnywhere ? rand(-h, h) : rand(-60, -10),
+            vy: 12 + depth * 24,
+            size: 8 + depth * 11,
+            hue: c.hue,
+            sat: c.sat,
+            light: c.light,
+            shapeDef: SHAPES[Math.floor(Math.random() * SHAPES.length)],
+            angle: rand(0, Math.PI * 2),
+            rotSpeed: rand(-1.1, 1.1) * (0.5 + depth),
+            swingPhase: rand(0, Math.PI * 2),
+            swingFreq: rand(0.5, 1.3),
+            swingAmp: rand(12, 30) * (0.5 + depth)
+          };
+        }
+
+        var count = Math.max(16, Math.min(32, Math.round(w / 45)));
+        var leaves = [];
+        for (var i = 0; i < count; i++) leaves.push(makeLeaf(true));
+
+        var windPhase = 0;
+        var last = performance.now();
+        var rafId = null;
+
+        function frame(now){
+          var dt = Math.min((now - last) / 1000, 0.05);
+          last = now;
+          windPhase += dt;
+          var wind = Math.sin(windPhase * 0.25) * 16 + Math.sin(windPhase * 0.9) * 7;
+
+          ctx.clearRect(0, 0, w, h);
+          for (var j = 0; j < leaves.length; j++){
+            var L = leaves[j];
+            L.windDrift += wind * (0.35 + L.depth * 0.9) * dt;
+            L.y += L.vy * dt;
+            L.angle += L.rotSpeed * dt;
+            L.swingPhase += L.swingFreq * dt;
+
+            var x = L.baseX + L.windDrift + Math.sin(L.swingPhase) * L.swingAmp;
+
+            if (L.y - L.size > h + 20 || x < -100 || x > w + 100){
+              var fresh = makeLeaf(false);
+              fresh.baseX = x < -100 ? w + rand(20, 60) : (x > w + 100 ? rand(-60, -20) : rand(0, w));
+              leaves[j] = fresh;
+              continue;
+            }
+
+            var flip = Math.cos(L.swingPhase * 1.4);
+            ctx.save();
+            ctx.translate(x, L.y);
+            ctx.rotate(L.angle);
+            ctx.scale(flip || 0.06, 1);
+            if (L.depth < 0.35) ctx.filter = 'blur(1px)';
+            ctx.globalAlpha = 0.55 + L.depth * 0.4;
+            renderLeaf(ctx, L, flip < 0);
+            ctx.restore();
+          }
+          rafId = requestAnimationFrame(frame);
+        }
+
+        document.addEventListener('visibilitychange', function(){
+          if (document.hidden){
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = null;
+          } else if (!rafId){
+            last = performance.now();
+            rafId = requestAnimationFrame(frame);
+          }
+        });
+
+        rafId = requestAnimationFrame(frame);
+
+        function pathOval(c, s){
+          c.moveTo(0, -s);
+          c.bezierCurveTo(s * 0.9, -s * 0.55, s * 0.9, s * 0.55, 0, s);
+          c.bezierCurveTo(-s * 0.9, s * 0.55, -s * 0.9, -s * 0.55, 0, -s);
+          c.closePath();
+        }
+
+        function pathMaple(c, s){
+          c.moveTo(0, -s * 1.05);
+          c.quadraticCurveTo(s * 0.12, -s * 0.55, s * 0.42, -s * 0.62);
+          c.quadraticCurveTo(s * 0.3, -s * 0.28, s * 0.55, -s * 0.22);
+          c.quadraticCurveTo(s * 0.35, s * 0.02, s * 0.72, s * 0.28);
+          c.quadraticCurveTo(s * 0.32, s * 0.22, s * 0.28, s * 0.48);
+          c.quadraticCurveTo(s * 0.1, s * 0.28, 0, s * 0.62);
+          c.quadraticCurveTo(-s * 0.1, s * 0.28, -s * 0.28, s * 0.48);
+          c.quadraticCurveTo(-s * 0.32, s * 0.22, -s * 0.72, s * 0.28);
+          c.quadraticCurveTo(-s * 0.35, s * 0.02, -s * 0.55, -s * 0.22);
+          c.quadraticCurveTo(-s * 0.3, -s * 0.28, -s * 0.42, -s * 0.62);
+          c.quadraticCurveTo(-s * 0.12, -s * 0.55, 0, -s * 1.05);
+          c.closePath();
+        }
+
+        function pathSlim(c, s){
+          c.moveTo(0, -s * 1.15);
+          c.bezierCurveTo(s * 0.55, -s * 0.3, s * 0.55, s * 0.5, 0, s * 1.15);
+          c.bezierCurveTo(-s * 0.55, s * 0.5, -s * 0.55, -s * 0.3, 0, -s * 1.15);
+          c.closePath();
+        }
+
+        function drawVeins(c, s, sd, hue, light){
+          var tipY = -s * sd.tip, baseY = s * sd.base;
+          c.strokeStyle = 'hsla(' + hue + ',30%,' + Math.max(10, light - 20) + '%,.55)';
+          c.lineWidth = Math.max(0.5, s * 0.05);
+          c.beginPath();
+          c.moveTo(0, baseY * 0.85);
+          c.lineTo(0, tipY * 0.9);
+          c.stroke();
+          var pairs = 2;
+          for (var k = 1; k <= pairs; k++){
+            var t = k / (pairs + 1);
+            var y = baseY * 0.8 - t * (baseY * 0.8 - tipY * 0.7);
+            var xExt = s * 0.5 * (1 - t * 0.4);
+            c.beginPath(); c.moveTo(0, y); c.lineTo(xExt, y - s * 0.22); c.stroke();
+            c.beginPath(); c.moveTo(0, y); c.lineTo(-xExt, y - s * 0.22); c.stroke();
+          }
+        }
+
+        function renderLeaf(c, L, isBack){
+          var s = L.size, sd = L.shapeDef;
+          c.beginPath();
+          sd.path(c, s);
+          if (isBack){
+            c.fillStyle = 'hsl(' + L.hue + ',' + Math.max(12, L.sat - 38) + '%,' + Math.min(72, L.light + 16) + '%)';
+            c.fill();
+          } else {
+            var grad = c.createLinearGradient(0, -s * sd.tip, 0, s * sd.base);
+            grad.addColorStop(0, 'hsl(' + L.hue + ',' + L.sat + '%,' + Math.min(68, L.light + 16) + '%)');
+            grad.addColorStop(1, 'hsl(' + L.hue + ',' + L.sat + '%,' + Math.max(16, L.light - 14) + '%)');
+            c.fillStyle = grad;
+            c.fill();
+            drawVeins(c, s, sd, L.hue, L.light);
+          }
+          c.strokeStyle = isBack ? 'hsla(28,30%,55%,.8)' : 'hsla(25,50%,25%,.8)';
+          c.lineWidth = Math.max(0.7, s * 0.09);
+          c.beginPath();
+          c.moveTo(0, s * sd.base);
+          c.lineTo(0, s * sd.base + s * 0.3);
+          c.stroke();
+        }
+      }
+    })();
+
     (function(){
       var badge = document.getElementById('profileBadge');
       function renderBadge(){
