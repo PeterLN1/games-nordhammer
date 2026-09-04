@@ -1008,6 +1008,13 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     var d = new Date(day + 'T12:00:00Z');
     return new Intl.DateTimeFormat('sv-SE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Stockholm' }).format(d);
   }
+  function greetingForNow(){
+    var h = new Date().getHours();
+    if (h >= 5 && h < 10) return 'God morgon!';
+    if (h >= 10 && h < 17) return 'Hej!';
+    if (h >= 17 && h < 23) return 'God kväll!';
+    return 'Uppe sent?';
+  }
 
   // Bygger kortlistan i EN pass: grupperar rerouted/total_crash per
   // route_id (samma rutt samma dag = samma krock) till ETT Collision-
@@ -1015,7 +1022,7 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
   function buildStoryCards(entries, viewerId, day){
     var cards = [{
       className: 'story-welcome', icon: '👻🚂',
-      title: 'God morgon!',
+      title: greetingForNow(),
       body: 'Såhär gick det på rälsen i natt — ' + formatSwedishDate(day) + '.'
     }];
     var seenRouteGroups = {};
