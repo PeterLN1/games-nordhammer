@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f6efe1" data-light="#f6efe1" data-dark="#0b1020">
+<title>Flashback</title>
+<script src="/shared/theme.js"></script>
+<script src="/shared/profile.js"></script>
+<style>
+  :root {
+    --bg: radial-gradient(120% 90% at 50% 0%, #f6efe1 0%, #ece1cb 100%);
+    --chrome: rgba(0,0,0,.06);
+    --ink: #2a2013;
+    --muted: rgba(42,32,19,.6);
+    --tile-empty-border: rgba(42,32,19,.22);
+    --key-bg: rgba(42,32,19,.10);
+    --key-ink: #2a2013;
+    --correct: #3aa65a;
+    --wrong: #c94f4f;
+    --accent: #d99a2b;
+    --panel-bg: #fffdf8;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --bg: radial-gradient(120% 90% at 50% 0%, #16224a 0%, #0b1020 60%, #070a15 100%);
+      --chrome: rgba(0,0,0,.35);
+      --ink: #eef2ff;
+      --muted: rgba(238,242,255,.6);
+      --tile-empty-border: rgba(238,242,255,.22);
+      --key-bg: rgba(238,242,255,.12);
+      --key-ink: #eef2ff;
+      --panel-bg: #141a33;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: radial-gradient(120% 90% at 50% 0%, #16224a 0%, #0b1020 60%, #070a15 100%);
+    --chrome: rgba(0,0,0,.35);
+    --ink: #eef2ff;
+    --muted: rgba(238,242,255,.6);
+    --tile-empty-border: rgba(238,242,255,.22);
+    --key-bg: rgba(238,242,255,.12);
+    --key-ink: #eef2ff;
+    --panel-bg: #141a33;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #0b1020;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    touch-action: manipulation; overscroll-behavior: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100dvh; background: var(--bg); }
+
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: max(6px, env(safe-area-inset-top)) 12px 6px;
+    background: var(--chrome); flex: 0 0 auto;
+  }
+  header .back, header .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 10px; text-decoration: none;
+    color: var(--ink); background: var(--key-bg); font-size: 18px; line-height: 1;
+    border: none; cursor: pointer; font-family: inherit;
+  }
+  header .back:active, header .icon-btn:active { background: rgba(217,154,43,.3); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
+  header .spacer { flex: 1; }
+
+  #weekInfo { flex: 0 0 auto; text-align: center; font-size: 12.5px; color: var(--muted); padding: 6px 10px 0; font-weight: 600; }
+
+  #timelineWrap { flex: 1 1 auto; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; }
+  #timeline { display: flex; flex-direction: column; padding: 10px 0 16px; max-width: 520px; margin: 0 auto; }
+
+  .tl-card {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 0 10px;
+    border-radius: 10px; border: 2px solid var(--tile-empty-border); background: var(--panel-bg);
+    animation: cardIn .3s ease;
+  }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+  .tl-card .tl-year {
+    font-weight: 800; font-variant-numeric: tabular-nums; min-width: 46px; text-align: center;
+    padding: 4px 6px; border-radius: 6px; background: var(--key-bg); flex: 0 0 auto;
+  }
+  .tl-card.anchor { border-color: var(--accent); }
+  .tl-card.anchor .tl-year { background: var(--accent); color: #241a00; }
+  .tl-card.correct { border-color: var(--correct); }
+  .tl-card.correct .tl-year { background: var(--correct); color: #fff; }
+  .tl-card.wrong { border-color: var(--wrong); }
+  .tl-card.wrong .tl-year { background: var(--wrong); color: #fff; }
+  .tl-desc { flex: 1; font-size: 14px; line-height: 1.35; }
+
+  .tl-gap { display: flex; align-items: center; justify-content: center; width: 100%; height: 26px; margin: 2px 0; border: none; background: none; cursor: pointer; padding: 0; font-family: inherit; }
+  .tl-gap span {
+    display: flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+    border-radius: 50%; background: var(--key-bg); color: var(--muted); font-weight: 800; font-size: 16px;
+  }
+  .tl-gap:active span { background: rgba(217,154,43,.35); color: var(--ink); }
+  .tl-gap-spacer { height: 10px; }
+
+  #focusWrap { flex: 0 0 auto; padding: 8px 14px max(12px, env(safe-area-inset-bottom)); max-width: 520px; margin: 0 auto; width: 100%; }
+  .focus-progress { text-align: center; font-size: 11.5px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .4px; }
+  .focus-card { background: var(--panel-bg); border-radius: 14px; padding: 16px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.15); text-align: center; }
+  .focus-card p { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; }
+  button.focus-card {
+    width: 100%; border: none; font-family: inherit; font-weight: 700; font-size: 15px;
+    color: #241a00; background: var(--accent); cursor: pointer;
+  }
+  button.focus-card:active { transform: scale(.98); }
+
+  /* ---- overlay (regler / resultat) ---- */
+  #overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 100;
+    display: none; align-items: center; justify-content: center; padding: 16px;
+  }
+  #overlay.show { display: flex; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .panel {
+    background: var(--panel-bg); color: var(--ink); border-radius: 16px;
+    padding: 22px 20px 18px; max-width: 380px; width: 100%; max-height: 86vh; overflow-y: auto;
+    text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  }
+  .panel .emoji { font-size: 42px; }
+  .panel h2 { margin: 6px 0 6px; font-size: 22px; }
+  .panel p { margin: 0 0 4px; color: var(--muted); font-size: 14.5px; line-height: 1.5; }
+  .panel button {
+    width: 100%; margin-top: 12px; padding: 13px; border: none; border-radius: 11px;
+    background: var(--accent); color: #241a00; font-weight: 700; font-size: 15px;
+    cursor: pointer; font-family: inherit;
+  }
+  .panel button:active { transform: scale(.98); }
+
+  .lb-title { font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 16px 0 8px; text-align: left; }
+  .lb-list { text-align: left; }
+  .lb-row { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 9px; font-size: 14px; }
+  .lb-row:nth-child(odd) { background: var(--key-bg); }
+  .lb-row.me { background: rgba(217,154,43,.2); box-shadow: inset 0 0 0 1px rgba(217,154,43,.5); }
+  .lb-rank { width: 22px; text-align: center; font-weight: 700; color: var(--muted); }
+  .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-time { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .lb-guesses { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; font-weight: 700; background: var(--key-bg); padding: 2px 6px; border-radius: 6px; }
+  .lb-empty { color: var(--muted); font-size: 13px; padding: 14px 12px; text-align: center; }
+
+  .rules-list { text-align: left; font-size: 14px; line-height: 1.6; margin: 10px 0; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(10px);
+    z-index: 10000; background: rgba(20,20,30,.92); color: #fff; padding: 10px 18px; border-radius: 10px;
+    font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <a class="back" href="/" aria-label="Till startsidan">‹</a>
+      <h1>🕰️ Flashback</h1>
+      <div class="spacer"></div>
+      <button class="icon-btn" id="btnProfile" aria-label="Byt profil"></button>
+      <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
+    </header>
+    <div id="weekInfo"></div>
+    <div id="timelineWrap"><div id="timeline"></div></div>
+    <div id="focusWrap"></div>
+  </div>
+  <div id="overlay"><div class="panel" id="panel"></div></div>
+  <div id="toast"></div>
+
+  <script>
+  "use strict";
+
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  var toastTimer = null;
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 1600);
+  }
+  function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
+  document.getElementById('overlay').addEventListener('click', function(e){ if(e.target.id === 'overlay') hideOverlay(); });
+
+  function getName(){ var p = NordhammerProfile.current(); return p ? p.name : ''; }
+  function renderProfileBadge(){
+    var p = NordhammerProfile.current();
+    document.getElementById('btnProfile').textContent = p ? p.avatar : '👤';
+  }
+  document.getElementById('btnProfile').onclick = function(){
+    NordhammerProfile.openSwitcher(function(){ renderProfileBadge(); });
+  };
+
+  /* ---------- Regler ---------- */
+  var RULES_KEY = 'flashback:rulesSeen';
+  function showRulesPanel(){
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<h2>❔ Så funkar Flashback</h2>' +
+      '<div class="rules-list">' +
+      '<p>Varje vecka får hela familjen samma 8 historiska händelser — ett nytt pussel varje måndag.</p>' +
+      '<p>En händelse ligger redan på tidslinjen med sitt årtal synligt (ankaret). Klicka i tidslinjen var du tror att den aktuella händelsen hör hemma, före eller efter de som redan ligger där.</p>' +
+      '<p>Rätt gissat: händelsen låses fast och årtalet avslöjas. Fel gissat: den hamnar ändå på sin rätta plats — så nästa gissning inte blir omöjlig — men räknas som fel.</p>' +
+      '<p>Målet är att få så många som möjligt av de 7 återstående rätt. Vid lika poäng vinner den som var snabbast.</p>' +
+      '</div>' +
+      '<button id="pClose">Nu kör vi!</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+  }
+  document.getElementById('btnRules').onclick = showRulesPanel;
+  function showRulesIfFirstTime(){
+    try { if(!localStorage.getItem(RULES_KEY)){ localStorage.setItem(RULES_KEY, '1'); showRulesPanel(); } } catch(e){}
+  }
+
+  /* ---------- Server (samma Railway/Supabase-backend som övriga spel) ---------- */
+  var API_BASE = 'https://games-nordhammer-production.up.railway.app';
+  function apiBase(){
+    try { return (localStorage.getItem('flashback:api') || API_BASE || '').replace(/\/+$/, ''); }
+    catch(e){ return API_BASE; }
+  }
+  function hasLeaderboard(){ return !!apiBase(); }
+  function fetchPuzzle(cb){
+    var base = apiBase(); if(!base) return cb(new Error('ingen server'));
+    fetch(base + '/api/flashback/puzzle')
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb(d && d.error ? new Error(d.error) : null, d); })
+      .catch(function(e){ cb(e); });
+  }
+  function seedFor(weekId){ return 'flashback:' + weekId; }
+  function lbFetchBySeed(seed, cb){
+    var base = apiBase(); if(!base) return cb(new Error('ingen topplista'));
+    fetch(base + '/api/leaderboard?seed=' + encodeURIComponent(seed) + '&limit=20')
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb(d && d.error ? new Error(d.error) : null, (d && d.scores) || []); })
+      .catch(function(e){ cb(e); });
+  }
+  function lbSubmit(payload, cb){
+    var base = apiBase(); if(!base) return cb && cb(new Error('ingen topplista'));
+    fetch(base + '/api/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb && cb(d && d.error ? new Error(d.error) : null, d); })
+      .catch(function(e){ cb && cb(e); });
+  }
+  function fmtSeconds(s){
+    s = Math.round(s);
+    var m = Math.floor(s / 60), sec = s % 60;
+    return m + ':' + (sec < 10 ? '0' : '') + sec;
+  }
+
+  /* ---------- Lokalt speltillstånd (per vecka) ----------
+     Bara resultatet (rätt/fel) per placerad händelse sparas — ordningen är
+     alltid pusslets fasta kö, så resten av tidslinjen kan räknas fram från
+     puzzle + resolvedResults.length vid varje sidladdning. */
+  function gameKey(weekId){ return 'flashback:game:' + weekId; }
+  function loadGame(weekId){ try { return JSON.parse(localStorage.getItem(gameKey(weekId))); } catch(e){ return null; } }
+  function saveGame(s){ try { localStorage.setItem(gameKey(s.weekId), JSON.stringify(s)); } catch(e){} }
+  function pruneOldGames(keepWeekId){
+    try {
+      var toRemove = [];
+      for(var i=0;i<localStorage.length;i++){
+        var k = localStorage.key(i);
+        if(k && k.indexOf('flashback:game:') === 0 && k !== gameKey(keepWeekId)) toRemove.push(k);
+      }
+      toRemove.forEach(function(k){ localStorage.removeItem(k); });
+    } catch(e){}
+  }
+
+  var puzzle = null, anchor = null, queue = [], state = null, timeline = [];
+
+  function buildTimeline(){
+    var resolvedCount = state.resolvedResults.length;
+    var items = [{ description: anchor.description, year: anchor.year, kind: 'anchor' }];
+    for(var i=0;i<resolvedCount;i++){
+      var ev = queue[i];
+      items.push({ description: ev.description, year: ev.year, kind: state.resolvedResults[i] ? 'correct' : 'wrong' });
+    }
+    items.sort(function(a, b){ return a.year - b.year; });
+    timeline = items;
+  }
+  function currentFocusEvent(){
+    var idx = state.resolvedResults.length;
+    return idx < queue.length ? queue[idx] : null;
+  }
+  function correctCount(){
+    return state.resolvedResults.filter(function(r){ return r; }).length;
+  }
+
+  function placeAt(gapIndex){
+    if(state.status !== 'playing') return;
+    var ev = currentFocusEvent();
+    if(!ev) return;
+    var before = gapIndex > 0 ? timeline[gapIndex - 1].year : -Infinity;
+    var after = gapIndex < timeline.length ? timeline[gapIndex].year : Infinity;
+    var correct = ev.year > before && ev.year < after;
+    state.resolvedResults.push(correct);
+    toast(correct ? 'Rätt! ' + ev.year : 'Fel — det var ' + ev.year);
+    buildTimeline();
+    if(state.resolvedResults.length === queue.length){
+      state.status = 'done';
+      state.finishedAt = Date.now();
+    }
+    saveGame(state);
+    render();
+    if(state.status === 'done') setTimeout(showResultPanel, 350);
+  }
+
+  function cardHtml(item){
+    return '<div class="tl-card ' + item.kind + '"><span class="tl-year">' + item.year + '</span>' +
+           '<span class="tl-desc">' + esc(item.description) + '</span></div>';
+  }
+  function gapHtml(idx){
+    if(state.status !== 'playing') return '<div class="tl-gap-spacer"></div>';
+    return '<button class="tl-gap" data-idx="' + idx + '" aria-label="Placera här"><span>+</span></button>';
+  }
+
+  function render(){
+    document.getElementById('weekInfo').textContent = puzzle.title + ' · vecka ' + puzzle.week_id.slice(6);
+    var tl = document.getElementById('timeline');
+    var html = gapHtml(0);
+    timeline.forEach(function(item, i){ html += cardHtml(item) + gapHtml(i + 1); });
+    tl.innerHTML = html;
+    var gaps = tl.querySelectorAll('.tl-gap');
+    for(var i=0;i<gaps.length;i++){
+      gaps[i].onclick = (function(g){ return function(){ placeAt(parseInt(g.getAttribute('data-idx'), 10)); }; })(gaps[i]);
+    }
+
+    var focusWrap = document.getElementById('focusWrap');
+    if(state.status === 'done'){
+      focusWrap.innerHTML = '<button class="focus-card" id="btnShowResult">Se resultat 🎉</button>';
+      document.getElementById('btnShowResult').onclick = showResultPanel;
+    } else {
+      var ev = currentFocusEvent();
+      focusWrap.innerHTML =
+        '<div class="focus-progress">Kort ' + (state.resolvedResults.length + 1) + ' av ' + queue.length + '</div>' +
+        '<div class="focus-card"><p>' + esc(ev.description) + '</p></div>';
+    }
+  }
+
+  /* ---------- Topplista ----------
+     De generiska scores/leaderboard-kolumnerna (seconds/moves) är byggda
+     för Mahjong/Ordlek där lägst TID vinner. Flashback ska istället
+     rankas på FLEST RÄTT (0-7), med tiden bara som utslag vid lika poäng.
+     "seconds" som skickas in är därför inte den riktiga tiden utan en
+     kombinerad rankningssiffra: varje fel kostar en hel "hink" på
+     RANK_BUCKET sekunder, vilket alltid överväger skillnader i verklig
+     speltid (klippt till max RANK_BUCKET-1 s — gott om marginal för ett
+     pussel med 7 klick). Riktig tid packas upp igen för visning med
+     `% RANK_BUCKET`. "moves" bär den faktiska poängen (rätt/7). */
+  var RANK_BUCKET = 3600;
+  function encodeRank(correct, elapsedSeconds){
+    var wrong = queue.length - correct;
+    var capped = Math.max(1, Math.min(Math.round(elapsedSeconds), RANK_BUCKET - 1));
+    return wrong * RANK_BUCKET + capped;
+  }
+  function lbRenderList(el, list, myName){
+    if(!list || !list.length){ el.innerHTML = '<div class="lb-empty">Var först på listan denna vecka!</div>'; return; }
+    var medals = ['🥇', '🥈', '🥉'];
+    el.innerHTML = list.map(function(s, i){
+      var me = (myName && s.name === myName) ? ' me' : '';
+      var rank = i < 3 ? medals[i] : (i + 1);
+      var score = (s.moves != null) ? '<span class="lb-guesses">' + s.moves + '/' + queue.length + '</span>' : '';
+      var realSeconds = s.seconds % RANK_BUCKET;
+      return '<div class="lb-row' + me + '"><span class="lb-rank">' + rank + '</span>' +
+             '<span class="lb-name">' + esc(s.name) + '</span>' +
+             score +
+             '<span class="lb-time">' + fmtSeconds(realSeconds) + '</span></div>';
+    }).join('');
+  }
+  function setupLeaderboard(area){
+    if(!hasLeaderboard()){ area.innerHTML = ''; return; }
+    var seed = seedFor(puzzle.week_id);
+    function showList(){
+      area.innerHTML = '<div class="lb-title">🏆 Veckans familjetopplista</div><div class="lb-list">Laddar…</div>';
+      lbFetchBySeed(seed, function(err, list){
+        var el = area.querySelector('.lb-list');
+        if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
+        lbRenderList(el, list, getName());
+      });
+    }
+    if(state.submitted){ showList(); return; }
+    var elapsedSeconds = Math.max(1, Math.round((state.finishedAt - state.startedAt) / 1000));
+    var score = correctCount();
+    state.submitted = true; saveGame(state);
+    lbSubmit({ name: getName(), mode: 'flashback', tiles: queue.length, seconds: encodeRank(score, elapsedSeconds), moves: score, seed: seed }, showList);
+    showList();
+  }
+
+  function showResultPanel(){
+    var panel = document.getElementById('panel');
+    var score = correctCount();
+    var emoji = score === queue.length ? '🏆' : (score >= Math.ceil(queue.length / 2) ? '🎉' : '🕰️');
+    panel.innerHTML =
+      '<div class="emoji">' + emoji + '</div>' +
+      '<h2>' + score + ' / ' + queue.length + ' rätt</h2>' +
+      '<p>' + esc(puzzle.title) + '</p>' +
+      '<div id="lbArea"></div>' +
+      '<button id="pClose">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+    setupLeaderboard(document.getElementById('lbArea'));
+  }
+
+  /* ---------- Start ---------- */
+  document.getElementById('timeline').innerHTML = '<div class="lb-empty">Hämtar veckans pussel…</div>';
+  fetchPuzzle(function(err, data){
+    if(err || !data || !data.events || !data.events.length){
+      document.getElementById('timeline').innerHTML = '<div class="lb-empty">Kunde inte hämta veckans pussel just nu. Kolla anslutningen och ladda om sidan.</div>';
+      return;
+    }
+    puzzle = data;
+    anchor = puzzle.events.filter(function(e){ return e.isAnchor; })[0];
+    queue = puzzle.events.filter(function(e){ return !e.isAnchor; });
+
+    var saved = loadGame(puzzle.week_id);
+    if(saved && saved.resolvedResults){
+      state = saved;
+    } else {
+      state = { weekId: puzzle.week_id, resolvedResults: [], startedAt: Date.now(), finishedAt: null, status: 'playing', submitted: false };
+      saveGame(state);
+      pruneOldGames(puzzle.week_id);
+    }
+    buildTimeline();
+    render();
+    if(state.status === 'done') setTimeout(showResultPanel, 200);
+    else showRulesIfFirstTime();
+  });
+
+  renderProfileBadge();
+  NordhammerProfile.ensurePicker(function(){ renderProfileBadge(); });
+  </script>
+</body>
+</html>

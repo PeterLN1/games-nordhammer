@@ -12,13 +12,16 @@
 import express from 'express';
 import pg from 'pg';
 import { createGhostTrains } from './ghosttrains.js';
+import { createFlashback } from './flashback.js';
 
 const PORT = process.env.PORT || 3000;
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || '*';
 const GHOSTTRAINS_RESOLVE_SECRET = process.env.GHOSTTRAINS_RESOLVE_SECRET || '';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const FLASHBACK_GENERATE_SECRET = process.env.FLASHBACK_GENERATE_SECRET || '';
 
-const MODES = new Set(['classic', 'tilematch', 'ordlek']);
+const MODES = new Set(['classic', 'tilematch', 'ordlek', 'flashback']);
 // enkel olämplighetsfilter (utökas vid behov)
 const BAD_WORDS = ['fitta', 'kuk', 'hora', 'knulla', 'jävla', 'javla', 'fuck', 'shit', 'bitch', 'cunt', 'nigger', 'nigga', 'slut'];
 
@@ -560,5 +563,8 @@ app.post('/api/scores', async (req, res) => {
 
 const ghostTrains = await createGhostTrains(pool, { resolveSecret: GHOSTTRAINS_RESOLVE_SECRET });
 app.use('/api/ghosttrains', ghostTrains.router);
+
+const flashback = await createFlashback(pool, { anthropicApiKey: ANTHROPIC_API_KEY, generateSecret: FLASHBACK_GENERATE_SECRET });
+app.use('/api/flashback', flashback.router);
 
 app.listen(PORT, () => console.log('Topplista-API lyssnar pa port ' + PORT));
