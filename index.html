@@ -17,9 +17,6 @@
     --card-border: rgba(0,0,0,.12);
     --card-hover-border: rgba(190,145,0,.65);
     --card-shadow: rgba(20,30,70,.18);
-    --soon-face: linear-gradient(135deg, #ccd4ec, #bcc6e2);
-    --badge-soon-bg: rgba(0,0,0,.10);
-    --badge-soon-ink: #3a4266;
     --badge-dev-bg: rgba(255,140,0,.16);
     --badge-dev-ink: #8a5300;
     --ctl-bg: rgba(0,0,0,.06);
@@ -33,9 +30,6 @@
       --card-border: rgba(255,255,255,.10);
       --card-hover-border: rgba(255,210,0,.5);
       --card-shadow: rgba(0,0,0,.35);
-      --soon-face: linear-gradient(135deg, #2a3352, #1c2440);
-      --badge-soon-bg: rgba(255,255,255,.14);
-      --badge-soon-ink: #cdd6f4;
       --badge-dev-bg: rgba(255,170,60,.18);
       --badge-dev-ink: #ffbf6b;
       --ctl-bg: rgba(255,255,255,.10);
@@ -49,9 +43,6 @@
     --card-border: rgba(255,255,255,.10);
     --card-hover-border: rgba(255,210,0,.5);
     --card-shadow: rgba(0,0,0,.35);
-    --soon-face: linear-gradient(135deg, #2a3352, #1c2440);
-    --badge-soon-bg: rgba(255,255,255,.14);
-    --badge-soon-ink: #cdd6f4;
     --ctl-bg: rgba(255,255,255,.10);
     --ctl-border: rgba(255,255,255,.18);
   }
@@ -112,7 +103,6 @@
   .art.streetview { background: linear-gradient(135deg, #274b7a, #4c8fc7 60%, #eae2c8); }
   .art.ghosttrains { background: linear-gradient(135deg, #1a1f35, #3d4a6b 60%, #8a93b8); }
   .art.flashback { background: linear-gradient(135deg, #4a2f10, #a8712c 60%, #f0cf8a); }
-  .art.soon { background: var(--soon-face); filter: grayscale(.3); }
   .card h2 { margin: 0 0 6px; font-size: 19px; }
   .card p { margin: 0; font-size: 13.5px; line-height: 1.45; opacity: .7; }
   .badge {
@@ -122,8 +112,6 @@
   }
   .badge.play { background: #ffd200; color: #111; }
   .badge.dev { background: var(--badge-dev-bg); color: var(--badge-dev-ink); }
-  .badge.soon { background: var(--badge-soon-bg); color: var(--badge-soon-ink); }
-  .card.soon { opacity: .62; cursor: default; }
 
   footer { text-align: center; margin-top: 46px; font-size: 12px; opacity: .4; }
   footer a { color: inherit; }
@@ -148,6 +136,27 @@
     </header>
 
     <div class="grid">
+      <a class="card playable" href="/flashback/">
+        <span class="badge play">SPELA</span>
+        <div class="art flashback">🕰️</div>
+        <h2>Flashback</h2>
+        <p>Veckans tidslinjepussel: placera 7 historiska händelser rätt i förhållande till varandra. Nytt pussel varje måndag, samma för hela familjen.</p>
+      </a>
+
+      <a class="card playable" href="/ordlek/">
+        <span class="badge play">SPELA</span>
+        <div class="art ordlek">🟩</div>
+        <h2>Ordlek</h2>
+        <p>Gissa dagens hemliga 5-bokstavsord på 6 försök. Samma ord för hela familjen — tävla om vem som löser det snabbast.</p>
+      </a>
+
+      <a class="card playable" href="/mahjong/">
+        <span class="badge play">SPELA</span>
+        <div class="art mahjong">🀄</div>
+        <h2>Mahjong</h2>
+        <p>Mahjong Solitaire. Para ihop lediga brickor och rensa hela sköldpaddan. Alltid lösbar.</p>
+      </a>
+
       <a class="card playable" href="/spider/">
         <span class="badge play">SPELA</span>
         <div class="art spider">🕷️</div>
@@ -161,41 +170,6 @@
         <h2>Öde ö</h2>
         <p>Överlevnadsspel. Utforska ön via kartan, bygg läger och flotte, och håll ut tills ett skepp räddar dig.</p>
       </a>
-
-      <a class="card playable" href="/mahjong/">
-        <span class="badge play">SPELA</span>
-        <div class="art mahjong">🀄</div>
-        <h2>Mahjong</h2>
-        <p>Mahjong Solitaire. Para ihop lediga brickor och rensa hela sköldpaddan. Alltid lösbar.</p>
-      </a>
-
-      <a class="card playable" href="/ordlek/">
-        <span class="badge play">SPELA</span>
-        <div class="art ordlek">🟩</div>
-        <h2>Ordlek</h2>
-        <p>Gissa dagens hemliga 5-bokstavsord på 6 försök. Samma ord för hela familjen — tävla om vem som löser det snabbast.</p>
-      </a>
-
-      <a class="card playable" href="/flashback/">
-        <span class="badge play">SPELA</span>
-        <div class="art flashback">🕰️</div>
-        <h2>Flashback</h2>
-        <p>Veckans tidslinjepussel: placera 7 historiska händelser rätt i förhållande till varandra. Nytt pussel varje måndag, samma för hela familjen.</p>
-      </a>
-
-      <div class="card soon" aria-disabled="true">
-        <span class="badge soon">KOMMER</span>
-        <div class="art soon">🂡</div>
-        <h2>FreeCell</h2>
-        <p>Alla kort synliga från start, fyra fria celler. Ren strategi.</p>
-      </div>
-
-      <div class="card soon" aria-disabled="true">
-        <span class="badge soon">KOMMER</span>
-        <div class="art soon">♠️</div>
-        <h2>Klondike</h2>
-        <p>Den klassiska patiensen — bygg upp fyra svit-högar från ess till kung.</p>
-      </div>
 
       <a class="card playable" href="/laager/">
         <span class="badge dev">UNDER UTVECKLING</span>
