@@ -35,14 +35,14 @@ function currentWeekId(date = new Date()) { return isoWeekId(stockholmDateStr(da
 // annars skulle stå helt utan pussel. Bara en krockkudde — tänkt att
 // användas i undantagsfall, inte som återkommande innehåll.
 const FALLBACK_EVENTS = [
-  { description: 'Regalskeppet Vasa kantrar och sjunker på sin jungfrufärd i Stockholms hamn.', year: 1628, isAnchor: true },
-  { description: 'Allmän och lika rösträtt för kvinnor och män införs i Sverige.', year: 1919, isAnchor: false },
-  { description: 'Astrid Lindgrens första bok om Pippi Långstrump ges ut.', year: 1945, isAnchor: false },
-  { description: 'Sverige inför högertrafik ("Dagen H").', year: 1967, isAnchor: false },
-  { description: 'Berlinmuren faller.', year: 1989, isAnchor: false },
-  { description: 'ABBA vinner Eurovision Song Contest med låten "Waterloo".', year: 1974, isAnchor: false },
-  { description: 'Sverige tar VM-brons i fotboll på hemmaplan.', year: 1994, isAnchor: false },
-  { description: 'Spotify grundas i Stockholm.', year: 2006, isAnchor: false }
+  { description: 'Regalskeppet Vasa kantrar och sjunker på sin jungfrufärd i Stockholms hamn, mindre än en kilometer från kaj. Skeppet låg kvar på botten i 333 år innan det bärgades 1961.', year: 1628, isAnchor: true },
+  { description: 'Allmän och lika rösträtt för kvinnor och män införs i Sverige. Det dröjer ändå till valet 1921 innan reformen faktiskt används första gången.', year: 1919, isAnchor: false },
+  { description: 'Astrid Lindgrens första bok om Pippi Långstrump ges ut, efter att ha skrivits ner som julklapp till dottern Karin några år tidigare.', year: 1945, isAnchor: false },
+  { description: 'Sverige byter från vänster- till högertrafik på natten till "Dagen H". Hela landets vägmärken och busshållplatser hade förberetts i hemlighet under lång tid.', year: 1967, isAnchor: false },
+  { description: 'Berlinmuren faller sedan en östtysk tjänsteman av misstag meddelar att nya reseregler gäller "omedelbart, utan dröjsmål" på en pressträff.', year: 1989, isAnchor: false },
+  { description: 'ABBA vinner Eurovision Song Contest med låten "Waterloo" och blir samtidigt gruppens internationella genombrott över en natt.', year: 1974, isAnchor: false },
+  { description: 'Sverige tar VM-brons i fotboll på hemmaplan efter att ha slagit Bulgarien i bronsmatchen — landets bästa VM-resultat sedan finalen 1958.', year: 1994, isAnchor: false },
+  { description: 'Spotify grundas i Stockholm av Daniel Ek och Martin Lorentzon, som ett svar på den utbredda musikpirat­kopieringen.', year: 2006, isAnchor: false }
 ];
 
 function validateEvents(events) {
@@ -51,7 +51,9 @@ function validateEvents(events) {
   let anchors = 0;
   const thisYear = new Date().getFullYear();
   for (const e of events) {
-    if (!e || typeof e.description !== 'string' || !e.description.trim() || e.description.length > 200) return false;
+    if (!e || typeof e.description !== 'string') return false;
+    const len = e.description.trim().length;
+    if (len < 40 || len > 400) return false;
     if (!Number.isInteger(e.year) || e.year < 1000 || e.year > thisYear) return false;
     if (years.has(e.year)) return false;
     years.add(e.year);
@@ -68,6 +70,8 @@ function buildPrompt(excluded) {
   return `Du skapar ett veckopussel för ett svenskt familjespel som heter "Flashback" (ett tidslinjepussel, inte quiz).
 
 Ge mig exakt ${EVENT_COUNT} historiska händelser som en svensk familj (blandade åldrar, från barn till mor-/farföräldrar) rimligen känner till eller kan resonera sig fram till. Blanda kategorier: svensk och världshistoria, sport, politik, populärkultur, teknik/vetenskap. Sprid årtalen brett (inte allt klumpat inom samma decennium) så att pusslet blir lagom svårt.
+
+Varje "description" ska vara 2 meningar på svenska, ca 100–220 tecken: första meningen är själva huvudhändelsen (kort och tydlig), andra meningen en konkret, gärna lite kuriosaartad eller underhållande detalj eller följd av händelsen — inte bara en omskrivning. Undvik torra uppslagsverks-formuleringar; skriv som en intresseväckande liten historia. Nämn INTE årtalet i själva texten (det visas separat).
 
 Exakt en händelse ska märkas "isAnchor": true — den ska vara särskilt allmänt känd, bra som startankare. Övriga 7 ska ha "isAnchor": false.
 
@@ -88,7 +92,7 @@ async function callAnthropic(apiKey, prompt) {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 1500,
+      max_tokens: 2500,
       messages: [{ role: 'user', content: prompt }]
     })
   });

@@ -77,14 +77,14 @@
   #timeline { display: flex; flex-direction: column; padding: 10px 0 16px; max-width: 520px; margin: 0 auto; }
 
   .tl-card {
-    display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 0 10px;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 12px; margin: 0 10px;
     border-radius: 10px; border: 2px solid var(--tile-empty-border); background: var(--panel-bg);
     animation: cardIn .3s ease;
   }
   @keyframes cardIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
   .tl-card .tl-year {
-    font-weight: 800; font-variant-numeric: tabular-nums; min-width: 46px; text-align: center;
-    padding: 4px 6px; border-radius: 6px; background: var(--key-bg); flex: 0 0 auto;
+    font-weight: 800; font-variant-numeric: tabular-nums; text-align: center;
+    padding: 3px 9px; border-radius: 6px; background: var(--key-bg); font-size: 13px;
   }
   .tl-card.anchor { border-color: var(--accent); }
   .tl-card.anchor .tl-year { background: var(--accent); color: #241a00; }
@@ -92,7 +92,7 @@
   .tl-card.correct .tl-year { background: var(--correct); color: #fff; }
   .tl-card.wrong { border-color: var(--wrong); }
   .tl-card.wrong .tl-year { background: var(--wrong); color: #fff; }
-  .tl-desc { flex: 1; font-size: 14px; line-height: 1.35; }
+  .tl-desc { font-size: 14px; line-height: 1.45; }
 
   .tl-gap { display: flex; align-items: center; justify-content: center; width: 100%; height: 26px; margin: 2px 0; border: none; background: none; cursor: pointer; padding: 0; font-family: inherit; }
   .tl-gap span {
