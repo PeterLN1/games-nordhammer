@@ -71,6 +71,14 @@
   header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
   header .spacer { flex: 1; }
 
+  #variantSwitch { display: flex; gap: 8px; justify-content: center; padding: 8px 12px 0; flex: 0 0 auto; }
+  .variant-btn {
+    flex: 1 1 0; max-width: 200px; padding: 8px 10px; border-radius: 999px;
+    border: 2px solid var(--tile-empty-border); background: var(--panel-bg); color: var(--ink);
+    font-family: inherit; font-weight: 700; font-size: 12.5px; cursor: pointer;
+  }
+  .variant-btn.active { background: var(--accent); border-color: var(--accent); color: #241a00; }
+
   #weekInfo { flex: 0 0 auto; text-align: center; font-size: 12.5px; color: var(--muted); padding: 6px 10px 0; font-weight: 600; }
 
   #timelineWrap { flex: 1 1 auto; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; }
@@ -164,6 +172,7 @@
       <button class="icon-btn" id="btnProfile" aria-label="Byt profil"></button>
       <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
     </header>
+    <div id="variantSwitch"></div>
     <div id="weekInfo"></div>
     <div id="timelineWrap"><div id="timeline"></div></div>
     <div id="focusWrap"></div>
@@ -206,6 +215,7 @@
       '<p>En händelse ligger redan på tidslinjen med sitt årtal synligt (ankaret). Klicka i tidslinjen var du tror att den aktuella händelsen hör hemma, före eller efter de som redan ligger där.</p>' +
       '<p>Rätt gissat: händelsen låses fast och årtalet avslöjas. Fel gissat: den hamnar ändå på sin rätta plats — så nästa gissning inte blir omöjlig — men räknas som fel.</p>' +
       '<p>Målet är att få så många som möjligt av de 7 återstående rätt. Vid lika poäng vinner den som var snabbast.</p>' +
+      '<p>Det finns två varianter av veckans pussel — växla mellan dem med knapparna högst upp. Alla får gärna spela båda, varje vecka, med varsin topplista.</p>' +
       '</div>' +
       '<button id="pClose">Nu kör vi!</button>';
     document.getElementById('overlay').classList.add('show');
@@ -223,14 +233,14 @@
     catch(e){ return API_BASE; }
   }
   function hasLeaderboard(){ return !!apiBase(); }
-  function fetchPuzzle(cb){
+  function fetchPuzzle(variant, cb){
     var base = apiBase(); if(!base) return cb(new Error('ingen server'));
-    fetch(base + '/api/flashback/puzzle')
+    fetch(base + '/api/flashback/puzzle?variant=' + encodeURIComponent(variant))
       .then(function(r){ return r.json(); })
       .then(function(d){ cb(d && d.error ? new Error(d.error) : null, d); })
       .catch(function(e){ cb(e); });
   }
-  function seedFor(weekId){ return 'flashback:' + weekId; }
+  function seedFor(variant, weekId){ return 'flashback:' + variant + ':' + weekId; }
   function lbFetchBySeed(seed, cb){
     var base = apiBase(); if(!base) return cb(new Error('ingen topplista'));
     fetch(base + '/api/leaderboard?seed=' + encodeURIComponent(seed) + '&limit=20')
@@ -251,24 +261,28 @@
     return m + ':' + (sec < 10 ? '0' : '') + sec;
   }
 
-  /* ---------- Lokalt speltillstånd (per vecka) ----------
+  /* ---------- Lokalt speltillstånd (per variant och vecka) ----------
      Bara resultatet (rätt/fel) per placerad händelse sparas — ordningen är
      alltid pusslets fasta kö, så resten av tidslinjen kan räknas fram från
-     puzzle + resolvedResults.length vid varje sidladdning. */
-  function gameKey(weekId){ return 'flashback:game:' + weekId; }
-  function loadGame(weekId){ try { return JSON.parse(localStorage.getItem(gameKey(weekId))); } catch(e){ return null; } }
-  function saveGame(s){ try { localStorage.setItem(gameKey(s.weekId), JSON.stringify(s)); } catch(e){} }
-  function pruneOldGames(keepWeekId){
+     puzzle + resolvedResults.length vid varje sidladdning. Nyckeln
+     innehåller variant-id:t så att de två varianternas sparade partier
+     aldrig krockar eller skriver över varandra. */
+  function gameKey(variant, weekId){ return 'flashback:game:' + variant + ':' + weekId; }
+  function loadGame(variant, weekId){ try { return JSON.parse(localStorage.getItem(gameKey(variant, weekId))); } catch(e){ return null; } }
+  function saveGame(s){ try { localStorage.setItem(gameKey(s.variant, s.weekId), JSON.stringify(s)); } catch(e){} }
+  function pruneOldGames(variant, keepWeekId){
     try {
+      var prefix = 'flashback:game:' + variant + ':';
       var toRemove = [];
       for(var i=0;i<localStorage.length;i++){
         var k = localStorage.key(i);
-        if(k && k.indexOf('flashback:game:') === 0 && k !== gameKey(keepWeekId)) toRemove.push(k);
+        if(k && k.indexOf(prefix) === 0 && k !== gameKey(variant, keepWeekId)) toRemove.push(k);
       }
       toRemove.forEach(function(k){ localStorage.removeItem(k); });
     } catch(e){}
   }
 
+  var currentVariant = 'standard';
   var puzzle = null, anchor = null, queue = [], state = null, timeline = [];
 
   function buildTimeline(){
@@ -318,7 +332,8 @@
   }
 
   function render(){
-    document.getElementById('weekInfo').textContent = puzzle.title + ' · vecka ' + puzzle.week_id.slice(6);
+    var variantLabel = (VARIANTS.filter(function(v){ return v.id === currentVariant; })[0] || {}).label || 'Flashback';
+    document.getElementById('weekInfo').textContent = variantLabel + ' · ' + puzzle.title + ' · vecka ' + puzzle.week_id.slice(6);
     var tl = document.getElementById('timeline');
     var html = gapHtml(0);
     timeline.forEach(function(item, i){ html += cardHtml(item) + gapHtml(i + 1); });
@@ -372,7 +387,7 @@
   }
   function setupLeaderboard(area){
     if(!hasLeaderboard()){ area.innerHTML = ''; return; }
-    var seed = seedFor(puzzle.week_id);
+    var seed = seedFor(currentVariant, puzzle.week_id);
     function showList(){
       area.innerHTML = '<div class="lb-title">🏆 Veckans familjetopplista</div><div class="lb-list">Laddar…</div>';
       lbFetchBySeed(seed, function(err, list){
@@ -404,30 +419,75 @@
     setupLeaderboard(document.getElementById('lbArea'));
   }
 
-  /* ---------- Start ---------- */
-  document.getElementById('timeline').innerHTML = '<div class="lb-empty">Hämtar veckans pussel…</div>';
-  fetchPuzzle(function(err, data){
-    if(err || !data || !data.events || !data.events.length){
-      document.getElementById('timeline').innerHTML = '<div class="lb-empty">Kunde inte hämta veckans pussel just nu. Kolla anslutningen och ladda om sidan.</div>';
-      return;
-    }
-    puzzle = data;
-    anchor = puzzle.events.filter(function(e){ return e.isAnchor; })[0];
-    queue = puzzle.events.filter(function(e){ return !e.isAnchor; });
+  /* ---------- Variantväxlare ----------
+     Två varianter av samma veckopussel (t.ex. "Flashback" och "Flashback
+     Remix") delar den här sidan istället för att vara separata spel —
+     alla ska kunna spela båda varje vecka. Varje variant har sitt eget
+     pussel, sparade läge (se gameKey) och topplista (se seedFor); att
+     byta variant byter bara vilket av dem som visas just nu. */
+  var VARIANTS = [
+    { id: 'standard', label: 'Flashback' },
+    { id: 'remix', label: 'Flashback Remix' }
+  ];
+  var LAST_VARIANT_KEY = 'flashback:lastVariant';
 
-    var saved = loadGame(puzzle.week_id);
-    if(saved && saved.resolvedResults){
-      state = saved;
-    } else {
-      state = { weekId: puzzle.week_id, resolvedResults: [], startedAt: Date.now(), finishedAt: null, status: 'playing', submitted: false };
-      saveGame(state);
-      pruneOldGames(puzzle.week_id);
+  function updateVariantSwitchUI(){
+    var btns = document.querySelectorAll('.variant-btn');
+    for(var i=0;i<btns.length;i++){
+      btns[i].classList.toggle('active', btns[i].getAttribute('data-variant') === currentVariant);
     }
-    buildTimeline();
-    render();
-    if(state.status === 'done') setTimeout(showResultPanel, 200);
-    else showRulesIfFirstTime();
-  });
+  }
+
+  function loadVariant(variant){
+    if(!VARIANTS.some(function(v){ return v.id === variant; })) variant = 'standard';
+    currentVariant = variant;
+    try { localStorage.setItem(LAST_VARIANT_KEY, variant); } catch(e){}
+    updateVariantSwitchUI();
+    document.getElementById('weekInfo').textContent = 'Hämtar…';
+    document.getElementById('timeline').innerHTML = '<div class="lb-empty">Hämtar veckans pussel…</div>';
+    document.getElementById('focusWrap').innerHTML = '';
+    fetchPuzzle(variant, function(err, data){
+      if(currentVariant !== variant) return; // hann byta variant medan anropet pågick
+      if(err || !data || !data.events || !data.events.length){
+        document.getElementById('timeline').innerHTML = '<div class="lb-empty">Kunde inte hämta veckans pussel just nu. Kolla anslutningen och ladda om sidan.</div>';
+        return;
+      }
+      puzzle = data;
+      anchor = puzzle.events.filter(function(e){ return e.isAnchor; })[0];
+      queue = puzzle.events.filter(function(e){ return !e.isAnchor; });
+
+      var saved = loadGame(variant, puzzle.week_id);
+      if(saved && saved.resolvedResults){
+        state = saved;
+      } else {
+        state = { variant: variant, weekId: puzzle.week_id, resolvedResults: [], startedAt: Date.now(), finishedAt: null, status: 'playing', submitted: false };
+        saveGame(state);
+        pruneOldGames(variant, puzzle.week_id);
+      }
+      buildTimeline();
+      render();
+      if(state.status === 'done') setTimeout(showResultPanel, 200);
+      else showRulesIfFirstTime();
+    });
+  }
+
+  /* ---------- Start ---------- */
+  document.getElementById('variantSwitch').innerHTML = VARIANTS.map(function(v){
+    return '<button class="variant-btn" data-variant="' + v.id + '">' + esc(v.label) + '</button>';
+  }).join('');
+  (function(){
+    var btns = document.querySelectorAll('.variant-btn');
+    for(var i=0;i<btns.length;i++){
+      btns[i].onclick = (function(b){ return function(){ loadVariant(b.getAttribute('data-variant')); }; })(btns[i]);
+    }
+  })();
+
+  var initialVariant = 'standard';
+  try {
+    var lastVariant = localStorage.getItem(LAST_VARIANT_KEY);
+    if(VARIANTS.some(function(v){ return v.id === lastVariant; })) initialVariant = lastVariant;
+  } catch(e){}
+  loadVariant(initialVariant);
 
   renderProfileBadge();
   NordhammerProfile.ensurePicker(function(){ renderProfileBadge(); });
