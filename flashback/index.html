@@ -347,11 +347,15 @@
     if(state.status === 'done'){
       focusWrap.innerHTML = '<button class="focus-card" id="btnShowResult">Se resultat 🎉</button>';
       document.getElementById('btnShowResult').onclick = showResultPanel;
-    } else {
+    } else if(state.status === 'playing'){
       var ev = currentFocusEvent();
       focusWrap.innerHTML =
         '<div class="focus-progress">Kort ' + (state.resolvedResults.length + 1) + ' av ' + queue.length + '</div>' +
         '<div class="focus-card"><p>' + esc(ev.description) + '</p></div>';
+    } else {
+      focusWrap.innerHTML = '<div class="focus-card"><p>' +
+        (state.status === 'checking' ? 'Kontrollerar om du redan spelat…' : 'Redan spelat på en annan enhet.') +
+        '</p></div>';
     }
   }
 
@@ -385,23 +389,23 @@
              '<span class="lb-time">' + fmtSeconds(realSeconds) + '</span></div>';
     }).join('');
   }
+  function fetchAndRenderLeaderboard(area, seed){
+    area.innerHTML = '<div class="lb-title">🏆 Veckans familjetopplista</div><div class="lb-list">Laddar…</div>';
+    lbFetchBySeed(seed, function(err, list){
+      var el = area.querySelector('.lb-list');
+      if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
+      lbRenderList(el, list, getName());
+    });
+  }
   function setupLeaderboard(area){
     if(!hasLeaderboard()){ area.innerHTML = ''; return; }
     var seed = seedFor(currentVariant, puzzle.week_id);
-    function showList(){
-      area.innerHTML = '<div class="lb-title">🏆 Veckans familjetopplista</div><div class="lb-list">Laddar…</div>';
-      lbFetchBySeed(seed, function(err, list){
-        var el = area.querySelector('.lb-list');
-        if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
-        lbRenderList(el, list, getName());
-      });
-    }
-    if(state.submitted){ showList(); return; }
+    if(state.submitted){ fetchAndRenderLeaderboard(area, seed); return; }
     var elapsedSeconds = Math.max(1, Math.round((state.finishedAt - state.startedAt) / 1000));
     var score = correctCount();
     state.submitted = true; saveGame(state);
-    lbSubmit({ name: getName(), mode: 'flashback', tiles: queue.length, seconds: encodeRank(score, elapsedSeconds), moves: score, seed: seed }, showList);
-    showList();
+    lbSubmit({ name: getName(), mode: 'flashback', tiles: queue.length, seconds: encodeRank(score, elapsedSeconds), moves: score, seed: seed }, function(){ fetchAndRenderLeaderboard(area, seed); });
+    fetchAndRenderLeaderboard(area, seed);
   }
 
   function showResultPanel(){
@@ -417,6 +421,65 @@
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pClose').onclick = hideOverlay;
     setupLeaderboard(document.getElementById('lbArea'));
+  }
+
+  /* ---------- Redan spelat denna vecka, på en annan enhet? ----------
+     Lokal lagring kan inte se över webbläsare/enheter (t.ex. spelat klart
+     på mobilen, öppnar sen samma länk på surfplattan). Med en delad
+     profil kan vi istället fråga servern: veckans topplista har redan
+     alla resultat. Samma mönster som Ordlek (checkAlreadyPlayedElsewhere/
+     showAlreadyPlayedElsewhere), här per variant eftersom varje variant
+     har sin egen topplista. */
+  var profileReady = false;
+  function checkAlreadyPlayedElsewhere(variant, weekId, cb){
+    if(!hasLeaderboard()) return cb(null);
+    var myName = (getName() || '').trim().toLowerCase();
+    if(!myName) return cb(null);
+    lbFetchBySeed(seedFor(variant, weekId), function(err, list){
+      if(err || !list) return cb(null); // fail open — ett nätverksfel ska aldrig blockera spel
+      var hit = (list || []).filter(function(s){ return (s.name || '').trim().toLowerCase() === myName; })[0];
+      cb(hit || null);
+    });
+  }
+  // Körs både när ett fräscht parti skapas (om profilen redan är känd)
+  // och igen så fort profilen blir känd (t.ex. första gången på en ny
+  // enhet, då "Vem spelar?"-valet måste göras innan namnet finns) —
+  // vilken av dem som är sist avgör. Skyddar mot att variant/vecka hunnit
+  // bytas under tiden anropet låg ute.
+  function maybeRunCheck(){
+    if(!profileReady || !state || state.status !== 'checking') return;
+    var variant = currentVariant, weekId = puzzle.week_id;
+    checkAlreadyPlayedElsewhere(variant, weekId, function(hit){
+      if(currentVariant !== variant || !puzzle || puzzle.week_id !== weekId) return;
+      if(!state || state.status !== 'checking') return;
+      if(hit){
+        state.status = 'blocked';
+        state.submitted = true; // förhindrar att lbSubmit anropas igen av misstag denna session
+        state.blockedSummary = { moves: hit.moves, seconds: hit.seconds };
+        saveGame(state);
+        render();
+        renderBlockedPanel();
+      } else {
+        state.status = 'playing';
+        saveGame(state);
+        render();
+        showRulesIfFirstTime();
+      }
+    });
+  }
+  function renderBlockedPanel(){
+    var summary = state.blockedSummary;
+    var variantLabel = (VARIANTS.filter(function(v){ return v.id === currentVariant; })[0] || {}).label || 'Flashback';
+    var timeText = fmtSeconds(summary.seconds % RANK_BUCKET);
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">🔁</div><h2>Redan spelat</h2>' +
+      '<p>Du (' + esc(getName()) + ') har redan spelat ' + esc(variantLabel) + ' den här veckan, troligen på en annan enhet: ' + summary.moves + '/' + queue.length + ' rätt, ' + timeText + '.</p>' +
+      '<div id="lbArea"></div>' +
+      '<button id="pClose">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+    fetchAndRenderLeaderboard(document.getElementById('lbArea'), seedFor(currentVariant, puzzle.week_id));
   }
 
   /* ---------- Variantväxlare ----------
@@ -460,13 +523,19 @@
       if(saved && saved.resolvedResults){
         state = saved;
       } else {
-        state = { variant: variant, weekId: puzzle.week_id, resolvedResults: [], startedAt: Date.now(), finishedAt: null, status: 'playing', submitted: false };
+        // 'checking' tills vi hunnit fråga servern om profilen redan
+        // spelat den här veckans variant på en annan enhet (maybeRunCheck)
+        // — utan topplista (t.ex. lokalt utan server) finns inget att
+        // kontrollera mot, så då kan man börja spela direkt.
+        state = { variant: variant, weekId: puzzle.week_id, resolvedResults: [], startedAt: Date.now(), finishedAt: null, status: hasLeaderboard() ? 'checking' : 'playing', submitted: false };
         saveGame(state);
         pruneOldGames(variant, puzzle.week_id);
       }
       buildTimeline();
       render();
       if(state.status === 'done') setTimeout(showResultPanel, 200);
+      else if(state.status === 'blocked') setTimeout(renderBlockedPanel, 200);
+      else if(state.status === 'checking') maybeRunCheck();
       else showRulesIfFirstTime();
     });
   }
@@ -490,7 +559,11 @@
   loadVariant(initialVariant);
 
   renderProfileBadge();
-  NordhammerProfile.ensurePicker(function(){ renderProfileBadge(); });
+  NordhammerProfile.ensurePicker(function(){
+    renderProfileBadge();
+    profileReady = true;
+    maybeRunCheck();
+  });
   </script>
 </body>
 </html>
