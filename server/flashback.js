@@ -92,7 +92,13 @@ async function callAnthropic(apiKey, prompt) {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 2500,
+      max_tokens: 3000,
+      // Sonnet 5 kör adaptive thinking som standard om "thinking" utelämnas
+      // — det åt upp hela max_tokens-budgeten innan JSON-svaret hann
+      // skrivas klart ("Unexpected end of JSON input" i loggarna). Den
+      // här genereringen är ett enkelt textformuleringsjobb utan
+      // resonemang som behöver synas, så stäng av det explicit istället.
+      thinking: { type: 'disabled' },
       messages: [{ role: 'user', content: prompt }]
     })
   });
