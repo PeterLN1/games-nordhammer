@@ -352,7 +352,10 @@
       var toRemove = [];
       for(var i=0;i<localStorage.length;i++){
         var k = localStorage.key(i);
-        if(k && k.indexOf('ordlek:game:') === 0 && k !== gameKey(keepDate)) toRemove.push(k);
+        // Sparar alltid dagens datum OCH Egen utmaning-partiet (date: null,
+        // se gameKey(null) === 'ordlek:game:null') — annars raderas ett
+        // pågående övningsparti tyst varje gång en ny dag börjar.
+        if(k && k.indexOf('ordlek:game:') === 0 && k !== gameKey(keepDate) && k !== gameKey(null)) toRemove.push(k);
       }
       toRemove.forEach(function(k){ localStorage.removeItem(k); });
     } catch(e){}
@@ -381,11 +384,12 @@
   var keyState = {}; // bokstav -> 'correct'|'present'|'absent'
 
   /* ---------- Övningsläge ----------
-     Ett separat, icke-sparat spel med ett slumpat ord — för att kunna öva
-     hur många gånger som helst per dag, utan att påverka statistik,
-     familjetopplista eller maratontabell. `state` pekar om till detta
-     tillfälliga läge medan man övar; `dailyState` behåller alltid dagens
-     "riktiga" spel så man kan gå tillbaka till det. */
+     Ett sparat spel med ett slumpat ord (egen nyckel, gameKey(null) —
+     se pruneOldGames) — för att kunna öva hur många gånger som helst,
+     utan att påverka statistik, familjetopplista eller maratontabell,
+     men utan att tappa ett pågående parti om man navigerar bort och
+     kommer tillbaka. `dailyState` behåller alltid dagens "riktiga" spel
+     så man kan gå tillbaka till det. */
   var dailyState = state;
   var practiceMode = false;
   function randomPracticeWord(){
@@ -394,10 +398,29 @@
     if(!pool.length) pool = ORDLEK_ANSWERS;
     return pool[Math.floor(Math.random() * pool.length)];
   }
+  function freshPracticeState(){
+    var s = { date: null, answer: randomPracticeWord(), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: true };
+    saveGame(s);
+    return s;
+  }
+  // Går in i Egen utmaning — återupptar ett sparat pågående parti om det
+  // finns ett, annars börjar ett nytt.
   function startPractice(){
     if(animating) return;
     practiceMode = true;
-    state = { date: null, answer: randomPracticeWord(), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: true };
+    var saved = loadGame(null);
+    state = (saved && saved.status === 'playing') ? saved : freshPracticeState();
+    current = '';
+    animating = false;
+    hideOverlay();
+    render();
+  }
+  // Tvingar fram ett HELT NYTT ord, oavsett sparat läge — används av
+  // "Ny utmaning"-knappen efter ett avslutat parti.
+  function startNewPractice(){
+    if(animating) return;
+    practiceMode = true;
+    state = freshPracticeState();
     current = '';
     animating = false;
     hideOverlay();
@@ -553,7 +576,10 @@
       } else if(state.guesses.length >= MAX_GUESSES){
         finish(false, rowEl);
       } else {
-        if(!practiceMode) saveGame(state);
+        // Sparas alltid (även i Egen utmaning — gameKey(null) skiljer sig
+        // från dagens gameKey(today), se pruneOldGames) så ett pågående
+        // parti inte tappas bort om man navigerar iväg.
+        saveGame(state);
         animating = false;
         rebuildKeyState();
         renderKeyboard();
@@ -565,7 +591,7 @@
   function finish(won, rowEl){
     state.status = won ? 'won' : 'lost';
     state.finishedAt = Date.now();
-    if(!practiceMode) saveGame(state);
+    saveGame(state);
     animating = false;
     rebuildKeyState();
     renderKeyboard();
@@ -933,7 +959,7 @@
       '<button id="pAgain">🔁 Ny utmaning</button>' +
       '<button id="pDaily" class="ghost">Till dagens ord</button>';
     document.getElementById('overlay').classList.add('show');
-    document.getElementById('pAgain').onclick = startPractice;
+    document.getElementById('pAgain').onclick = startNewPractice;
     document.getElementById('pDaily').onclick = exitPractice;
   }
   function showStatsPanel(){
