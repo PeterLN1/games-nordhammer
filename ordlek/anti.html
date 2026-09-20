@@ -96,6 +96,10 @@
     flex: 0 0 auto; text-align: center; font-size: 13px; font-weight: 700; color: var(--ink);
     padding: 3px 10px 0;
   }
+  #jokerInfo {
+    flex: 0 0 auto; text-align: center; font-size: 12px; color: var(--muted);
+    padding: 2px 10px 0;
+  }
   #boardWrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 0; }
   #board {
     display: grid; grid-template-rows: repeat(6, 1fr); gap: 7px;
@@ -137,7 +141,6 @@
   .key.state-correct { background: var(--correct); color: #fff; }
   .key.state-present { background: var(--present); color: #fff; }
   .key.state-absent { background: var(--absent); color: #fff; opacity: .7; }
-  .key.state-absent.exempt { opacity: 1; border: 2px dashed rgba(255,255,255,.6); }
 
   /* ---- overlay (regler / resultat / statistik) ---- */
   #overlay {
@@ -228,6 +231,7 @@
     </div>
     <div id="dayInfo"></div>
     <div id="remainInfo"></div>
+    <div id="jokerInfo"></div>
     <div id="boardWrap"><div id="board"></div></div>
     <div id="keyboard"></div>
   </div>
@@ -243,7 +247,7 @@
      Anti-Ordlek delar ordlistan med vanliga Ordlek men väljer ett EGET
      dagens-ord, garanterat olika det vanliga spelets — annars kunde
      samma ord dyka upp i båda spelen samma dag. */
-  var WORD_LEN = 5, MAX_GUESSES = 6;
+  var WORD_LEN = 5, MAX_GUESSES = 6, JOKER_BUDGET = 3;
   var GUESS_SET = new Set(ORDLEK_GUESSES);
   var ANTI_EPOCH = '2026-09-20'; // Anti-Ordlek #1
 
@@ -388,9 +392,13 @@
   if(state && state.answer !== antiDailyAnswer(today)) state = null;
   var wasFreshState = !state; // avgör om vi ska fråga servern om profilen redan spelat idag (se Start)
   if(!state){
-    state = { date: today, answer: antiDailyAnswer(today), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: false };
+    state = { date: today, answer: antiDailyAnswer(today), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: false, jokersLeft: JOKER_BUDGET };
     saveGame(state);
     pruneOldGames(today);
+  } else if(state.jokersLeft == null){
+    // Sparat parti från innan jokersystemet fanns — ge det jokerbudgeten
+    // istället för att låta det tyst bli 0 (och därmed fullt hårt läge).
+    state.jokersLeft = JOKER_BUDGET;
   }
   var animating = false;
   var keyState = {}; // bokstav -> 'correct'|'present'|'absent'
@@ -410,7 +418,7 @@
   function startPractice(){
     if(animating) return;
     practiceMode = true;
-    state = { date: null, answer: randomPracticeWord(), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: true };
+    state = { date: null, answer: randomPracticeWord(), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: true, jokersLeft: JOKER_BUDGET };
     current = '';
     animating = false;
     hideOverlay();
@@ -457,16 +465,24 @@
      hittills, precis som Wordles "hard mode" — annars kan man bara mata
      in orelaterade ord och aldrig riskera något.
 
-     GRAY_EXEMPT (R/S/T/L/N) spärrar aldrig tangentbordet även om de blir
-     gråa. Simulering (150+ körningar mot en optimal "undvikare") visade
-     att fullt hårt läge tvingar en kollision i ~51% av partierna — nästan
-     uteslutande för att just dessa vanliga konsonanter blir gråa och då
-     stryper hela ordpoolen (svenskan har för få fembokstavsord för att
-     tåla att flera vanliga bokstäver spärras samtidigt). Att undanta dem
-     sänkte andelen tvingade kollisioner till ~32.5% utan att slopa hårt
-     läge helt (0% — för tandlöst, se tidigare försök). Se konversationen
-     2026-09-20 för fulla siffror. ---------- */
-  var GRAY_EXEMPT = new Set(['r','s','t','l','n']);
+     JOKER_BUDGET: en delad pott jokrar för HELA partiet. Grön-lås och
+     gul-krav är alltid obligatoriska (aldrig förhandlingsbara). En
+     gissning som återanvänder en grå bokstav är annars förbjuden — MEN
+     om jokrar återstår tillåts den ändå, och kostar en joker, oavsett
+     vilken eller hur många gråa bokstäver just den gissningen återanvänder.
+     Slut på jokrar = fullt hårt läge igen.
+
+     Historik: fullt hårt läge (inga undantag) tvingade en kollision i
+     ~51-57% av simulerade partier. Att permanent undanta vanliga
+     konsonanter (R/S/T/L/N) sänkte det till ~29-32% men visade sig i
+     verkligt spel gå att utnyttja — de bokstäverna gick att återanvända
+     obegränsat i flera ord i rad, vilket kändes för lätt trots ett bra
+     simuleringsresultat. En kvot (max 1 undantagsbokstav per gissning)
+     löste inte det — man kunde fortfarande luta sig mot en gratis
+     bokstav VARJE rad, hela partiet. Jokerpotten är det enda som faktiskt
+     tar slut: ~30% tvingade kollisioner i simulering, men bara genom en
+     begränsad, förbrukningsbar resurs istället för permanent immunitet
+     för specifika bokstäver. Se konversationen 2026-09-20/21. ---------- */
   function hardModeConstraints(){
     var green = new Array(WORD_LEN).fill(null);
     var minCount = {};
@@ -488,21 +504,31 @@
     });
     return { green: green, minCount: minCount, neverInWord: neverInWord };
   }
-  function hardModeViolation(guess){
+  // Returnerar { blocked, message, usesJoker }. Grön/gul-brott blockerar
+  // alltid; grå-brott blockeras bara om inga jokrar återstår.
+  function hardModeCheck(guess){
     var hc = hardModeConstraints();
     var i, c;
     for(i=0;i<WORD_LEN;i++){
-      if(hc.green[i] && guess[i] !== hc.green[i]) return 'Bokstav ' + (i+1) + ' måste vara "' + hc.green[i].toUpperCase() + '"';
-    }
-    for(c in hc.neverInWord){
-      if(GRAY_EXEMPT.has(c)) continue;
-      if(guess.indexOf(c) !== -1) return '"' + c.toUpperCase() + '" ska inte vara med';
+      if(hc.green[i] && guess[i] !== hc.green[i]){
+        return { blocked: true, message: 'Bokstav ' + (i+1) + ' måste vara "' + hc.green[i].toUpperCase() + '"', usesJoker: false };
+      }
     }
     for(c in hc.minCount){
       var have = guess.split('').filter(function(x){ return x === c; }).length;
-      if(have < hc.minCount[c]) return 'Måste innehålla "' + c.toUpperCase() + '"';
+      if(have < hc.minCount[c]){
+        return { blocked: true, message: 'Måste innehålla "' + c.toUpperCase() + '"', usesJoker: false };
+      }
     }
-    return null;
+    var badGray = null;
+    for(c in hc.neverInWord){
+      if(guess.indexOf(c) !== -1){ badGray = c; break; }
+    }
+    if(badGray){
+      if(state.jokersLeft > 0) return { blocked: false, message: null, usesJoker: true };
+      return { blocked: true, message: '"' + badGray.toUpperCase() + '" ska inte vara med — inga jokrar kvar', usesJoker: false };
+    }
+    return { blocked: false, message: null, usesJoker: false };
   }
 
   /* ---------- Kvarvarande kandidater ---------- */
@@ -545,10 +571,7 @@
       row.forEach(function(k){
         if(k === 'ENTER') html += '<button class="key wide" data-key="ENTER">Enter</button>';
         else if(k === 'BACK') html += '<button class="key wide" data-key="BACK">⌫</button>';
-        else {
-          var exempt = keyState[k] === 'absent' && GRAY_EXEMPT.has(k);
-          html += '<button class="key'+(keyState[k]?' state-'+keyState[k]:'')+(exempt?' exempt':'')+'" data-key="'+k+'">'+k+'</button>';
-        }
+        else html += '<button class="key'+(keyState[k]?' state-'+keyState[k]:'')+'" data-key="'+k+'">'+k+'</button>';
       });
       html += '</div>';
     });
@@ -570,6 +593,12 @@
     var el = document.getElementById('remainInfo');
     el.textContent = '🔍 ' + computeRemainingCount() + ' ord kan fortfarande vara rätt';
   }
+  function renderJokerInfo(){
+    var el = document.getElementById('jokerInfo');
+    if(!el) return;
+    var n = state.jokersLeft;
+    el.textContent = '🃏 ' + n + ' ' + (n === 1 ? 'joker' : 'jokrar') + ' kvar — för att återanvända en grå bokstav';
+  }
   // Låst tills dagens ord är klart (won/lost/blocked) — annars kunde man
   // byta till Egen utmaning mitt i dagens giv och tappa bort var man var.
   function dailyLocked(){ return dailyState.status === 'playing' || dailyState.status === 'checking'; }
@@ -581,7 +610,7 @@
     practiceBtn.classList.toggle('active', practiceMode);
     practiceBtn.classList.toggle('locked', !practiceMode && dailyLocked());
   }
-  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderRemainInfo(); renderModeSwitch(); }
+  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderRemainInfo(); renderJokerInfo(); renderModeSwitch(); }
 
   /* ---------- Indata ---------- */
   var LETTER_RE = /^[a-zåäö]$/;
@@ -611,15 +640,14 @@
     if(current.length < WORD_LEN){ shakeRow(state.guesses.length); toast('För få bokstäver'); return; }
     if(!GUESS_SET.has(current)){ shakeRow(state.guesses.length); toast('Inte ett ord i listan'); return; }
     // En upprepad gissning ger noll ny information men kan ändå råka
-    // klara hardModeViolation (t.ex. om ordets enda gråa bokstäver är
-    // undantagna R/S/T/L/N) — spärra den explicit, annars går hela
-    // poängen med hårt läge att kringgå genom att bara upprepa samma
-    // säkra ord varje rad.
+    // klara hardModeCheck (t.ex. genom att spendera en joker) — spärra
+    // den explicit, annars går hela poängen med hårt läge (och jokrar)
+    // att kringgå genom att bara upprepa samma säkra ord varje rad.
     if(state.guesses.some(function(g){ return g.word === current; })){
       shakeRow(state.guesses.length); toast('Du har redan gissat det ordet'); return;
     }
-    var violation = hardModeViolation(current);
-    if(violation){ shakeRow(state.guesses.length); toast(violation); return; }
+    var check = hardModeCheck(current);
+    if(check.blocked){ shakeRow(state.guesses.length); toast(check.message); return; }
     var word = current;
     var marks = evaluateGuess(word, state.answer);
     var rowIdx = state.guesses.length;
@@ -636,6 +664,11 @@
     setTimeout(function(){
       state.guesses.push({ word: word, marks: marks });
       current = '';
+      if(check.usesJoker){
+        state.jokersLeft--;
+        renderJokerInfo();
+        toast('🃏 Joker använd — ' + state.jokersLeft + ' kvar');
+      }
       var caught = marks.every(function(m){ return m === 'correct'; });
       if(caught){
         shakeRow(rowIdx);
@@ -1017,7 +1050,7 @@
         '<div>⬛ Grå = bokstaven finns inte i ordet.</div>' +
       '</div>' +
       '<p style="text-align:left"><b>Hårt läge:</b> varje ny gissning måste följa ledtrådarna hittills — gröna bokstäver stannar kvar, gula måste vara med, gråa får inte vara med. Du kan inte gömma dig bakom orelaterade ord.</p>' +
-      '<p style="text-align:left">Undantag: <b>R, S, T, L</b> och <b>N</b> spärrar aldrig tangentbordet även om de blir gråa (streckad ram) — annars blir svenskans begränsade ordförråd nästan olösligt i slutet av partiet.</p>' +
+      '<p style="text-align:left">🃏 Du har <b>'+JOKER_BUDGET+' jokrar</b> för hela partiet: en gissning som annars skulle bryta mot en grå bokstav tillåts ändå om du har jokrar kvar — kostar en joker, oavsett vilken bokstav. Utan jokrar gäller hårt läge fullt ut. Annars blir svenskans begränsade ordförråd nästan olösligt i slutet av partiet.</p>' +
       '<p style="text-align:left">🔍-siffran ovanför brädet visar hur många ord i dagens-ord-listan som fortfarande kan vara rätt. Når den 1 är du farligt nära!</p>' +
       '<p style="text-align:left">🏆 Familjetopplistan rankar alla — inte bara de som överlever — efter hur långt de kom. 🏁 Maratontabellen räknar ihop hela månaden, samma golfpoäng-system som vanliga Ordlek.</p>' +
       '<p style="text-align:left"><b>Egen utmaning:</b> ett läge du kan spela hur många gånger som helst, mot din egen statistik — påverkar aldrig familjetävlingen. Byt läge längst upp på sidan — men först när du spelat klart dagens ord.</p>' +
