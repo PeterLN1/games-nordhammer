@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f7e9ee" data-light="#f7e9ee" data-dark="#1a0a12">
+<title>Anti-Ordlek</title>
+<script src="/shared/theme.js"></script>
+<style>
+  :root {
+    --bg: radial-gradient(120% 90% at 50% 0%, #f7e9ee 0%, #f0e0e8 100%);
+    --chrome: rgba(0,0,0,.06);
+    --ink: #2a1620;
+    --muted: rgba(42,22,32,.6);
+    --tile-empty-border: rgba(42,22,32,.22);
+    --tile-filled-border: rgba(42,22,32,.5);
+    --tile-bg: transparent;
+    --key-bg: rgba(42,22,32,.10);
+    --key-ink: #2a1620;
+    --correct: #3aa65a;
+    --present: #c9962c;
+    --absent: #8b93a7;
+    --accent: #ff4d6d;
+    --panel-bg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --bg: radial-gradient(120% 90% at 50% 0%, #3a1120 0%, #1a0a12 60%, #0d0509 100%);
+      --chrome: rgba(0,0,0,.35);
+      --ink: #ffe8ef;
+      --muted: rgba(255,232,239,.6);
+      --tile-empty-border: rgba(255,232,239,.34);
+      --tile-filled-border: rgba(255,232,239,.55);
+      --key-bg: rgba(255,232,239,.12);
+      --key-ink: #ffe8ef;
+      --absent: #4a2c3a;
+      --panel-bg: #23101a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: radial-gradient(120% 90% at 50% 0%, #3a1120 0%, #1a0a12 60%, #0d0509 100%);
+    --chrome: rgba(0,0,0,.35);
+    --ink: #ffe8ef;
+    --muted: rgba(255,232,239,.6);
+    --tile-empty-border: rgba(255,232,239,.34);
+    --tile-filled-border: rgba(255,232,239,.55);
+    --key-bg: rgba(255,232,239,.12);
+    --key-ink: #ffe8ef;
+    --absent: #4a2c3a;
+    --panel-bg: #23101a;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #1a0a12;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    touch-action: manipulation; overscroll-behavior: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100dvh; background: var(--bg); }
+
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: max(6px, env(safe-area-inset-top)) 12px 6px;
+    background: var(--chrome); flex: 0 0 auto;
+  }
+  header .back, header .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 10px; text-decoration: none;
+    color: var(--ink); background: var(--key-bg); font-size: 18px; line-height: 1;
+    border: none; cursor: pointer; font-family: inherit;
+  }
+  header .back:active, header .icon-btn:active { background: rgba(255,77,109,.3); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
+  header .spacer { flex: 1; }
+
+  #dayInfo {
+    flex: 0 0 auto; text-align: center; font-size: 12.5px; color: var(--muted);
+    padding: 6px 10px 0;
+  }
+  #remainInfo {
+    flex: 0 0 auto; text-align: center; font-size: 13px; font-weight: 700; color: var(--ink);
+    padding: 3px 10px 0;
+  }
+  #boardWrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  #board {
+    display: grid; grid-template-rows: repeat(6, 1fr); gap: 7px;
+    width: min(330px, 78vw); height: min(78vh, 396px);
+    margin: 6px auto;
+  }
+  .row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+  .row.shake { animation: rowShake .45s; }
+  .tile {
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(18px, 6.5vw, 30px); font-weight: 800; text-transform: uppercase;
+    border-radius: 7px; border: 2px solid var(--tile-empty-border);
+    background: var(--tile-bg); color: var(--ink);
+    perspective: 400px;
+  }
+  .tile.filled { border-color: var(--tile-filled-border); }
+  .tile.flip { animation: tileFlip .5s ease; }
+  .tile.bounce { animation: tileBounce .55s ease; }
+  .tile.state-correct { background: var(--correct); border-color: var(--correct); color: #fff; }
+  .tile.state-present { background: var(--present); border-color: var(--present); color: #fff; }
+  .tile.state-absent { background: var(--absent); border-color: var(--absent); color: #fff; }
+  @keyframes tileFlip { 0% { transform: rotateX(0deg); } 50% { transform: rotateX(-90deg); } 100% { transform: rotateX(0deg); } }
+  @keyframes tileBounce { 0%,100% { transform: translateY(0); } 30% { transform: translateY(-16px); } 50% { transform: translateY(0); } 70% { transform: translateY(-7px); } 90% { transform: translateY(0); } }
+  @keyframes rowShake {
+    10%,90% { transform: translateX(-3px); } 20%,80% { transform: translateX(5px); }
+    30%,50%,70% { transform: translateX(-7px); } 40%,60% { transform: translateX(7px); }
+  }
+
+  #keyboard { flex: 0 0 auto; padding: 6px 6px max(8px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 7px; max-width: 520px; width: 100%; margin: 0 auto; }
+  .kbrow { display: flex; gap: 5px; justify-content: center; }
+  .key {
+    flex: 1; max-width: 38px; height: 48px; border-radius: 7px; border: none;
+    background: var(--key-bg); color: var(--key-ink); font-weight: 700; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; text-transform: uppercase;
+    font-family: inherit; cursor: pointer; padding: 0;
+  }
+  .key:active { filter: brightness(1.15); }
+  .key.wide { max-width: 60px; font-size: 11px; }
+  .key.state-correct { background: var(--correct); color: #fff; }
+  .key.state-present { background: var(--present); color: #fff; }
+  .key.state-absent { background: var(--absent); color: #fff; opacity: .7; }
+
+  /* ---- overlay (regler / resultat / statistik) ---- */
+  #overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 100;
+    display: none; align-items: center; justify-content: center; padding: 16px;
+  }
+  #overlay.show { display: flex; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .panel {
+    background: var(--panel-bg); color: var(--ink); border-radius: 16px;
+    padding: 22px 20px 18px; max-width: 380px; width: 100%; max-height: 86vh; overflow-y: auto;
+    text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  }
+  .panel .emoji { font-size: 42px; }
+  .panel h2 { margin: 6px 0 6px; font-size: 22px; }
+  .panel p { margin: 0 0 4px; color: var(--muted); font-size: 14.5px; line-height: 1.5; }
+  .panel button {
+    width: 100%; margin-top: 12px; padding: 13px; border: none; border-radius: 11px;
+    background: var(--accent); color: #2a0009; font-weight: 700; font-size: 15px;
+    cursor: pointer; font-family: inherit;
+  }
+  .panel button.ghost { background: var(--key-bg); color: var(--ink); }
+  .panel button:active { transform: scale(.98); }
+
+  .stat-row { display: flex; justify-content: center; gap: 22px; margin: 14px 0 10px; }
+  .stat-item .n { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .stat-item .l { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+
+  .dist { text-align: left; margin: 10px 0 4px; }
+  .dist-row { display: flex; align-items: center; gap: 7px; font-size: 12px; margin: 3px 0; }
+  .dist-row .num { width: 9px; text-align: right; font-weight: 700; color: var(--muted); }
+  .dist-row .bar { background: var(--absent); color: #fff; text-align: right; padding: 3px 7px; border-radius: 4px; min-width: 20px; font-weight: 700; font-size: 12px; }
+  .dist-row .bar.hi { background: var(--accent); }
+
+  .rules-list { text-align: left; font-size: 14px; line-height: 1.6; margin: 10px 0; }
+  .rules-list .ex { display: flex; gap: 5px; margin: 8px 0 4px; }
+  .rules-list .ex .tile { width: 34px; height: 34px; font-size: 17px; border-radius: 5px; }
+
+  .lb-input {
+    flex: 1; padding: 11px 12px; border-radius: 9px; border: none;
+    background: var(--key-bg); color: var(--ink); font-family: inherit; font-size: 14px;
+  }
+
+  #toast {
+    position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(10px);
+    z-index: 10000; background: rgba(20,20,30,.92); color: #fff; padding: 10px 18px; border-radius: 10px;
+    font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <a class="back" href="/" aria-label="Till startsidan">‹</a>
+      <h1>🙈 Anti-Ordlek</h1>
+      <div class="spacer"></div>
+      <button class="icon-btn" id="btnStats" aria-label="Statistik">📊</button>
+      <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
+    </header>
+    <div id="dayInfo"></div>
+    <div id="remainInfo"></div>
+    <div id="boardWrap"><div id="board"></div></div>
+    <div id="keyboard"></div>
+  </div>
+  <div id="overlay"><div class="panel" id="panel"></div></div>
+  <div id="toast"></div>
+
+  <script src="words.js"></script>
+  <script>
+  "use strict";
+
+  /* ---------- Ord & dagligt val ----------
+     Anti-Ordlek delar ordlistan med vanliga Ordlek men väljer ett EGET
+     dagens-ord, garanterat olika det vanliga spelets — annars kunde
+     samma ord dyka upp i båda spelen samma dag. */
+  var WORD_LEN = 5, MAX_GUESSES = 6;
+  var GUESS_SET = new Set(ORDLEK_GUESSES);
+  var ANTI_EPOCH = '2026-09-20'; // Anti-Ordlek #1
+
+  function hashStr(str){
+    var h = 2166136261 >>> 0; // FNV-1a
+    for(var i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return h >>> 0;
+  }
+  function todayIso(){ return new Date().toISOString().slice(0,10); } // UTC, samma dygnsgräns för alla
+
+  // Måste hållas i synk med ORDLEK_DAILY_OVERRIDES i ordlek/index.html —
+  // den listan avgör exakt vilket ord vanliga Ordlek visar en given dag.
+  // Den här kopian används BARA för att räkna ut vilket ord Anti-Ordlek
+  // måste undvika samma dag (se antiDailyAnswer nedan), aldrig för att
+  // visa det ordet i Anti-Ordlek självt.
+  var NORMAL_DAILY_OVERRIDES = {
+    '2026-08-09': 'havre',
+    '2026-08-10': 'slant',
+    '2026-08-11': 'solig',
+    '2026-08-12': 'saker',
+    '2026-08-13': 'hitta',
+    '2026-08-14': 'major',
+    '2026-08-15': 'gurka'
+  };
+  function normalDailyAnswer(dateStr){
+    if(NORMAL_DAILY_OVERRIDES[dateStr]) return NORMAL_DAILY_OVERRIDES[dateStr];
+    return ORDLEK_ANSWERS[hashStr('ordlek-word:' + dateStr) % ORDLEK_ANSWERS.length];
+  }
+  // Fastlåsning av redan spelade Anti-Ordlek-dagar, samma mönster och
+  // samma anledning som ORDLEK_DAILY_OVERRIDES i ordlek/index.html: om
+  // ORDLEK_ANSWERS redigeras flyttar sig alla hash-index. Fyll på här
+  // INNAN listan ändras nästa gång, för varje datum som redan varit
+  // "idag".
+  var ORDLEK_ANTI_DAILY_OVERRIDES = {
+  };
+  function antiDailyAnswer(dateStr){
+    if(ORDLEK_ANTI_DAILY_OVERRIDES[dateStr]) return ORDLEK_ANTI_DAILY_OVERRIDES[dateStr];
+    var avoid = normalDailyAnswer(dateStr);
+    var start = hashStr('ordlek-anti-word:' + dateStr) % ORDLEK_ANSWERS.length;
+    for(var i=0;i<ORDLEK_ANSWERS.length;i++){
+      var w = ORDLEK_ANSWERS[(start + i) % ORDLEK_ANSWERS.length];
+      if(w !== avoid) return w;
+    }
+    return ORDLEK_ANSWERS[start]; // otänkbart i praktiken: hela listan vore samma ord
+  }
+  function dayNumber(dateStr){
+    var d = Date.parse(dateStr + 'T00:00:00Z'), e = Date.parse(ANTI_EPOCH + 'T00:00:00Z');
+    return Math.floor((d - e) / 86400000) + 1;
+  }
+  var SV_MONTHS = ['januari','februari','mars','april','maj','juni','juli','augusti','september','oktober','november','december'];
+  function formatDateSv(iso){
+    var p = iso.split('-'); return (+p[2]) + ' ' + (SV_MONTHS[(+p[1])-1] || '') + ' ' + p[0];
+  }
+
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  /* ---------- Statistik & sparat läge ---------- */
+  var STATS_KEY = 'ordlek-anti:stats';
+  var RULES_KEY = 'ordlek-anti:seenRules';
+  function loadStats(){
+    try {
+      var s = JSON.parse(localStorage.getItem(STATS_KEY));
+      if(s && s.caughtDistribution && s.caughtDistribution.length === MAX_GUESSES) return s;
+    } catch(e){}
+    return { played: 0, survived: 0, currentStreak: 0, maxStreak: 0, caughtDistribution: [0,0,0,0,0,0], lastWinDate: null };
+  }
+  function saveStats(s){ try { localStorage.setItem(STATS_KEY, JSON.stringify(s)); } catch(e){} }
+  function recordResult(survived, guessCount, dateStr){
+    var s = loadStats();
+    s.played++;
+    if(survived){
+      s.survived++;
+      var prevDay = new Date(Date.parse(dateStr + 'T00:00:00Z') - 86400000).toISOString().slice(0,10);
+      s.currentStreak = (s.lastWinDate === prevDay) ? s.currentStreak + 1 : 1;
+      s.maxStreak = Math.max(s.maxStreak, s.currentStreak);
+      s.lastWinDate = dateStr;
+    } else {
+      s.currentStreak = 0;
+      s.caughtDistribution[guessCount-1]++;
+    }
+    saveStats(s);
+    return s;
+  }
+
+  var GAME_PREFIX = 'ordlek-anti:game:';
+  function gameKey(dateStr){ return GAME_PREFIX + dateStr; }
+  function loadGame(dateStr){
+    try { var g = JSON.parse(localStorage.getItem(gameKey(dateStr))); if(g && g.answer) return g; } catch(e){}
+    return null;
+  }
+  function saveGame(g){ try { localStorage.setItem(gameKey(g.date), JSON.stringify(g)); } catch(e){} }
+  function pruneOldGames(keepDate){
+    try {
+      var toRemove = [];
+      for(var i=0;i<localStorage.length;i++){
+        var k = localStorage.key(i);
+        if(k && k.indexOf(GAME_PREFIX) === 0 && k !== gameKey(keepDate)) toRemove.push(k);
+      }
+      toRemove.forEach(function(k){ localStorage.removeItem(k); });
+    } catch(e){}
+  }
+
+  /* ---------- Spelläge ---------- */
+  var today = todayIso();
+  var state = loadGame(today);
+  // Samma skydd som i vanliga Ordlek: om dagens ord skulle bytas ut i
+  // efterhand matchar inte ett redan sparat lokalt läge längre — kasta
+  // det så spelaren automatiskt får ett nytt, tomt bräde.
+  if(state && state.answer !== antiDailyAnswer(today)) state = null;
+  if(!state){
+    state = { date: today, answer: antiDailyAnswer(today), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null };
+    saveGame(state);
+    pruneOldGames(today);
+  }
+  var animating = false;
+  var keyState = {}; // bokstav -> 'correct'|'present'|'absent'
+
+  function evaluateGuess(guess, answer){
+    var marks = new Array(WORD_LEN).fill('absent');
+    var remain = {};
+    var i;
+    for(i=0;i<WORD_LEN;i++){
+      if(guess[i] === answer[i]) marks[i] = 'correct';
+      else remain[answer[i]] = (remain[answer[i]] || 0) + 1;
+    }
+    for(i=0;i<WORD_LEN;i++){
+      if(marks[i] === 'correct') continue;
+      var c = guess[i];
+      if(remain[c] > 0){ marks[i] = 'present'; remain[c]--; }
+    }
+    return marks;
+  }
+  function marksEqual(a,b){ for(var i=0;i<a.length;i++){ if(a[i]!==b[i]) return false; } return true; }
+  function rebuildKeyState(){
+    keyState = {};
+    var rank = { absent: 0, present: 1, correct: 2 };
+    state.guesses.forEach(function(g){
+      for(var i=0;i<WORD_LEN;i++){
+        var c = g.word[i], m = g.marks[i];
+        if(!keyState[c] || rank[m] > rank[keyState[c]]) keyState[c] = m;
+      }
+    });
+  }
+
+  /* ---------- Hårt läge: varje ny gissning måste följa ledtrådarna
+     hittills, precis som Wordles "hard mode" — annars kan man bara mata
+     in orelaterade ord och aldrig riskera något. ---------- */
+  function hardModeConstraints(){
+    var green = new Array(WORD_LEN).fill(null);
+    var minCount = {};
+    state.guesses.forEach(function(g){
+      var rowCounts = {};
+      for(var i=0;i<WORD_LEN;i++){
+        var c = g.word[i], m = g.marks[i];
+        if(m === 'correct'){ green[i] = c; rowCounts[c] = (rowCounts[c]||0) + 1; }
+        else if(m === 'present'){ rowCounts[c] = (rowCounts[c]||0) + 1; }
+      }
+      Object.keys(rowCounts).forEach(function(c){ minCount[c] = Math.max(minCount[c]||0, rowCounts[c]); });
+    });
+    var neverInWord = {};
+    state.guesses.forEach(function(g){
+      for(var j=0;j<WORD_LEN;j++){
+        var c = g.word[j];
+        if(g.marks[j] === 'absent' && !minCount[c]) neverInWord[c] = true;
+      }
+    });
+    return { green: green, minCount: minCount, neverInWord: neverInWord };
+  }
+  function hardModeViolation(guess){
+    var hc = hardModeConstraints();
+    var i, c;
+    for(i=0;i<WORD_LEN;i++){
+      if(hc.green[i] && guess[i] !== hc.green[i]) return 'Bokstav ' + (i+1) + ' måste vara "' + hc.green[i].toUpperCase() + '"';
+    }
+    for(c in hc.neverInWord){
+      if(guess.indexOf(c) !== -1) return '"' + c.toUpperCase() + '" ska inte vara med';
+    }
+    for(c in hc.minCount){
+      var have = guess.split('').filter(function(x){ return x === c; }).length;
+      if(have < hc.minCount[c]) return 'Måste innehålla "' + c.toUpperCase() + '"';
+    }
+    return null;
+  }
+
+  /* ---------- Kvarvarande kandidater ---------- */
+  function computeRemainingCount(){
+    return ORDLEK_ANSWERS.filter(function(c){
+      return state.guesses.every(function(g){ return marksEqual(evaluateGuess(g.word, c), g.marks); });
+    }).length;
+  }
+
+  /* ---------- Rendering ---------- */
+  var current = '';
+  function renderBoard(){
+    var html = '';
+    for(var r=0;r<MAX_GUESSES;r++){
+      html += '<div class="row" data-row="'+r+'">';
+      if(r < state.guesses.length){
+        var g = state.guesses[r];
+        for(var i=0;i<WORD_LEN;i++) html += '<div class="tile filled state-'+g.marks[i]+'">'+esc(g.word[i])+'</div>';
+      } else if(r === state.guesses.length && state.status === 'playing'){
+        for(var i2=0;i2<WORD_LEN;i2++){
+          var ch = current[i2];
+          html += '<div class="tile'+(ch?' filled':'')+'">'+(ch?esc(ch):'')+'</div>';
+        }
+      } else {
+        for(var i3=0;i3<WORD_LEN;i3++) html += '<div class="tile"></div>';
+      }
+      html += '</div>';
+    }
+    document.getElementById('board').innerHTML = html;
+  }
+  var KB_ROWS = [
+    ['q','w','e','r','t','y','u','i','o','p','å'],
+    ['a','s','d','f','g','h','j','k','l','ö','ä'],
+    ['ENTER','z','x','c','v','b','n','m','BACK']
+  ];
+  function renderKeyboard(){
+    var html = '';
+    KB_ROWS.forEach(function(row){
+      html += '<div class="kbrow">';
+      row.forEach(function(k){
+        if(k === 'ENTER') html += '<button class="key wide" data-key="ENTER">Enter</button>';
+        else if(k === 'BACK') html += '<button class="key wide" data-key="BACK">⌫</button>';
+        else html += '<button class="key'+(keyState[k]?' state-'+keyState[k]:'')+'" data-key="'+k+'">'+k+'</button>';
+      });
+      html += '</div>';
+    });
+    document.getElementById('keyboard').innerHTML = html;
+    document.querySelectorAll('.key').forEach(function(btn){
+      btn.addEventListener('click', function(){ handleKey(this.getAttribute('data-key')); });
+    });
+  }
+  function renderDayInfo(){
+    var el = document.getElementById('dayInfo');
+    var n = dayNumber(state.date);
+    el.textContent = 'Anti-Ordlek-dag #' + n + ' · ' + formatDateSv(state.date);
+  }
+  function renderRemainInfo(){
+    var el = document.getElementById('remainInfo');
+    el.textContent = '🔍 ' + computeRemainingCount() + ' ord kan fortfarande vara rätt';
+  }
+  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderRemainInfo(); }
+
+  /* ---------- Indata ---------- */
+  var LETTER_RE = /^[a-zåäö]$/;
+  function handleKey(k){
+    if(animating || state.status !== 'playing') return;
+    if(k === 'ENTER'){ submit(); return; }
+    if(k === 'BACK'){ current = current.slice(0,-1); renderBoard(); return; }
+    if(LETTER_RE.test(k) && current.length < WORD_LEN){ current += k; renderBoard(); }
+  }
+  document.addEventListener('keydown', function(e){
+    if(e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key;
+    if(k === 'Enter'){ handleKey('ENTER'); return; }
+    if(k === 'Backspace'){ handleKey('BACK'); return; }
+    k = k.toLowerCase();
+    if(LETTER_RE.test(k)) handleKey(k);
+  });
+
+  function shakeRow(r){
+    var row = document.querySelector('.row[data-row="'+r+'"]');
+    if(!row) return;
+    row.classList.add('shake');
+    setTimeout(function(){ row.classList.remove('shake'); }, 460);
+  }
+
+  function submit(){
+    if(current.length < WORD_LEN){ shakeRow(state.guesses.length); toast('För få bokstäver'); return; }
+    if(!GUESS_SET.has(current)){ shakeRow(state.guesses.length); toast('Inte ett ord i listan'); return; }
+    var violation = hardModeViolation(current);
+    if(violation){ shakeRow(state.guesses.length); toast(violation); return; }
+    var word = current;
+    var marks = evaluateGuess(word, state.answer);
+    var rowIdx = state.guesses.length;
+    var rowEl = document.querySelector('.row[data-row="'+rowIdx+'"]');
+    animating = true;
+    var tiles = rowEl.querySelectorAll('.tile');
+    tiles.forEach(function(t,i){
+      setTimeout(function(){
+        t.classList.add('flip');
+        setTimeout(function(){ t.classList.add('filled', 'state-'+marks[i]); }, 250);
+      }, i*280);
+    });
+    var totalDelay = (WORD_LEN-1)*280 + 520;
+    setTimeout(function(){
+      state.guesses.push({ word: word, marks: marks });
+      current = '';
+      var caught = marks.every(function(m){ return m === 'correct'; });
+      if(caught){
+        shakeRow(rowIdx);
+        finish(true, rowEl);
+      } else if(state.guesses.length >= MAX_GUESSES){
+        tiles.forEach(function(t,i){ setTimeout(function(){ t.classList.add('bounce'); }, i*90); });
+        finish(false, rowEl);
+      } else {
+        saveGame(state);
+        animating = false;
+        rebuildKeyState();
+        renderKeyboard();
+        renderBoard();
+        renderRemainInfo();
+      }
+    }, totalDelay);
+  }
+
+  function finish(caught, rowEl){
+    state.status = caught ? 'caught' : 'survived';
+    state.finishedAt = Date.now();
+    saveGame(state);
+    animating = false;
+    rebuildKeyState();
+    renderKeyboard();
+    renderRemainInfo();
+    if(navigator.vibrate) try { navigator.vibrate(caught ? 60 : [20,40,20]); } catch(e){}
+    var stats = recordResult(!caught, state.guesses.length, state.date);
+    setTimeout(function(){ showResultPanel(caught, stats); }, caught ? 300 : 900);
+  }
+
+  /* ---------- Delning ---------- */
+  function shareText(s){
+    s = s || state;
+    var n = dayNumber(s.date);
+    var lines = s.guesses.map(function(g){
+      return g.marks.map(function(m){ return m === 'correct' ? '🟩' : (m === 'present' ? '🟨' : '⬛'); }).join('');
+    });
+    var scoreLabel = s.status === 'survived' ? ('🙈 ' + MAX_GUESSES + '/' + MAX_GUESSES) : ('😬 ' + s.guesses.length + '/' + MAX_GUESSES);
+    return 'Anti-Ordlek #' + n + ' ' + scoreLabel + '\n\n' + lines.join('\n') + '\n\ngames.nordhammer.se/ordlek/anti.html';
+  }
+  function doShare(btn, s){
+    var text = shareText(s);
+    function flash(){
+      toast('Resultat kopierat!');
+      if(!btn) return;
+      var orig = btn.textContent; btn.textContent = '✓ Kopierat!'; btn.disabled = true;
+      setTimeout(function(){ btn.textContent = orig; btn.disabled = false; }, 1600);
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(flash).catch(function(){ showShareFallback(text); });
+    } else showShareFallback(text);
+  }
+  function showShareFallback(text){
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">🔗</div><h2>Dela resultat</h2>' +
+      '<textarea id="shareText" class="lb-input" style="width:100%;height:140px;resize:none" readonly>'+esc(text)+'</textarea>' +
+      '<button id="shareCopy">Kopiera</button>' +
+      '<button id="shareClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    var ta = document.getElementById('shareText');
+    setTimeout(function(){ try { ta.focus(); ta.select(); } catch(e){} }, 50);
+    document.getElementById('shareCopy').onclick = function(){
+      try { ta.focus(); ta.select(); document.execCommand('copy'); toast('Kopierat!'); } catch(e){}
+    };
+    document.getElementById('shareClose').onclick = hideOverlay;
+  }
+
+  /* ---------- Paneler ---------- */
+  function distHtml(dist, highlightIdx){
+    var max = Math.max.apply(null, dist.concat([1]));
+    var html = '<div class="dist">';
+    dist.forEach(function(count, i){
+      var w = Math.max(8, Math.round((count/max)*100));
+      html += '<div class="dist-row"><span class="num">'+(i+1)+'</span>' +
+              '<span class="bar'+(i===highlightIdx?' hi':'')+'" style="width:'+w+'%">'+count+'</span></div>';
+    });
+    return html + '</div>';
+  }
+  function statBlockHtml(stats){
+    var pct = stats.played ? Math.round(100*stats.survived/stats.played) : 0;
+    return '<div class="stat-row">' +
+      '<div class="stat-item"><div class="n">'+stats.played+'</div><div class="l">Spelade</div></div>' +
+      '<div class="stat-item"><div class="n">'+pct+'%</div><div class="l">Överlevt</div></div>' +
+      '<div class="stat-item"><div class="n">'+stats.currentStreak+'</div><div class="l">Svit</div></div>' +
+      '<div class="stat-item"><div class="n">'+stats.maxStreak+'</div><div class="l">Bästa svit</div></div>' +
+    '</div>';
+  }
+  function showResultPanel(caught, stats){
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">'+(caught?'😬':'🙈')+'</div>' +
+      '<h2>'+(caught?'Du hittade det!':'Du klarade dig!')+'</h2>' +
+      '<p>'+(caught ? ('Du gissade <b>'+state.answer.toUpperCase()+'</b> av misstag på rad '+state.guesses.length+' av '+MAX_GUESSES+'.')
+                    : ('Ordet var <b>'+state.answer.toUpperCase()+'</b> — du undvek det hela vägen!')) + '</p>' +
+      statBlockHtml(stats) +
+      '<div style="font-size:11.5px;color:var(--muted);margin:14px 0 2px;text-align:left">Föll i rad</div>' +
+      distHtml(stats.caughtDistribution, caught ? state.guesses.length-1 : -1) +
+      '<button id="pShare">📋 Dela resultat</button>' +
+      '<button id="pClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pShare').onclick = function(){ doShare(document.getElementById('pShare')); };
+    document.getElementById('pClose').onclick = hideOverlay;
+  }
+  function showStatsPanel(){
+    var stats = loadStats();
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<h2>📊 Statistik</h2>' +
+      statBlockHtml(stats) +
+      '<div style="font-size:11.5px;color:var(--muted);margin:14px 0 2px;text-align:left">Föll i rad</div>' +
+      distHtml(stats.caughtDistribution, -1) +
+      (state.status !== 'playing' ? '<button id="pShare2">📋 Dela dagens resultat</button>' : '') +
+      '<button id="pClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+    var ps = document.getElementById('pShare2');
+    if(ps) ps.onclick = function(){ doShare(ps, state); };
+  }
+  function showRulesPanel(){
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<h2>🙈 Så funkar Anti-Ordlek</h2>' +
+      '<p style="text-align:left">Precis som Ordlek — men målet är omvänt. Gissa ord i '+MAX_GUESSES+' rader och få samma färgledtrådar, men undvik att råka gissa exakt rätt ord. Överlever du alla '+MAX_GUESSES+' rader utan en fullträff har du vunnit!</p>' +
+      '<div class="rules-list">' +
+        '<div class="ex"><div class="tile filled state-correct">O</div><div class="tile filled">R</div><div class="tile filled">D</div><div class="tile filled">E</div><div class="tile filled">T</div></div>' +
+        '<div>🟩 Grön = rätt bokstav på rätt plats.</div>' +
+        '<div class="ex" style="margin-top:10px"><div class="tile filled">O</div><div class="tile filled state-present">R</div><div class="tile filled">D</div><div class="tile filled">E</div><div class="tile filled">T</div></div>' +
+        '<div>🟨 Gul = bokstaven finns med, men på fel plats.</div>' +
+        '<div class="ex" style="margin-top:10px"><div class="tile filled">O</div><div class="tile filled">R</div><div class="tile filled state-absent">D</div><div class="tile filled">E</div><div class="tile filled">T</div></div>' +
+        '<div>⬛ Grå = bokstaven finns inte i ordet.</div>' +
+      '</div>' +
+      '<p style="text-align:left"><b>Hårt läge:</b> varje ny gissning måste följa ledtrådarna hittills — gröna bokstäver stannar kvar, gula måste vara med, gråa får inte vara med. Du kan inte gömma dig bakom orelaterade ord.</p>' +
+      '<p style="text-align:left">🔍-siffran ovanför brädet visar hur många ord i dagens-ord-listan som fortfarande kan vara rätt. Når den 1 är du farligt nära!</p>' +
+      '<button id="pClose">Nu kör vi!</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+  }
+  function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
+
+  document.getElementById('btnStats').onclick = showStatsPanel;
+  document.getElementById('btnRules').onclick = showRulesPanel;
+  document.getElementById('overlay').addEventListener('click', function(e){ if(e.target.id === 'overlay') hideOverlay(); });
+
+  var toastTimer = null;
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 1600);
+  }
+
+  function showRulesIfFirstTime(){
+    try {
+      if(!localStorage.getItem(RULES_KEY)){ localStorage.setItem(RULES_KEY, '1'); showRulesPanel(); }
+    } catch(e){}
+  }
+
+  /* ---------- Start ---------- */
+  render();
+  if(state.status === 'playing'){
+    showRulesIfFirstTime();
+  } else {
+    setTimeout(function(){ showResultPanel(state.status === 'caught', loadStats()); }, 200);
+  }
+  </script>
+</body>
+</html>
