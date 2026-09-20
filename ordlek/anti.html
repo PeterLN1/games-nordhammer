@@ -137,6 +137,7 @@
   .key.state-correct { background: var(--correct); color: #fff; }
   .key.state-present { background: var(--present); color: #fff; }
   .key.state-absent { background: var(--absent); color: #fff; opacity: .7; }
+  .key.state-absent.exempt { opacity: 1; border: 2px dashed rgba(255,255,255,.6); }
 
   /* ---- overlay (regler / resultat / statistik) ---- */
   #overlay {
@@ -454,7 +455,18 @@
 
   /* ---------- Hårt läge: varje ny gissning måste följa ledtrådarna
      hittills, precis som Wordles "hard mode" — annars kan man bara mata
-     in orelaterade ord och aldrig riskera något. ---------- */
+     in orelaterade ord och aldrig riskera något.
+
+     GRAY_EXEMPT (R/S/T/L/N) spärrar aldrig tangentbordet även om de blir
+     gråa. Simulering (150+ körningar mot en optimal "undvikare") visade
+     att fullt hårt läge tvingar en kollision i ~51% av partierna — nästan
+     uteslutande för att just dessa vanliga konsonanter blir gråa och då
+     stryper hela ordpoolen (svenskan har för få fembokstavsord för att
+     tåla att flera vanliga bokstäver spärras samtidigt). Att undanta dem
+     sänkte andelen tvingade kollisioner till ~32.5% utan att slopa hårt
+     läge helt (0% — för tandlöst, se tidigare försök). Se konversationen
+     2026-09-20 för fulla siffror. ---------- */
+  var GRAY_EXEMPT = new Set(['r','s','t','l','n']);
   function hardModeConstraints(){
     var green = new Array(WORD_LEN).fill(null);
     var minCount = {};
@@ -483,6 +495,7 @@
       if(hc.green[i] && guess[i] !== hc.green[i]) return 'Bokstav ' + (i+1) + ' måste vara "' + hc.green[i].toUpperCase() + '"';
     }
     for(c in hc.neverInWord){
+      if(GRAY_EXEMPT.has(c)) continue;
       if(guess.indexOf(c) !== -1) return '"' + c.toUpperCase() + '" ska inte vara med';
     }
     for(c in hc.minCount){
@@ -532,7 +545,10 @@
       row.forEach(function(k){
         if(k === 'ENTER') html += '<button class="key wide" data-key="ENTER">Enter</button>';
         else if(k === 'BACK') html += '<button class="key wide" data-key="BACK">⌫</button>';
-        else html += '<button class="key'+(keyState[k]?' state-'+keyState[k]:'')+'" data-key="'+k+'">'+k+'</button>';
+        else {
+          var exempt = keyState[k] === 'absent' && GRAY_EXEMPT.has(k);
+          html += '<button class="key'+(keyState[k]?' state-'+keyState[k]:'')+(exempt?' exempt':'')+'" data-key="'+k+'">'+k+'</button>';
+        }
       });
       html += '</div>';
     });
@@ -993,6 +1009,7 @@
         '<div>⬛ Grå = bokstaven finns inte i ordet.</div>' +
       '</div>' +
       '<p style="text-align:left"><b>Hårt läge:</b> varje ny gissning måste följa ledtrådarna hittills — gröna bokstäver stannar kvar, gula måste vara med, gråa får inte vara med. Du kan inte gömma dig bakom orelaterade ord.</p>' +
+      '<p style="text-align:left">Undantag: <b>R, S, T, L</b> och <b>N</b> spärrar aldrig tangentbordet även om de blir gråa (streckad ram) — annars blir svenskans begränsade ordförråd nästan olösligt i slutet av partiet.</p>' +
       '<p style="text-align:left">🔍-siffran ovanför brädet visar hur många ord i dagens-ord-listan som fortfarande kan vara rätt. Når den 1 är du farligt nära!</p>' +
       '<p style="text-align:left">🏆 Familjetopplistan rankar alla — inte bara de som överlever — efter hur långt de kom. 🏁 Maratontabellen räknar ihop hela månaden, samma golfpoäng-system som vanliga Ordlek.</p>' +
       '<p style="text-align:left"><b>Egen utmaning:</b> ett läge du kan spela hur många gånger som helst, mot din egen statistik — påverkar aldrig familjetävlingen. Byt läge längst upp på sidan — men först när du spelat klart dagens ord.</p>' +
