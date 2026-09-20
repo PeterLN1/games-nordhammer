@@ -76,6 +76,7 @@
   }
   header .back:active, header .icon-btn:active { background: rgba(255,77,109,.3); }
   header .icon-btn.active { background: rgba(255,77,109,.35); }
+  header .icon-btn.locked { opacity: .35; }
   header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
   header .spacer { flex: 1; }
 
@@ -562,9 +563,25 @@
      klicka och Enter 6 gånger) — nu bär den samma risk som en egen
      gissning skulle, och blir farligare ju färre kandidater som är kvar,
      precis som resten av spelet redan fungerar. */
+  // Bara upplåst när få kandidater återstår — annars är den nästan
+  // riskfri att spamma varje rad hela partiet (draget dras ur hela
+  // GUESS_SET, ~10025 ord, av vilka de allra flesta aldrig kunde ha
+  // varit dagens hemliga ord — så chansen att råka träffa rätt är långt
+  // lägre än 🔍-siffran antyder). Speltest 2026-09-21 visade att fri
+  // användning gjorde spelet klart för lätt.
+  var SUGGEST_MAX_REMAINING = 3;
+  function renderSuggestButton(){
+    var btn = document.getElementById('btnSuggest');
+    if(!btn) return;
+    btn.classList.toggle('locked', state.status === 'playing' && computeRemainingCount() > SUGGEST_MAX_REMAINING);
+  }
   function suggestWord(){
     if(animating) return;
     if(state.status !== 'playing'){ toast('Inget att föreslå just nu'); return; }
+    if(computeRemainingCount() > SUGGEST_MAX_REMAINING){
+      toast('Låses upp när ' + SUGGEST_MAX_REMAINING + ' ord eller färre kan vara rätt');
+      return;
+    }
     var hc = hardModeConstraints();
     var already = {};
     state.guesses.forEach(function(g){ already[g.word] = true; });
@@ -657,7 +674,7 @@
     practiceBtn.classList.toggle('active', practiceMode);
     practiceBtn.classList.toggle('locked', !practiceMode && dailyLocked());
   }
-  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderStatusInfo(); renderModeSwitch(); }
+  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderStatusInfo(); renderSuggestButton(); renderModeSwitch(); }
 
   /* ---------- Indata ---------- */
   var LETTER_RE = /^[a-zåäö]$/;
@@ -732,6 +749,7 @@
         renderKeyboard();
         renderBoard();
         renderStatusInfo();
+        renderSuggestButton();
       }
     }, totalDelay);
   }
@@ -744,6 +762,7 @@
     rebuildKeyState();
     renderKeyboard();
     renderStatusInfo();
+    renderSuggestButton();
     if(navigator.vibrate) try { navigator.vibrate(caught ? 60 : [20,40,20]); } catch(e){}
     if(practiceMode){
       var pstats = recordPracticeResult(!caught, state.guesses.length);
@@ -1101,7 +1120,7 @@
       '<p style="text-align:left"><b>Hårt läge:</b> varje ny gissning måste följa ledtrådarna hittills — gröna bokstäver stannar kvar, gula måste vara med, gråa får inte vara med. Du kan inte gömma dig bakom orelaterade ord.</p>' +
       '<p style="text-align:left">🃏 Du har <b>'+JOKER_BUDGET+' jokrar</b> för hela partiet: en gissning som annars skulle bryta mot en grå bokstav tillåts ändå om du har jokrar kvar — kostar en joker, oavsett vilken bokstav. Utan jokrar gäller hårt läge fullt ut. Annars blir svenskans begränsade ordförråd nästan olösligt i slutet av partiet.</p>' +
       '<p style="text-align:left">🔍-siffran ovanför brädet visar hur många ord i dagens-ord-listan som fortfarande kan vara rätt. Når den 1 är du farligt nära!</p>' +
-      '<p style="text-align:left">🎲 Kommer du inte på ett ord som följer ledtrådarna? Knappen ovanför brädet föreslår ett slumpmässigt giltigt ord — men den vet inte vilket ord som är rätt, så den kan råka föreslå det också.</p>' +
+      '<p style="text-align:left">🎲 Kommer du inte på ett ord som följer ledtrådarna? Knappen ovanför brädet föreslår ett slumpmässigt giltigt ord — men den vet inte vilket ord som är rätt, så den kan råka föreslå det också. Låses bara upp när '+SUGGEST_MAX_REMAINING+' ord eller färre kan vara rätt, annars vore den för lätt att luta sig mot hela partiet.</p>' +
       '<p style="text-align:left">🏆 Familjetopplistan rankar alla — inte bara de som överlever — efter hur långt de kom. 🏁 Maratontabellen räknar ihop hela månaden, samma golfpoäng-system som vanliga Ordlek.</p>' +
       '<p style="text-align:left"><b>Egen utmaning:</b> ett läge du kan spela hur många gånger som helst, mot din egen statistik — påverkar aldrig familjetävlingen. Byt läge längst upp på sidan — men först när du spelat klart dagens ord.</p>' +
       '<button id="pClose">Nu kör vi!</button>';
