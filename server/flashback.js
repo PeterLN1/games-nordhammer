@@ -277,8 +277,46 @@ async function ensureWeekPuzzle(store, apiKey, weekId, variant) {
   return { week_id: weekId, variant, title: generated.title, events };
 }
 
-function createFlashbackRouter(store, apiKey, generateSecret) {
+// Individuell statistik ("personbästa", antal perfekta rundor) — läser
+// direkt ur den generiska scores-tabellen (index.js), samma tabell
+// leaderboarden redan bygger på, istället för att duplicera lagring här.
+// distinct on (seed) plockar bästa raden per vecka (skyddar mot ev.
+// dubbletter), och eftersom "seconds" redan är den kombinerade
+// rangordningssiffran (se flashback/index.html, encodeRank) är lägst
+// värde = bästa resultatet totalt sett, rätt-antal + tid i ett.
+async function statsForName(pool, variant, name) {
+  if (!pool || !name) return { gamesPlayed: 0, perfectCount: 0, best: null };
+  const r = await pool.query(
+    `select seconds, moves from (
+       select distinct on (seed) seed, seconds, moves
+       from scores
+       where mode = 'flashback' and seed like $1 and lower(name) = lower($2)
+       order by seed, seconds asc
+     ) t`,
+    ['flashback:' + variant + ':%', name]
+  );
+  const rows = r.rows;
+  const perfectCount = rows.filter(row => row.moves === EVENT_COUNT - 1).length;
+  let best = null;
+  for (const row of rows) { if (!best || row.seconds < best.seconds) best = row; }
+  return { gamesPlayed: rows.length, perfectCount, best: best ? { moves: best.moves, seconds: best.seconds } : null };
+}
+
+function createFlashbackRouter(store, apiKey, generateSecret, pool) {
   const router = express.Router();
+
+  // Personbästa/antal perfekta rundor för en profil, i en given variant
+  // (oberoende av vecka) — hämtas INNAN klienten skickar in veckans
+  // resultat, så den kan avgöra om det just spelade partiet slår
+  // tidigare bästa eller är ett nytt perfekt-antal. Utan namn (t.ex.
+  // ingen profil vald ännu) svaras det med nollställd statistik.
+  router.get('/stats', async (req, res) => {
+    const variant = normalizeVariant(req.query.variant);
+    const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
+    try {
+      res.json(await statsForName(pool, variant, name));
+    } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
+  });
 
   router.get('/puzzle', async (req, res) => {
     const variant = normalizeVariant(req.query.variant);
@@ -334,7 +372,10 @@ export async function createFlashback(pool, { anthropicApiKey, generateSecret } 
     }
   }
   const store = usablePool ? pgStore(usablePool) : memStore();
-  const router = createFlashbackRouter(store, anthropicApiKey, generateSecret);
+  // statsForName läser scores-tabellen direkt (index.js), oberoende av om
+  // flashback-schemat ovan lyckades initieras — därför originalet `pool`,
+  // inte den ev. nollställda `usablePool`.
+  const router = createFlashbackRouter(store, anthropicApiKey, generateSecret, pool);
 
   // Måndag 00:05 Europe/Stockholm — några minuter efter midnatt så att
   // veckoidentiteten hunnit växla. Genererar båda varianterna. Idempotent

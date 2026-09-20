@@ -153,6 +153,12 @@
   .lb-guesses { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; font-weight: 700; background: var(--key-bg); padding: 2px 6px; border-radius: 6px; }
   .lb-empty { color: var(--muted); font-size: 13px; padding: 14px 12px; text-align: center; }
 
+  .stats-highlight {
+    background: rgba(217,154,43,.15); border: 1px solid rgba(217,154,43,.4); border-radius: 10px;
+    padding: 9px 11px; font-size: 14px; font-weight: 700; color: var(--ink); margin: 12px 0 2px; text-align: center;
+  }
+  .stats-line { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; text-align: center; }
+
   .rules-list { text-align: left; font-size: 14px; line-height: 1.6; margin: 10px 0; }
 
   #toast {
@@ -254,6 +260,13 @@
       .then(function(r){ return r.json(); })
       .then(function(d){ cb && cb(d && d.error ? new Error(d.error) : null, d); })
       .catch(function(e){ cb && cb(e); });
+  }
+  function fetchStats(variant, name, cb){
+    var base = apiBase(); if(!base || !name) return cb(new Error('nej'));
+    fetch(base + '/api/flashback/stats?variant=' + encodeURIComponent(variant) + '&name=' + encodeURIComponent(name))
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb(d && d.error ? new Error(d.error) : null, d); })
+      .catch(function(e){ cb(e); });
   }
   function fmtSeconds(s){
     s = Math.round(s);
@@ -397,15 +410,48 @@
       lbRenderList(el, list, getName());
     });
   }
-  function setupLeaderboard(area){
-    if(!hasLeaderboard()){ area.innerHTML = ''; return; }
+  /* ---------- Individuell statistik (personbästa, antal perfekta) ----------
+     Hämtas från servern (samma scores-tabell som topplistan, se
+     server/flashback.js statsForName) INNAN veckans resultat skickas in
+     — annars skulle det här partiet redan räknas med i jämförelsen mot
+     sig själv. "seconds" i varje rad är redan encodeRank-värdet (färre
+     fel väger alltid tyngre än tid), så lägst värde = bäst resultat
+     totalt, oavsett vilken vecka det var. */
+  function renderStatsBanner(area, info){
+    var lines = [];
+    if(info.score === queue.length){
+      lines.push(info.newPerfectCount <= 1
+        ? '🌟 Din första perfekta runda i den här varianten!'
+        : '🏆 Grattis, du har fått alla rätt ' + info.newPerfectCount + ' gånger nu!');
+    } else if(info.isNewBest){
+      lines.push('🎉 Nytt personbästa!');
+    } else if(info.isFirstEver){
+      lines.push('Första gången du spelar den här varianten — välkommen tillbaka nästa vecka!');
+    }
+    var html = lines.length ? '<div class="stats-highlight">' + lines.join(' ') + '</div>' : '';
+    if(!info.isFirstEver && info.prior.best){
+      var bestSeconds = info.prior.best.seconds % RANK_BUCKET;
+      html += '<p class="stats-line">Ditt bästa hittills: ' + info.prior.best.moves + '/' + queue.length + ' (' + fmtSeconds(bestSeconds) + ')</p>';
+    }
+    area.innerHTML = html;
+  }
+  function submitAndShowStats(statsArea, lbArea){
     var seed = seedFor(currentVariant, puzzle.week_id);
-    if(state.submitted){ fetchAndRenderLeaderboard(area, seed); return; }
     var elapsedSeconds = Math.max(1, Math.round((state.finishedAt - state.startedAt) / 1000));
     var score = correctCount();
-    state.submitted = true; saveGame(state);
-    lbSubmit({ name: getName(), mode: 'flashback', tiles: queue.length, seconds: encodeRank(score, elapsedSeconds), moves: score, seed: seed }, function(){ fetchAndRenderLeaderboard(area, seed); });
-    fetchAndRenderLeaderboard(area, seed);
+    var encoded = encodeRank(score, elapsedSeconds);
+    var name = getName();
+    fetchStats(currentVariant, name, function(err, prior){
+      prior = prior || { gamesPlayed: 0, perfectCount: 0, best: null };
+      var isFirstEver = prior.gamesPlayed === 0;
+      var isNewBest = !isFirstEver && (!prior.best || encoded < prior.best.seconds);
+      var newPerfectCount = prior.perfectCount + (score === queue.length ? 1 : 0);
+
+      state.submitted = true; saveGame(state);
+      lbSubmit({ name: name, mode: 'flashback', tiles: queue.length, seconds: encoded, moves: score, seed: seed }, function(){ fetchAndRenderLeaderboard(lbArea, seed); });
+      fetchAndRenderLeaderboard(lbArea, seed);
+      renderStatsBanner(statsArea, { score: score, isFirstEver: isFirstEver, isNewBest: isNewBest, newPerfectCount: newPerfectCount, prior: prior });
+    });
   }
 
   function showResultPanel(){
@@ -416,11 +462,16 @@
       '<div class="emoji">' + emoji + '</div>' +
       '<h2>' + score + ' / ' + queue.length + ' rätt</h2>' +
       '<p>' + esc(puzzle.title) + '</p>' +
+      '<div id="statsArea"></div>' +
       '<div id="lbArea"></div>' +
       '<button id="pClose">Stäng</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pClose').onclick = hideOverlay;
-    setupLeaderboard(document.getElementById('lbArea'));
+    var lbArea = document.getElementById('lbArea');
+    if(!hasLeaderboard()){ lbArea.innerHTML = ''; return; }
+    var seed = seedFor(currentVariant, puzzle.week_id);
+    if(state.submitted){ fetchAndRenderLeaderboard(lbArea, seed); return; }
+    submitAndShowStats(document.getElementById('statsArea'), lbArea);
   }
 
   /* ---------- Redan spelat denna vecka, på en annan enhet? ----------
