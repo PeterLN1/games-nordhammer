@@ -556,19 +556,19 @@
 
   /* ---------- Föreslå ett ord ----------
      För när man vet att ett giltigt ord finns (annars vore man ju
-     "forced", se jokrar ovan) men inte kommer på något själv. Väljer
-     ett SLUMPMÄSSIGT ord ur hela GUESS_SET som klarar hardModeCheck —
-     avsiktligt UTAN att undvika hemligheten. Om den filtrerade bort
-     hemligheten skulle knappen vara en gratis auto-vinst varje dag (bara
-     klicka och Enter 6 gånger) — nu bär den samma risk som en egen
-     gissning skulle, och blir farligare ju färre kandidater som är kvar,
-     precis som resten av spelet redan fungerar. */
-  // Bara upplåst när få kandidater återstår — annars är den nästan
-  // riskfri att spamma varje rad hela partiet (draget dras ur hela
-  // GUESS_SET, ~10025 ord, av vilka de allra flesta aldrig kunde ha
-  // varit dagens hemliga ord — så chansen att råka träffa rätt är långt
-  // lägre än 🔍-siffran antyder). Speltest 2026-09-21 visade att fri
-  // användning gjorde spelet klart för lätt.
+     "forced", se jokrar ovan) men inte kommer på något själv.
+
+     Historik: drog förr ur hela GUESS_SET (~10025 ord) och var alltid
+     upplåst — men eftersom de allra flesta av de orden aldrig kunde ha
+     varit dagens hemliga ord blev risken att råka träffa rätt långt
+     lägre än 🔍-siffran antydde, och speltest 2026-09-21 visade att fri
+     användning gjorde spelet för lätt. Nu: (1) bara upplåst när
+     SUGGEST_MAX_REMAINING eller färre riktiga kandidater återstår, och
+     (2) drar ordet ur de FAKTISKA kvarvarande kandidaterna
+     (remainingCandidates(), samma lista 🔍-siffran räknar) istället för
+     GUESS_SET — så risken är exakt det 🔍-siffran visar, inte utspädd.
+     Vid t.ex. 1 kvarvarande kandidat FÖRESLÅR den alltså garanterat
+     hemligheten — det är avsiktligt, inte en bugg. */
   var SUGGEST_MAX_REMAINING = 3;
   function renderSuggestButton(){
     var btn = document.getElementById('btnSuggest');
@@ -578,29 +578,30 @@
   function suggestWord(){
     if(animating) return;
     if(state.status !== 'playing'){ toast('Inget att föreslå just nu'); return; }
-    if(computeRemainingCount() > SUGGEST_MAX_REMAINING){
+    var candidates = remainingCandidates();
+    if(candidates.length > SUGGEST_MAX_REMAINING){
       toast('Låses upp när ' + SUGGEST_MAX_REMAINING + ' ord eller färre kan vara rätt');
       return;
     }
-    var hc = hardModeConstraints();
-    var already = {};
-    state.guesses.forEach(function(g){ already[g.word] = true; });
-    var candidates = [];
-    for(var i=0;i<ORDLEK_GUESSES.length;i++){
-      var w = ORDLEK_GUESSES[i];
-      if(already[w]) continue;
-      if(!hardModeCheck(w, hc).blocked) candidates.push(w);
-    }
+    // Dras ur de FAKTISKA kvarvarande kandidaterna (inte hela GUESS_SET)
+    // så att risken är exakt det 🔍-siffran visar — vid t.ex. 3 kvar är
+    // chansen att träffa rätt verkligen 1 på 3, inte utspädd av tusentals
+    // ord som ändå aldrig kunde ha varit dagens ord. En kandidat är alltid
+    // redan hard-mode-giltig (den reproducerar exakt samma ledtrådar som
+    // redan setts), så ingen extra kontroll behövs här.
     if(!candidates.length){ toast('Inget giltigt ord kvar att föreslå'); return; }
     current = candidates[Math.floor(Math.random() * candidates.length)];
     renderBoard();
   }
 
   /* ---------- Kvarvarande kandidater ---------- */
-  function computeRemainingCount(){
+  function remainingCandidates(){
     return ORDLEK_ANSWERS.filter(function(c){
       return state.guesses.every(function(g){ return marksEqual(evaluateGuess(g.word, c), g.marks); });
-    }).length;
+    });
+  }
+  function computeRemainingCount(){
+    return remainingCandidates().length;
   }
 
   /* ---------- Rendering ---------- */
@@ -1120,7 +1121,7 @@
       '<p style="text-align:left"><b>Hårt läge:</b> varje ny gissning måste följa ledtrådarna hittills — gröna bokstäver stannar kvar, gula måste vara med, gråa får inte vara med. Du kan inte gömma dig bakom orelaterade ord.</p>' +
       '<p style="text-align:left">🃏 Du har <b>'+JOKER_BUDGET+' jokrar</b> för hela partiet: en gissning som annars skulle bryta mot en grå bokstav tillåts ändå om du har jokrar kvar — kostar en joker, oavsett vilken bokstav. Utan jokrar gäller hårt läge fullt ut. Annars blir svenskans begränsade ordförråd nästan olösligt i slutet av partiet.</p>' +
       '<p style="text-align:left">🔍-siffran ovanför brädet visar hur många ord i dagens-ord-listan som fortfarande kan vara rätt. Når den 1 är du farligt nära!</p>' +
-      '<p style="text-align:left">🎲 Kommer du inte på ett ord som följer ledtrådarna? Knappen ovanför brädet föreslår ett slumpmässigt giltigt ord — men den vet inte vilket ord som är rätt, så den kan råka föreslå det också. Låses bara upp när '+SUGGEST_MAX_REMAINING+' ord eller färre kan vara rätt, annars vore den för lätt att luta sig mot hela partiet.</p>' +
+      '<p style="text-align:left">🎲 Kommer du inte på ett ord som följer ledtrådarna? Knappen ovanför brädet föreslår ett slumpmässigt ord ur de FAKTISKA ord som fortfarande kan vara rätt — samma risk som 🔍-siffran visar, inte lägre. Låses bara upp när '+SUGGEST_MAX_REMAINING+' ord eller färre kan vara rätt.</p>' +
       '<p style="text-align:left">🏆 Familjetopplistan rankar alla — inte bara de som överlever — efter hur långt de kom. 🏁 Maratontabellen räknar ihop hela månaden, samma golfpoäng-system som vanliga Ordlek.</p>' +
       '<p style="text-align:left"><b>Egen utmaning:</b> ett läge du kan spela hur många gånger som helst, mot din egen statistik — påverkar aldrig familjetävlingen. Byt läge längst upp på sidan — men först när du spelat klart dagens ord.</p>' +
       '<button id="pClose">Nu kör vi!</button>';
