@@ -92,18 +92,15 @@
     flex: 0 0 auto; text-align: center; font-size: 12.5px; color: var(--muted);
     padding: 6px 10px 0;
   }
-  #remainInfo {
-    flex: 0 0 auto; text-align: center; font-size: 13px; font-weight: 700; color: var(--ink);
+  #statusInfo {
+    flex: 0 0 auto; text-align: center; font-size: 12.5px; font-weight: 700; color: var(--ink);
     padding: 3px 10px 0;
-  }
-  #jokerInfo {
-    flex: 0 0 auto; text-align: center; font-size: 12px; color: var(--muted);
-    padding: 2px 10px 0;
   }
   #boardWrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 0; }
   #board {
     display: grid; grid-template-rows: repeat(6, 1fr); gap: 7px;
-    width: min(330px, 78vw); height: min(78vh, 396px);
+    width: min(330px, 78vw);
+    height: 100%; max-height: 396px;
     margin: 6px auto;
   }
   .row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
@@ -230,8 +227,7 @@
       <button class="mode-btn" id="modePracticeBtn">🎯 Egen utmaning</button>
     </div>
     <div id="dayInfo"></div>
-    <div id="remainInfo"></div>
-    <div id="jokerInfo"></div>
+    <div id="statusInfo"></div>
     <div id="boardWrap"><div id="board"></div></div>
     <div id="keyboard"></div>
   </div>
@@ -589,15 +585,14 @@
     var n = dayNumber(state.date);
     el.textContent = 'Anti-Ordlek-dag #' + n + ' · ' + formatDateSv(state.date);
   }
-  function renderRemainInfo(){
-    var el = document.getElementById('remainInfo');
-    el.textContent = '🔍 ' + computeRemainingCount() + ' ord kan fortfarande vara rätt';
-  }
-  function renderJokerInfo(){
-    var el = document.getElementById('jokerInfo');
+  // Slagna ihop till en rad (istället för två separata) — annars tar
+  // info-raderna för mycket höjd på kortare mobilskärmar och trycker ner
+  // eller skymmer brädet, se felrapport 2026-09-21.
+  function renderStatusInfo(){
+    var el = document.getElementById('statusInfo');
     if(!el) return;
     var n = state.jokersLeft;
-    el.textContent = '🃏 ' + n + ' ' + (n === 1 ? 'joker' : 'jokrar') + ' kvar — för att återanvända en grå bokstav';
+    el.textContent = '🔍 ' + computeRemainingCount() + ' ord kvar · 🃏 ' + n + ' ' + (n === 1 ? 'joker' : 'jokrar');
   }
   // Låst tills dagens ord är klart (won/lost/blocked) — annars kunde man
   // byta till Egen utmaning mitt i dagens giv och tappa bort var man var.
@@ -610,7 +605,7 @@
     practiceBtn.classList.toggle('active', practiceMode);
     practiceBtn.classList.toggle('locked', !practiceMode && dailyLocked());
   }
-  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderRemainInfo(); renderJokerInfo(); renderModeSwitch(); }
+  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderStatusInfo(); renderModeSwitch(); }
 
   /* ---------- Indata ---------- */
   var LETTER_RE = /^[a-zåäö]$/;
@@ -666,7 +661,6 @@
       current = '';
       if(check.usesJoker){
         state.jokersLeft--;
-        renderJokerInfo();
         toast('🃏 Joker använd — ' + state.jokersLeft + ' kvar');
       }
       var caught = marks.every(function(m){ return m === 'correct'; });
@@ -682,7 +676,7 @@
         rebuildKeyState();
         renderKeyboard();
         renderBoard();
-        renderRemainInfo();
+        renderStatusInfo();
       }
     }, totalDelay);
   }
@@ -694,7 +688,7 @@
     animating = false;
     rebuildKeyState();
     renderKeyboard();
-    renderRemainInfo();
+    renderStatusInfo();
     if(navigator.vibrate) try { navigator.vibrate(caught ? 60 : [20,40,20]); } catch(e){}
     if(practiceMode){
       var pstats = recordPracticeResult(!caught, state.guesses.length);
