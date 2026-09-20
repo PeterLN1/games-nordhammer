@@ -79,6 +79,15 @@
   header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
   header .spacer { flex: 1; }
 
+  .mode-switch { display: flex; gap: 6px; justify-content: center; padding: 8px 12px 0; flex: 0 0 auto; }
+  .mode-btn {
+    flex: 1; max-width: 190px; padding: 9px 10px; border-radius: 10px; border: none;
+    background: var(--key-bg); color: var(--muted); font-weight: 700; font-size: 12.5px;
+    font-family: inherit; cursor: pointer;
+  }
+  .mode-btn.active { background: rgba(255,179,0,.28); color: var(--ink); box-shadow: inset 0 0 0 1.5px rgba(255,179,0,.55); }
+  .mode-btn.locked { opacity: .4; cursor: default; }
+
   #dayInfo {
     flex: 0 0 auto; text-align: center; font-size: 12.5px; color: var(--muted);
     padding: 6px 10px 0;
@@ -206,12 +215,15 @@
       <h1>🟩 Ordlek</h1>
       <div class="spacer"></div>
       <button class="icon-btn" id="btnProfile" aria-label="Byt profil"></button>
-      <button class="icon-btn" id="btnPractice" aria-label="Övningsläge">🎯</button>
       <button class="icon-btn" id="btnMarathon" aria-label="Maratontabell">🏁</button>
       <button class="icon-btn" id="btnHistory" aria-label="Historik">🗓️</button>
       <button class="icon-btn" id="btnStats" aria-label="Statistik">📊</button>
       <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
     </header>
+    <div id="modeSwitch" class="mode-switch">
+      <button class="mode-btn" id="modeDailyBtn">📅 Dagens ord</button>
+      <button class="mode-btn" id="modePracticeBtn">🎯 Egen utmaning</button>
+    </div>
     <div id="dayInfo"></div>
     <div id="boardWrap"><div id="board"></div></div>
     <div id="keyboard"></div>
@@ -472,21 +484,24 @@
   function renderDayInfo(){
     var el = document.getElementById('dayInfo');
     if(practiceMode){
-      el.textContent = '🎯 Övningsläge — tryck här för att gå tillbaka till dagens ord';
-      el.style.cursor = 'pointer';
-      el.onclick = exitPractice;
+      el.textContent = 'Nytt slumpat ord — spela hur många gånger du vill';
       return;
     }
-    el.style.cursor = '';
-    el.onclick = null;
     var n = dayNumber(state.date);
     el.textContent = 'Dagens ord #' + n + ' · ' + formatDateSv(state.date);
   }
-  function renderPracticeButton(){
-    var btn = document.getElementById('btnPractice');
-    if(btn) btn.classList.toggle('active', practiceMode);
+  // Låst tills dagens ord är klart (won/lost/blocked) — annars kunde man
+  // byta till Egen utmaning mitt i dagens giv och tappa bort var man var.
+  function dailyLocked(){ return dailyState.status === 'playing' || dailyState.status === 'checking'; }
+  function renderModeSwitch(){
+    var dailyBtn = document.getElementById('modeDailyBtn');
+    var practiceBtn = document.getElementById('modePracticeBtn');
+    if(!dailyBtn || !practiceBtn) return;
+    dailyBtn.classList.toggle('active', !practiceMode);
+    practiceBtn.classList.toggle('active', practiceMode);
+    practiceBtn.classList.toggle('locked', !practiceMode && dailyLocked());
   }
-  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderPracticeButton(); }
+  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderModeSwitch(); }
 
   /* ---------- Indata ---------- */
   var LETTER_RE = /^[a-zåäö]$/;
@@ -897,9 +912,11 @@
       distHtml(stats.distribution, won ? state.guesses.length-1 : -1) +
       '<div id="lbArea" class="lb-area"></div>' +
       '<button id="pShare">📋 Dela resultat</button>' +
+      '<button id="pPractice" class="ghost">🎯 Fortsätt i Egen utmaning</button>' +
       '<button id="pClose" class="ghost">Stäng</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pShare').onclick = function(){ doShare(document.getElementById('pShare')); };
+    document.getElementById('pPractice').onclick = function(){ hideOverlay(); startPractice(); };
     document.getElementById('pClose').onclick = hideOverlay;
     setupLeaderboard(document.getElementById('lbArea'), won);
   }
@@ -912,8 +929,8 @@
                  : ('Ordet var <b>'+state.answer.toUpperCase()+'</b>.')) + '</p>' +
       statBlockHtml(stats) +
       distHtml(stats.distribution, won ? state.guesses.length-1 : -1) +
-      '<p>🎯 Övningsläge — egen statistik, påverkar inte familjetävlingen.</p>' +
-      '<button id="pAgain">🔁 Nytt övningsord</button>' +
+      '<p>🎯 Egen utmaning — egen statistik, påverkar inte familjetävlingen.</p>' +
+      '<button id="pAgain">🔁 Ny utmaning</button>' +
       '<button id="pDaily" class="ghost">Till dagens ord</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pAgain').onclick = startPractice;
@@ -923,7 +940,7 @@
     var stats = practiceMode ? loadPracticeStats() : loadStats();
     var panel = document.getElementById('panel');
     panel.innerHTML =
-      '<h2>'+(practiceMode ? '📊 Övningsstatistik' : '📊 Statistik')+'</h2>' +
+      '<h2>'+(practiceMode ? '📊 Egen utmaning' : '📊 Statistik')+'</h2>' +
       statBlockHtml(stats) +
       distHtml(stats.distribution, -1) +
       (!practiceMode && dailyState.status !== 'playing' ? '<button id="pShare2">📋 Dela dagens resultat</button>' : '') +
@@ -946,13 +963,19 @@
         '<div class="ex" style="margin-top:10px"><div class="tile filled">O</div><div class="tile filled">R</div><div class="tile filled state-absent">D</div><div class="tile filled">E</div><div class="tile filled">T</div></div>' +
         '<div>⬛ Grå = bokstaven finns inte i ordet.</div>' +
       '</div>' +
+      '<p style="text-align:left"><b>Egen utmaning:</b> ett läge du kan spela hur många gånger som helst, mot din egen statistik — påverkar aldrig familjetävlingen. Byt läge längst upp på sidan, men först när du spelat klart dagens ord.</p>' +
       '<button id="pClose">Nu kör vi!</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pClose').onclick = hideOverlay;
   }
   function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); stopGlitterRain(); }
 
-  document.getElementById('btnPractice').onclick = startPractice;
+  document.getElementById('modeDailyBtn').onclick = function(){ if(practiceMode) exitPractice(); };
+  document.getElementById('modePracticeBtn').onclick = function(){
+    if(practiceMode) return;
+    if(dailyLocked()){ toast('Spela klart dagens ord först'); return; }
+    startPractice();
+  };
   document.getElementById('btnMarathon').onclick = showMarathonPanel;
   document.getElementById('btnHistory').onclick = showHistoryPanel;
   document.getElementById('btnStats').onclick = showStatsPanel;

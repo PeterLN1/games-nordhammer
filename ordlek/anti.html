@@ -79,6 +79,15 @@
   header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
   header .spacer { flex: 1; }
 
+  .mode-switch { display: flex; gap: 6px; justify-content: center; padding: 8px 12px 0; flex: 0 0 auto; }
+  .mode-btn {
+    flex: 1; max-width: 190px; padding: 9px 10px; border-radius: 10px; border: none;
+    background: var(--key-bg); color: var(--muted); font-weight: 700; font-size: 12.5px;
+    font-family: inherit; cursor: pointer;
+  }
+  .mode-btn.active { background: rgba(255,77,109,.28); color: var(--ink); box-shadow: inset 0 0 0 1.5px rgba(255,77,109,.55); }
+  .mode-btn.locked { opacity: .4; cursor: default; }
+
   #dayInfo {
     flex: 0 0 auto; text-align: center; font-size: 12.5px; color: var(--muted);
     padding: 6px 10px 0;
@@ -208,11 +217,14 @@
       <h1>🙈 Anti-Ordlek</h1>
       <div class="spacer"></div>
       <button class="icon-btn" id="btnProfile" aria-label="Byt profil"></button>
-      <button class="icon-btn" id="btnPractice" aria-label="Övningsläge">🎯</button>
       <button class="icon-btn" id="btnMarathon" aria-label="Maratontabell">🏁</button>
       <button class="icon-btn" id="btnStats" aria-label="Statistik">📊</button>
       <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
     </header>
+    <div id="modeSwitch" class="mode-switch">
+      <button class="mode-btn" id="modeDailyBtn">📅 Dagens ord</button>
+      <button class="mode-btn" id="modePracticeBtn">🎯 Egen utmaning</button>
+    </div>
     <div id="dayInfo"></div>
     <div id="remainInfo"></div>
     <div id="boardWrap"><div id="board"></div></div>
@@ -532,13 +544,9 @@
   function renderDayInfo(){
     var el = document.getElementById('dayInfo');
     if(practiceMode){
-      el.textContent = '🎯 Övningsläge — tryck här för att gå tillbaka till dagens ord';
-      el.style.cursor = 'pointer';
-      el.onclick = exitPractice;
+      el.textContent = 'Nytt slumpat ord — spela hur många gånger du vill';
       return;
     }
-    el.style.cursor = '';
-    el.onclick = null;
     var n = dayNumber(state.date);
     el.textContent = 'Anti-Ordlek-dag #' + n + ' · ' + formatDateSv(state.date);
   }
@@ -546,11 +554,18 @@
     var el = document.getElementById('remainInfo');
     el.textContent = '🔍 ' + computeRemainingCount() + ' ord kan fortfarande vara rätt';
   }
-  function renderPracticeButton(){
-    var btn = document.getElementById('btnPractice');
-    if(btn) btn.classList.toggle('active', practiceMode);
+  // Låst tills dagens ord är klart (won/lost/blocked) — annars kunde man
+  // byta till Egen utmaning mitt i dagens giv och tappa bort var man var.
+  function dailyLocked(){ return dailyState.status === 'playing' || dailyState.status === 'checking'; }
+  function renderModeSwitch(){
+    var dailyBtn = document.getElementById('modeDailyBtn');
+    var practiceBtn = document.getElementById('modePracticeBtn');
+    if(!dailyBtn || !practiceBtn) return;
+    dailyBtn.classList.toggle('active', !practiceMode);
+    practiceBtn.classList.toggle('active', practiceMode);
+    practiceBtn.classList.toggle('locked', !practiceMode && dailyLocked());
   }
-  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderRemainInfo(); renderPracticeButton(); }
+  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderRemainInfo(); renderModeSwitch(); }
 
   /* ---------- Indata ---------- */
   var LETTER_RE = /^[a-zåäö]$/;
@@ -924,9 +939,11 @@
       distHtml(stats.caughtDistribution, caught ? state.guesses.length-1 : -1) +
       '<div id="lbArea" class="lb-area"></div>' +
       '<button id="pShare">📋 Dela resultat</button>' +
+      '<button id="pPractice" class="ghost">🎯 Fortsätt i Egen utmaning</button>' +
       '<button id="pClose" class="ghost">Stäng</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pShare').onclick = function(){ doShare(document.getElementById('pShare')); };
+    document.getElementById('pPractice').onclick = function(){ hideOverlay(); startPractice(); };
     document.getElementById('pClose').onclick = hideOverlay;
     setupLeaderboard(document.getElementById('lbArea'), caught);
   }
@@ -940,8 +957,8 @@
       statBlockHtml(stats) +
       '<div style="font-size:11.5px;color:var(--muted);margin:14px 0 2px;text-align:left">Föll i rad</div>' +
       distHtml(stats.caughtDistribution, caught ? state.guesses.length-1 : -1) +
-      '<p>🎯 Övningsläge — egen statistik, påverkar inte familjetävlingen.</p>' +
-      '<button id="pAgain">🔁 Nytt övningsord</button>' +
+      '<p>🎯 Egen utmaning — egen statistik, påverkar inte familjetävlingen.</p>' +
+      '<button id="pAgain">🔁 Ny utmaning</button>' +
       '<button id="pDaily" class="ghost">Till dagens ord</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pAgain').onclick = startPractice;
@@ -951,7 +968,7 @@
     var stats = practiceMode ? loadPracticeStats() : loadStats();
     var panel = document.getElementById('panel');
     panel.innerHTML =
-      '<h2>'+(practiceMode ? '📊 Övningsstatistik' : '📊 Statistik')+'</h2>' +
+      '<h2>'+(practiceMode ? '📊 Egen utmaning' : '📊 Statistik')+'</h2>' +
       statBlockHtml(stats) +
       '<div style="font-size:11.5px;color:var(--muted);margin:14px 0 2px;text-align:left">Föll i rad</div>' +
       distHtml(stats.caughtDistribution, -1) +
@@ -977,14 +994,20 @@
       '</div>' +
       '<p style="text-align:left"><b>Hårt läge:</b> varje ny gissning måste följa ledtrådarna hittills — gröna bokstäver stannar kvar, gula måste vara med, gråa får inte vara med. Du kan inte gömma dig bakom orelaterade ord.</p>' +
       '<p style="text-align:left">🔍-siffran ovanför brädet visar hur många ord i dagens-ord-listan som fortfarande kan vara rätt. Når den 1 är du farligt nära!</p>' +
-      '<p style="text-align:left">🎯 ger ett övningsläge du kan spela hur många gånger som helst. 🏆 familjetopplistan rankar alla — inte bara de som överlever — efter hur långt de kom. 🏁 maratontabellen räknar ihop hela månaden, samma golfpoäng-system som vanliga Ordlek.</p>' +
+      '<p style="text-align:left">🏆 Familjetopplistan rankar alla — inte bara de som överlever — efter hur långt de kom. 🏁 Maratontabellen räknar ihop hela månaden, samma golfpoäng-system som vanliga Ordlek.</p>' +
+      '<p style="text-align:left"><b>Egen utmaning:</b> ett läge du kan spela hur många gånger som helst, mot din egen statistik — påverkar aldrig familjetävlingen. Byt läge längst upp på sidan — men först när du spelat klart dagens ord.</p>' +
       '<button id="pClose">Nu kör vi!</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pClose').onclick = hideOverlay;
   }
   function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); stopGlitterRain(); }
 
-  document.getElementById('btnPractice').onclick = startPractice;
+  document.getElementById('modeDailyBtn').onclick = function(){ if(practiceMode) exitPractice(); };
+  document.getElementById('modePracticeBtn').onclick = function(){
+    if(practiceMode) return;
+    if(dailyLocked()){ toast('Spela klart dagens ord först'); return; }
+    startPractice();
+  };
   document.getElementById('btnMarathon').onclick = showMarathonPanel;
   document.getElementById('btnStats').onclick = showStatsPanel;
   document.getElementById('btnRules').onclick = showRulesPanel;
