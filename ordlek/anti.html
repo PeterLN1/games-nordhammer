@@ -610,6 +610,14 @@
   function submit(){
     if(current.length < WORD_LEN){ shakeRow(state.guesses.length); toast('För få bokstäver'); return; }
     if(!GUESS_SET.has(current)){ shakeRow(state.guesses.length); toast('Inte ett ord i listan'); return; }
+    // En upprepad gissning ger noll ny information men kan ändå råka
+    // klara hardModeViolation (t.ex. om ordets enda gråa bokstäver är
+    // undantagna R/S/T/L/N) — spärra den explicit, annars går hela
+    // poängen med hårt läge att kringgå genom att bara upprepa samma
+    // säkra ord varje rad.
+    if(state.guesses.some(function(g){ return g.word === current; })){
+      shakeRow(state.guesses.length); toast('Du har redan gissat det ordet'); return;
+    }
     var violation = hardModeViolation(current);
     if(violation){ shakeRow(state.guesses.length); toast(violation); return; }
     var word = current;
