@@ -21,7 +21,7 @@ const GHOSTTRAINS_RESOLVE_SECRET = process.env.GHOSTTRAINS_RESOLVE_SECRET || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const FLASHBACK_GENERATE_SECRET = process.env.FLASHBACK_GENERATE_SECRET || '';
 
-const MODES = new Set(['classic', 'tilematch', 'ordlek', 'flashback']);
+const MODES = new Set(['classic', 'tilematch', 'ordlek', 'ordlek-anti', 'flashback']);
 // enkel olämplighetsfilter (utökas vid behov)
 const BAD_WORDS = ['fitta', 'kuk', 'hora', 'knulla', 'jävla', 'javla', 'fuck', 'shit', 'bitch', 'cunt', 'nigger', 'nigga', 'slut'];
 
@@ -43,14 +43,31 @@ function isBadName(name) {
    8 om man inte spelade alls den dagen. Lägst summa vinner — som i golf
    får alla lika många "hål" oavsett hur ofta de faktiskt spelat, annars
    gynnas den som spelar sällan orättvist. Säsongen börjar tidigast
-   ORDLEK_SEASON_START (så ingen får ett försprång från redan spelade dagar). */
+   respektive familjs *_SEASON_START (så ingen får ett försprång från
+   redan spelade dagar).
+
+   Flera "familjer" (Ordlek och Anti-Ordlek) delar samma poängformel och
+   samma scores-tabell, men skiljs åt via seed-prefix — se
+   MARATHON_FAMILIES och `family`-query-parametern på /api/marathon(/history)
+   nedan. Anti-Ordlek skickar in moves = 6 − (antal rader ordet undveks),
+   dvs 0 (överlevde alla 6) upp till 6 (togs på första raden) — samma
+   "lägst är bäst"-formel funkar därför oförändrad för båda familjerna. */
 const ORDLEK_SEASON_START = '2026-08-11';
-function seasonBoundsFor(dateStr) {
+const ORDLEK_ANTI_SEASON_START = '2026-09-22'; // Anti-Ordlek lanserades 2026-09-20, ~2 dagars marginal precis som Ordlek fick
+const MARATHON_FAMILIES = {
+  'ordlek': { seedPrefix: 'ordlek:', seasonStart: ORDLEK_SEASON_START },
+  'ordlek-anti': { seedPrefix: 'ordlek-anti:', seasonStart: ORDLEK_ANTI_SEASON_START }
+};
+function marathonFamily(req) {
+  const f = req.query.family;
+  return Object.prototype.hasOwnProperty.call(MARATHON_FAMILIES, f) ? f : 'ordlek';
+}
+function seasonBoundsFor(dateStr, seasonStart) {
   const first = dateStr.slice(0, 8) + '01';
   const y = +dateStr.slice(0, 4), m = +dateStr.slice(5, 7);
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const last = dateStr.slice(0, 8) + String(lastDay).padStart(2, '0');
-  const start = first < ORDLEK_SEASON_START ? ORDLEK_SEASON_START : first;
+  const start = first < seasonStart ? seasonStart : first;
   return { start, end: last };
 }
 function nextDay(dateStr) {
@@ -182,16 +199,19 @@ if (DATABASE_URL) {
         return r.rowCount;
       },
       // Ordlek-maraton: en rad per spelare och dag (bästa resultatet den
-      // dagen), för computeMarathon() att räkna golfpoäng på.
-      async marathon(seasonStart, seasonEnd) {
+      // dagen), för computeMarathon() att räkna golfpoäng på. seedPrefix
+      // skiljer familjerna åt (se MARATHON_FAMILIES) — default 'ordlek:'
+      // håller gamla anrop utan family-param oförändrade.
+      async marathon(seasonStart, seasonEnd, seedPrefix) {
+        seedPrefix = seedPrefix || 'ordlek:';
         const r = await pool.query(
           `select name, seed, min(moves) as moves
            from scores
-           where seed like 'ordlek:%' and seed >= $1 and seed <= $2
+           where seed like $1 and seed >= $2 and seed <= $3
            group by name, seed`,
-          ['ordlek:' + seasonStart, 'ordlek:' + seasonEnd]
+          [seedPrefix + '%', seedPrefix + seasonStart, seedPrefix + seasonEnd]
         );
-        return r.rows.map(row => ({ name: row.name, day: row.seed.slice(7), moves: row.moves }));
+        return r.rows.map(row => ({ name: row.name, day: row.seed.slice(seedPrefix.length), moves: row.moves }));
       },
       // "Utmaningar": delade givar där minst två olika spelare faktiskt
       // tävlat mot samma seed — filtrerar bort vanliga solo-partier
@@ -283,12 +303,13 @@ if (DATABASE_URL) {
       }
       return removed;
     },
-    async marathon(seasonStart, seasonEnd) {
-      const from = 'ordlek:' + seasonStart, to = 'ordlek:' + seasonEnd;
+    async marathon(seasonStart, seasonEnd, seedPrefix) {
+      seedPrefix = seedPrefix || 'ordlek:';
+      const from = seedPrefix + seasonStart, to = seedPrefix + seasonEnd;
       const best = {};
-      mem.filter(x => x.seed && x.seed.indexOf('ordlek:') === 0 && x.seed >= from && x.seed <= to).forEach(x => {
+      mem.filter(x => x.seed && x.seed.indexOf(seedPrefix) === 0 && x.seed >= from && x.seed <= to).forEach(x => {
         const key = x.name + '|' + x.seed;
-        if (!best[key] || x.moves < best[key].moves) best[key] = { name: x.name, day: x.seed.slice(7), moves: x.moves };
+        if (!best[key] || x.moves < best[key].moves) best[key] = { name: x.name, day: x.seed.slice(seedPrefix.length), moves: x.moves };
       });
       return Object.values(best);
     },
@@ -392,15 +413,16 @@ app.get('/api/challenges', async (req, res) => {
 
 app.get('/api/marathon', async (req, res) => {
   if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
+  const cfg = MARATHON_FAMILIES[marathonFamily(req)];
   const today = new Date().toISOString().slice(0, 10);
-  const { start, end } = seasonBoundsFor(today);
+  const { start, end } = seasonBoundsFor(today, cfg.seasonStart);
   const elapsedEnd = today < end ? today : end;
   if (start > elapsedEnd) {
     return res.json({ seasonStart: start, seasonEnd: end, daysElapsed: 0, rows: [] });
   }
   try {
     const dates = dateRange(start, elapsedEnd);
-    const raw = await store.marathon(start, elapsedEnd);
+    const raw = await store.marathon(start, elapsedEnd, cfg.seedPrefix);
     const rows = computeMarathon(raw, dates).slice(0, 50);
     res.json({ seasonStart: start, seasonEnd: end, daysElapsed: dates.length, rows });
   } catch (e) {
@@ -414,8 +436,9 @@ app.get('/api/marathon', async (req, res) => {
 // spelat (rows.length === 0) så listan inte fylls med tomma poster.
 app.get('/api/marathon/history', async (req, res) => {
   if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
+  const cfg = MARATHON_FAMILIES[marathonFamily(req)];
   const today = new Date().toISOString().slice(0, 10);
-  const seasonStartMonth = ORDLEK_SEASON_START.slice(0, 7);
+  const seasonStartMonth = cfg.seasonStart.slice(0, 7);
   const months = [];
   try {
     let cursor = today.slice(0, 7); // 'YYYY-MM', innevarande månad
@@ -425,9 +448,9 @@ app.get('/api/marathon/history', async (req, res) => {
       const prevM = m === 1 ? 12 : m - 1;
       cursor = prevY + '-' + String(prevM).padStart(2, '0');
       if (cursor < seasonStartMonth) break;
-      const { start, end } = seasonBoundsFor(cursor + '-01');
+      const { start, end } = seasonBoundsFor(cursor + '-01', cfg.seasonStart);
       const dates = dateRange(start, end);
-      const raw = await store.marathon(start, end);
+      const raw = await store.marathon(start, end, cfg.seedPrefix);
       const rows = computeMarathon(raw, dates);
       if (rows.length) {
         // Flera kan dela förstaplatsen (samma poäng) — champions är då fler än en.

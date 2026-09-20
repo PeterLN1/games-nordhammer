@@ -8,6 +8,7 @@
 <meta name="theme-color" content="#f7e9ee" data-light="#f7e9ee" data-dark="#1a0a12">
 <title>Anti-Ordlek</title>
 <script src="/shared/theme.js"></script>
+<script src="/shared/profile.js"></script>
 <style>
   :root {
     --bg: radial-gradient(120% 90% at 50% 0%, #f7e9ee 0%, #f0e0e8 100%);
@@ -74,6 +75,7 @@
     border: none; cursor: pointer; font-family: inherit;
   }
   header .back:active, header .icon-btn:active { background: rgba(255,77,109,.3); }
+  header .icon-btn.active { background: rgba(255,77,109,.35); }
   header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
   header .spacer { flex: 1; }
 
@@ -160,6 +162,18 @@
   .dist-row .bar { background: var(--absent); color: #fff; text-align: right; padding: 3px 7px; border-radius: 4px; min-width: 20px; font-weight: 700; font-size: 12px; }
   .dist-row .bar.hi { background: var(--accent); }
 
+  .lb-title { font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 16px 0 8px; text-align: left; }
+  .lb-list { text-align: left; }
+  .lb-row { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 9px; font-size: 14px; }
+  .lb-row:nth-child(odd) { background: var(--key-bg); }
+  .lb-row.me { background: rgba(255,77,109,.2); box-shadow: inset 0 0 0 1px rgba(255,77,109,.5); }
+  .lb-rank { width: 22px; text-align: center; font-weight: 700; color: var(--muted); }
+  .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-time { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .lb-guesses { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 11px; font-weight: 700; background: var(--key-bg); padding: 2px 6px; border-radius: 6px; white-space: nowrap; }
+  .lb-empty { color: var(--muted); font-size: 13px; padding: 6px 2px; text-align: left; }
+  .lb-hof-month { font-weight: 400; color: var(--muted); font-size: 12.5px; }
+
   .rules-list { text-align: left; font-size: 14px; line-height: 1.6; margin: 10px 0; }
   .rules-list .ex { display: flex; gap: 5px; margin: 8px 0 4px; }
   .rules-list .ex .tile { width: 34px; height: 34px; font-size: 17px; border-radius: 5px; }
@@ -175,6 +189,16 @@
     font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  #glitter { position: fixed; inset: 0; z-index: 200; pointer-events: none; overflow: hidden; }
+  .glitter-piece { position: absolute; top: -20px; left: 0; will-change: transform, opacity; animation: glitterFall linear forwards; }
+  @keyframes glitterFall {
+    0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    100% { transform: translate(var(--drift, 0px), 110vh) rotate(360deg); opacity: .85; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .glitter-piece { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -183,6 +207,9 @@
       <a class="back" href="/" aria-label="Till startsidan">‹</a>
       <h1>🙈 Anti-Ordlek</h1>
       <div class="spacer"></div>
+      <button class="icon-btn" id="btnProfile" aria-label="Byt profil"></button>
+      <button class="icon-btn" id="btnPractice" aria-label="Övningsläge">🎯</button>
+      <button class="icon-btn" id="btnMarathon" aria-label="Maratontabell">🏁</button>
       <button class="icon-btn" id="btnStats" aria-label="Statistik">📊</button>
       <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
     </header>
@@ -193,6 +220,7 @@
   </div>
   <div id="overlay"><div class="panel" id="panel"></div></div>
   <div id="toast"></div>
+  <div id="glitter" aria-hidden="true"></div>
 
   <script src="words.js"></script>
   <script>
@@ -256,6 +284,9 @@
   function formatDateSv(iso){
     var p = iso.split('-'); return (+p[2]) + ' ' + (SV_MONTHS[(+p[1])-1] || '') + ' ' + p[0];
   }
+  function formatMonthSv(monthStr){
+    var p = monthStr.split('-'); return (SV_MONTHS[(+p[1])-1] || '') + ' ' + p[0];
+  }
 
   function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
@@ -287,6 +318,32 @@
     return s;
   }
 
+  // Övningsläget har egen statistik under en annan nyckel — resultat i
+  // familjetävlingen ska aldrig påverka den, och tvärtom.
+  var PRACTICE_STATS_KEY = 'ordlek-anti:practiceStats';
+  function loadPracticeStats(){
+    try {
+      var s = JSON.parse(localStorage.getItem(PRACTICE_STATS_KEY));
+      if(s && s.caughtDistribution && s.caughtDistribution.length === MAX_GUESSES) return s;
+    } catch(e){}
+    return { played: 0, survived: 0, currentStreak: 0, maxStreak: 0, caughtDistribution: [0,0,0,0,0,0] };
+  }
+  function savePracticeStats(s){ try { localStorage.setItem(PRACTICE_STATS_KEY, JSON.stringify(s)); } catch(e){} }
+  function recordPracticeResult(survived, guessCount){
+    var s = loadPracticeStats();
+    s.played++;
+    if(survived){
+      s.survived++;
+      s.currentStreak++;
+      s.maxStreak = Math.max(s.maxStreak, s.currentStreak);
+    } else {
+      s.currentStreak = 0;
+      s.caughtDistribution[guessCount-1]++;
+    }
+    savePracticeStats(s);
+    return s;
+  }
+
   var GAME_PREFIX = 'ordlek-anti:game:';
   function gameKey(dateStr){ return GAME_PREFIX + dateStr; }
   function loadGame(dateStr){
@@ -305,6 +362,10 @@
     } catch(e){}
   }
 
+  // Namnet kommer från den delade profilen (shared/profile.js) — samma
+  // profil används i alla spel.
+  function getName(){ var p = NordhammerProfile.current(); return p ? p.name : ''; }
+
   /* ---------- Spelläge ---------- */
   var today = todayIso();
   var state = loadGame(today);
@@ -312,13 +373,45 @@
   // efterhand matchar inte ett redan sparat lokalt läge längre — kasta
   // det så spelaren automatiskt får ett nytt, tomt bräde.
   if(state && state.answer !== antiDailyAnswer(today)) state = null;
+  var wasFreshState = !state; // avgör om vi ska fråga servern om profilen redan spelat idag (se Start)
   if(!state){
-    state = { date: today, answer: antiDailyAnswer(today), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null };
+    state = { date: today, answer: antiDailyAnswer(today), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: false };
     saveGame(state);
     pruneOldGames(today);
   }
   var animating = false;
   var keyState = {}; // bokstav -> 'correct'|'present'|'absent'
+
+  /* ---------- Övningsläge ----------
+     Ett separat, icke-sparat spel med ett slumpat ord — för att kunna öva
+     hur många gånger som helst per dag, utan att påverka statistik,
+     familjetopplista eller maratontabell. */
+  var dailyState = state;
+  var practiceMode = false;
+  function randomPracticeWord(){
+    var todayWord = antiDailyAnswer(today); // uteslut dagens ord — annars kan ett slumpmässigt sammanträffande spoila det
+    var pool = ORDLEK_ANSWERS.filter(function(w){ return w !== todayWord; });
+    if(!pool.length) pool = ORDLEK_ANSWERS;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+  function startPractice(){
+    if(animating) return;
+    practiceMode = true;
+    state = { date: null, answer: randomPracticeWord(), guesses: [], status: 'playing', startedAt: Date.now(), finishedAt: null, submitted: true };
+    current = '';
+    animating = false;
+    hideOverlay();
+    render();
+  }
+  function exitPractice(){
+    practiceMode = false;
+    state = dailyState;
+    current = '';
+    animating = false;
+    hideOverlay();
+    render();
+    if(dailyState.status === 'blocked') renderBlockedPanel(dailyState.blockedSummary);
+  }
 
   function evaluateGuess(guess, answer){
     var marks = new Array(WORD_LEN).fill('absent');
@@ -438,6 +531,14 @@
   }
   function renderDayInfo(){
     var el = document.getElementById('dayInfo');
+    if(practiceMode){
+      el.textContent = '🎯 Övningsläge — tryck här för att gå tillbaka till dagens ord';
+      el.style.cursor = 'pointer';
+      el.onclick = exitPractice;
+      return;
+    }
+    el.style.cursor = '';
+    el.onclick = null;
     var n = dayNumber(state.date);
     el.textContent = 'Anti-Ordlek-dag #' + n + ' · ' + formatDateSv(state.date);
   }
@@ -445,7 +546,11 @@
     var el = document.getElementById('remainInfo');
     el.textContent = '🔍 ' + computeRemainingCount() + ' ord kan fortfarande vara rätt';
   }
-  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderRemainInfo(); }
+  function renderPracticeButton(){
+    var btn = document.getElementById('btnPractice');
+    if(btn) btn.classList.toggle('active', practiceMode);
+  }
+  function render(){ renderDayInfo(); rebuildKeyState(); renderBoard(); renderKeyboard(); renderRemainInfo(); renderPracticeButton(); }
 
   /* ---------- Indata ---------- */
   var LETTER_RE = /^[a-zåäö]$/;
@@ -500,7 +605,7 @@
         tiles.forEach(function(t,i){ setTimeout(function(){ t.classList.add('bounce'); }, i*90); });
         finish(false, rowEl);
       } else {
-        saveGame(state);
+        if(!practiceMode) saveGame(state);
         animating = false;
         rebuildKeyState();
         renderKeyboard();
@@ -513,14 +618,19 @@
   function finish(caught, rowEl){
     state.status = caught ? 'caught' : 'survived';
     state.finishedAt = Date.now();
-    saveGame(state);
+    if(!practiceMode) saveGame(state);
     animating = false;
     rebuildKeyState();
     renderKeyboard();
     renderRemainInfo();
     if(navigator.vibrate) try { navigator.vibrate(caught ? 60 : [20,40,20]); } catch(e){}
-    var stats = recordResult(!caught, state.guesses.length, state.date);
-    setTimeout(function(){ showResultPanel(caught, stats); }, caught ? 300 : 900);
+    if(practiceMode){
+      var pstats = recordPracticeResult(!caught, state.guesses.length);
+      setTimeout(function(){ showPracticeResultPanel(caught, pstats); }, caught ? 300 : 900);
+    } else {
+      var stats = recordResult(!caught, state.guesses.length, state.date);
+      setTimeout(function(){ showResultPanel(caught, stats); }, caught ? 300 : 900);
+    }
   }
 
   /* ---------- Delning ---------- */
@@ -561,6 +671,227 @@
     document.getElementById('shareClose').onclick = hideOverlay;
   }
 
+  /* ---------- Hur långt du kom, som ett "moves"-tal ----------
+     Återanvänder samma backend/poängformel som vanliga Ordlek (lägre
+     "moves" = bättre, se server/index.js). 0 = överlevde alla rader,
+     upp till MAX_GUESSES = togs på första raden. */
+  function survivalMoves(){
+    if(state.status === 'caught') return MAX_GUESSES - (state.guesses.length - 1);
+    return 0;
+  }
+  function movesLabel(moves){
+    if(moves === 0) return 'Överlevde';
+    return 'Föll rad ' + (MAX_GUESSES + 1 - moves);
+  }
+
+  /* ---------- Familje-topplista (samma Railway/Supabase-backend som
+     vanliga Ordlek) — egen seed-serie ('ordlek-anti:'+datum) så den
+     aldrig kolliderar med vanliga Ordleks dagliga lista. ---------- */
+  var LEADERBOARD_API = 'https://games-nordhammer-production.up.railway.app';
+  function apiBase(){
+    try { return (localStorage.getItem('ordlek-anti:api') || LEADERBOARD_API || '').replace(/\/+$/,''); }
+    catch(e){ return LEADERBOARD_API; }
+  }
+  function hasLeaderboard(){ return !!apiBase(); }
+  function seedFor(dateStr){ return 'ordlek-anti:' + dateStr; }
+  function lbFetchBySeed(seed, cb){
+    var base = apiBase(); if(!base) return cb(new Error('ingen topplista'));
+    fetch(base + '/api/leaderboard?seed=' + encodeURIComponent(seed) + '&limit=20')
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb(d && d.error ? new Error(d.error) : null, (d && d.scores) || []); })
+      .catch(function(e){ cb(e); });
+  }
+  function lbSubmit(payload, cb){
+    var base = apiBase(); if(!base) return cb && cb(new Error('ingen topplista'));
+    fetch(base + '/api/scores', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb && cb(d && d.error ? new Error(d.error) : null, d); })
+      .catch(function(e){ cb && cb(e); });
+  }
+  function fmtSeconds(s){
+    s = Math.round(s);
+    var m = Math.floor(s/60), sec = s%60;
+    return m + ':' + (sec<10?'0':'') + sec;
+  }
+  // Till skillnad från vanliga Ordlek (som bara visar de som löste ordet)
+  // visar Anti-Ordlek ALLA — hur långt man kom är själva poängen även om
+  // man blev tagen. Rankas efter moves (lägst/bäst först), inte efter
+  // servertidens seconds-ordning.
+  function lbRenderList(el, list, myName){
+    if(!list || !list.length){ el.innerHTML = '<div class="lb-empty">Var först på listan idag!</div>'; return; }
+    var sorted = list.slice().sort(function(a,b){
+      var am = a.moves == null ? 99 : a.moves, bm = b.moves == null ? 99 : b.moves;
+      return am - bm;
+    });
+    var medals = ['🥇','🥈','🥉'];
+    el.innerHTML = sorted.map(function(s,i){
+      var me = (myName && s.name === myName) ? ' me' : '';
+      var rank = i < 3 ? medals[i] : (i+1);
+      var badge = (s.moves != null) ? '<span class="lb-guesses">'+esc(movesLabel(s.moves))+'</span>' : '';
+      return '<div class="lb-row'+me+'"><span class="lb-rank">'+rank+'</span>' +
+             '<span class="lb-name">'+esc(s.name)+'</span>' +
+             badge +
+             '<span class="lb-time">'+fmtSeconds(s.seconds)+'</span></div>';
+    }).join('');
+  }
+  function setupLeaderboard(area, caught){
+    if(!hasLeaderboard()){ area.innerHTML = ''; return; }
+    var seed = seedFor(state.date);
+    var moves = survivalMoves();
+    function showList(){
+      area.innerHTML = '<div class="lb-title">🏆 Dagens familjetopplista</div><div class="lb-list">Laddar…</div>';
+      lbFetchBySeed(seed, function(err, list){
+        var el = area.querySelector('.lb-list');
+        if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
+        lbRenderList(el, list, getName());
+      });
+    }
+    if(state.submitted){ showList(); return; }
+    var seconds = Math.max(1, Math.round((state.finishedAt - state.startedAt)/1000));
+    state.submitted = true; saveGame(state);
+    lbSubmit({ name:getName(), mode:'ordlek-anti', tiles:WORD_LEN, seconds:seconds, moves:moves, seed:seed }, showList);
+    showList();
+  }
+
+  /* ---------- Maratontabell ----------
+     Samma /api/marathon-endpoint som vanliga Ordlek, men med
+     family=ordlek-anti så den bara summerar Anti-Ordleks egna seeds
+     (se MARATHON_FAMILIES i server/index.js). */
+  function showMarathonPanel(){
+    var panel = document.getElementById('panel');
+    panel.innerHTML = '<h2>🏁 Maratontabell</h2><div id="marList" class="lb-list">Laddar…</div>' +
+      '<button id="pHof" class="ghost">🏆 Hall of fame</button>' +
+      '<button id="pClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+    document.getElementById('pHof').onclick = showHallOfFamePanel;
+    var el = document.getElementById('marList');
+    var base = apiBase();
+    if(!base){ el.textContent = 'Ingen topplista kopplad.'; return; }
+    fetch(base + '/api/marathon?family=ordlek-anti').then(function(r){ return r.json(); }).then(function(d){
+      if(d.error){ el.textContent = 'Kunde inte hämta tabellen'; return; }
+      if(!d.rows || !d.rows.length){
+        el.innerHTML = '<div class="lb-empty">Maratontabellen startar '+formatDateSv(d.seasonStart)+' — häng med!</div>';
+        return;
+      }
+      var medals = ['🥇','🥈','🥉'];
+      var myName = getName();
+      el.innerHTML = d.rows.map(function(r){
+        var rank = r.rank <= 3 ? medals[r.rank-1] : r.rank;
+        var me = (myName && r.name === myName) ? ' me' : '';
+        return '<div class="lb-row'+me+'"><span class="lb-rank">'+rank+'</span>' +
+               '<span class="lb-name">'+esc(r.name)+'</span>' +
+               '<span class="lb-guesses">'+r.played+'/'+r.days+'</span>' +
+               '<span class="lb-time">'+r.points+' p</span></div>';
+      }).join('');
+    }).catch(function(){ el.textContent = 'Kunde inte hämta tabellen'; });
+  }
+
+  /* ---------- Fallande glitter (regnar så länge Hall of fame är öppen) ---------- */
+  var GLITTER_COLORS = ['#ffe27a','#ffffff','#ffd24d'];
+  function spawnGlitter(count){
+    var layer = document.getElementById('glitter');
+    if(!layer) return;
+    count = count || 1;
+    for(var i=0;i<count;i++){
+      var el = document.createElement('div');
+      el.className = 'glitter-piece';
+      var duration = 3 + Math.random()*2.5;
+      var delay = Math.random()*0.3;
+      el.style.left = (Math.random()*100) + 'vw';
+      el.style.animationDuration = duration + 's';
+      el.style.animationDelay = delay + 's';
+      el.style.setProperty('--drift', (Math.random()*60 - 30) + 'px');
+      if(Math.random() < 0.3){
+        el.textContent = '✨';
+        el.style.fontSize = (10 + Math.random()*10) + 'px';
+      } else {
+        var size = 2 + Math.random()*3;
+        el.style.width = size + 'px';
+        el.style.height = size + 'px';
+        el.style.borderRadius = '50%';
+        el.style.background = GLITTER_COLORS[Math.floor(Math.random()*GLITTER_COLORS.length)];
+        el.style.boxShadow = '0 0 6px 1px rgba(255,220,120,.8)';
+      }
+      layer.appendChild(el);
+      setTimeout(function(node){ node.remove(); }, (duration+delay)*1000 + 100, el);
+    }
+  }
+  var glitterTimer = null;
+  function startGlitterRain(){
+    if(glitterTimer) return;
+    spawnGlitter(14);
+    glitterTimer = setInterval(function(){ spawnGlitter(4); }, 350);
+  }
+  function stopGlitterRain(){
+    if(glitterTimer){ clearInterval(glitterTimer); glitterTimer = null; }
+  }
+
+  /* ---------- Hall of fame (tidigare avslutade månaders segrare) ---------- */
+  function showHallOfFamePanel(){
+    startGlitterRain();
+    var panel = document.getElementById('panel');
+    panel.innerHTML = '<h2>🏆 Hall of fame</h2><div id="hofList" class="lb-list">Laddar…</div>' +
+      '<button id="pBack" class="ghost">Tillbaka</button>';
+    document.getElementById('pBack').onclick = function(){ stopGlitterRain(); showMarathonPanel(); };
+    var el = document.getElementById('hofList');
+    var base = apiBase();
+    if(!base){ el.textContent = 'Ingen topplista kopplad.'; return; }
+    fetch(base + '/api/marathon/history?family=ordlek-anti').then(function(r){ return r.json(); }).then(function(d){
+      if(d.error){ el.textContent = 'Kunde inte hämta historiken'; return; }
+      if(!d.months || !d.months.length){
+        el.innerHTML = '<div class="lb-empty">Ingen avslutad månad än — kommer efter första hela kalendermånaden.</div>';
+        return;
+      }
+      el.innerHTML = d.months.map(function(m){
+        var monthLabel = formatMonthSv(m.month);
+        var names = m.champions.map(function(c){ return esc(c.name); }).join(' & ');
+        var points = m.champions[0].points;
+        return '<div class="lb-row"><span class="lb-rank">🥇</span>' +
+               '<span class="lb-name">'+names+' <span class="lb-hof-month">— '+monthLabel+'</span></span>' +
+               '<span class="lb-time">'+points+' p</span></div>';
+      }).join('');
+    }).catch(function(){ el.textContent = 'Kunde inte hämta historiken'; });
+  }
+
+  /* ---------- Redan spelat idag, på en annan enhet? ---------- */
+  function checkAlreadyPlayedElsewhere(cb){
+    if(!hasLeaderboard()) return cb(null);
+    var myName = (getName() || '').trim().toLowerCase();
+    if(!myName) return cb(null);
+    lbFetchBySeed(seedFor(today), function(err, list){
+      if(err || !list) return cb(null); // fail open — ett nätverksfel ska aldrig blockera spel
+      var hit = (list || []).filter(function(s){ return (s.name || '').trim().toLowerCase() === myName; })[0];
+      cb(hit || null);
+    });
+  }
+  function showAlreadyPlayedElsewhere(hit){
+    dailyState.status = 'blocked';
+    dailyState.submitted = true; // förhindrar att lbSubmit anropas igen av misstag denna session
+    dailyState.blockedSummary = { moves: hit.moves, seconds: hit.seconds };
+    saveGame(dailyState);
+    if(!practiceMode) renderBlockedPanel(dailyState.blockedSummary);
+  }
+  function renderBlockedPanel(summary){
+    var text = (summary.moves != null)
+      ? movesLabel(summary.moves).toLowerCase() + ', ' + fmtSeconds(summary.seconds)
+      : 'inget resultat registrerat, ' + fmtSeconds(summary.seconds);
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<div class="emoji">🔁</div><h2>Redan spelat idag</h2>' +
+      '<p>Du (' + esc(getName()) + ') har redan spelat dagens Anti-Ordlek idag, troligen på en annan enhet: ' + text + '.</p>' +
+      '<div id="lbArea" class="lb-area"><div class="lb-title">🏆 Dagens familjetopplista</div><div class="lb-list">Laddar…</div></div>' +
+      '<button id="pClose" class="ghost">Stäng</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pClose').onclick = hideOverlay;
+    lbFetchBySeed(seedFor(today), function(err, list){
+      var el = document.querySelector('#lbArea .lb-list');
+      if(!el) return;
+      if(err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
+      lbRenderList(el, list, getName());
+    });
+  }
+
   /* ---------- Paneler ---------- */
   function distHtml(dist, highlightIdx){
     var max = Math.max.apply(null, dist.concat([1]));
@@ -591,26 +922,45 @@
       statBlockHtml(stats) +
       '<div style="font-size:11.5px;color:var(--muted);margin:14px 0 2px;text-align:left">Föll i rad</div>' +
       distHtml(stats.caughtDistribution, caught ? state.guesses.length-1 : -1) +
+      '<div id="lbArea" class="lb-area"></div>' +
       '<button id="pShare">📋 Dela resultat</button>' +
       '<button id="pClose" class="ghost">Stäng</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pShare').onclick = function(){ doShare(document.getElementById('pShare')); };
     document.getElementById('pClose').onclick = hideOverlay;
+    setupLeaderboard(document.getElementById('lbArea'), caught);
   }
-  function showStatsPanel(){
-    var stats = loadStats();
+  function showPracticeResultPanel(caught, stats){
     var panel = document.getElementById('panel');
     panel.innerHTML =
-      '<h2>📊 Statistik</h2>' +
+      '<div class="emoji">'+(caught?'😬':'🙈')+'</div>' +
+      '<h2>'+(caught?'Du hittade det!':'Du klarade dig!')+'</h2>' +
+      '<p>'+(caught ? ('Du gissade <b>'+state.answer.toUpperCase()+'</b> av misstag på rad '+state.guesses.length+' av '+MAX_GUESSES+'.')
+                    : ('Ordet var <b>'+state.answer.toUpperCase()+'</b> — du undvek det hela vägen!')) + '</p>' +
+      statBlockHtml(stats) +
+      '<div style="font-size:11.5px;color:var(--muted);margin:14px 0 2px;text-align:left">Föll i rad</div>' +
+      distHtml(stats.caughtDistribution, caught ? state.guesses.length-1 : -1) +
+      '<p>🎯 Övningsläge — egen statistik, påverkar inte familjetävlingen.</p>' +
+      '<button id="pAgain">🔁 Nytt övningsord</button>' +
+      '<button id="pDaily" class="ghost">Till dagens ord</button>';
+    document.getElementById('overlay').classList.add('show');
+    document.getElementById('pAgain').onclick = startPractice;
+    document.getElementById('pDaily').onclick = exitPractice;
+  }
+  function showStatsPanel(){
+    var stats = practiceMode ? loadPracticeStats() : loadStats();
+    var panel = document.getElementById('panel');
+    panel.innerHTML =
+      '<h2>'+(practiceMode ? '📊 Övningsstatistik' : '📊 Statistik')+'</h2>' +
       statBlockHtml(stats) +
       '<div style="font-size:11.5px;color:var(--muted);margin:14px 0 2px;text-align:left">Föll i rad</div>' +
       distHtml(stats.caughtDistribution, -1) +
-      (state.status !== 'playing' ? '<button id="pShare2">📋 Dela dagens resultat</button>' : '') +
+      (!practiceMode && dailyState.status !== 'playing' ? '<button id="pShare2">📋 Dela dagens resultat</button>' : '') +
       '<button id="pClose" class="ghost">Stäng</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pClose').onclick = hideOverlay;
     var ps = document.getElementById('pShare2');
-    if(ps) ps.onclick = function(){ doShare(ps, state); };
+    if(ps) ps.onclick = function(){ doShare(ps, dailyState); };
   }
   function showRulesPanel(){
     var panel = document.getElementById('panel');
@@ -627,12 +977,15 @@
       '</div>' +
       '<p style="text-align:left"><b>Hårt läge:</b> varje ny gissning måste följa ledtrådarna hittills — gröna bokstäver stannar kvar, gula måste vara med, gråa får inte vara med. Du kan inte gömma dig bakom orelaterade ord.</p>' +
       '<p style="text-align:left">🔍-siffran ovanför brädet visar hur många ord i dagens-ord-listan som fortfarande kan vara rätt. Når den 1 är du farligt nära!</p>' +
+      '<p style="text-align:left">🎯 ger ett övningsläge du kan spela hur många gånger som helst. 🏆 familjetopplistan rankar alla — inte bara de som överlever — efter hur långt de kom. 🏁 maratontabellen räknar ihop hela månaden, samma golfpoäng-system som vanliga Ordlek.</p>' +
       '<button id="pClose">Nu kör vi!</button>';
     document.getElementById('overlay').classList.add('show');
     document.getElementById('pClose').onclick = hideOverlay;
   }
-  function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
+  function hideOverlay(){ document.getElementById('overlay').classList.remove('show'); stopGlitterRain(); }
 
+  document.getElementById('btnPractice').onclick = startPractice;
+  document.getElementById('btnMarathon').onclick = showMarathonPanel;
   document.getElementById('btnStats').onclick = showStatsPanel;
   document.getElementById('btnRules').onclick = showRulesPanel;
   document.getElementById('overlay').addEventListener('click', function(e){ if(e.target.id === 'overlay') hideOverlay(); });
@@ -645,19 +998,47 @@
     toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 1600);
   }
 
+  /* ---------- Profil ---------- */
+  function renderProfileBadge(){
+    var p = NordhammerProfile.current();
+    document.getElementById('btnProfile').textContent = p ? p.avatar : '👤';
+  }
+  document.getElementById('btnProfile').onclick = function(){
+    NordhammerProfile.openSwitcher(function(){ renderProfileBadge(); render(); });
+  };
+
   function showRulesIfFirstTime(){
     try {
       if(!localStorage.getItem(RULES_KEY)){ localStorage.setItem(RULES_KEY, '1'); showRulesPanel(); }
     } catch(e){}
   }
 
-  /* ---------- Start ---------- */
+  /* ---------- Start ----------
+     Refererar genomgående dailyState (inte den ombytbara `state`) — annars
+     kan ett övningspass som startas under nätverkskollen nedan råka styra
+     om vad kollen skriver till, se startPractice/showAlreadyPlayedElsewhere. */
   render();
-  if(state.status === 'playing'){
-    showRulesIfFirstTime();
+  if(dailyState.status === 'blocked'){
+    setTimeout(function(){ renderBlockedPanel(dailyState.blockedSummary); }, 200);
+  } else if(dailyState.status === 'playing'){
+    if(wasFreshState && hasLeaderboard()) dailyState.status = 'checking';
+    else showRulesIfFirstTime();
   } else {
-    setTimeout(function(){ showResultPanel(state.status === 'caught', loadStats()); }, 200);
+    setTimeout(function(){ showResultPanel(dailyState.status === 'caught', loadStats()); }, 200);
   }
+  NordhammerProfile.ensurePicker(function(){
+    renderProfileBadge();
+    if(dailyState.status === 'checking'){
+      checkAlreadyPlayedElsewhere(function(hit){
+        if(hit){
+          showAlreadyPlayedElsewhere(hit);
+        } else {
+          dailyState.status = 'playing';
+          showRulesIfFirstTime();
+        }
+      });
+    }
+  });
   </script>
 </body>
 </html>
