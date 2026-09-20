@@ -219,6 +219,7 @@
       <div class="spacer"></div>
       <button class="icon-btn" id="btnProfile" aria-label="Byt profil"></button>
       <button class="icon-btn" id="btnMarathon" aria-label="Maratontabell">🏁</button>
+      <button class="icon-btn" id="btnSuggest" aria-label="Föreslå ett ord">🎲</button>
       <button class="icon-btn" id="btnStats" aria-label="Statistik">📊</button>
       <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
     </header>
@@ -527,8 +528,8 @@
   }
   // Returnerar { blocked, message, usesJoker }. Grön/gul-brott blockerar
   // alltid; grå-brott blockeras bara om inga jokrar återstår.
-  function hardModeCheck(guess){
-    var hc = hardModeConstraints();
+  function hardModeCheck(guess, hc){
+    hc = hc || hardModeConstraints();
     var i, c;
     for(i=0;i<WORD_LEN;i++){
       if(hc.green[i] && guess[i] !== hc.green[i]){
@@ -550,6 +551,32 @@
       return { blocked: true, message: '"' + badGray.toUpperCase() + '" ska inte vara med — inga jokrar kvar', usesJoker: false };
     }
     return { blocked: false, message: null, usesJoker: false };
+  }
+
+  /* ---------- Föreslå ett ord ----------
+     För när man vet att ett giltigt ord finns (annars vore man ju
+     "forced", se jokrar ovan) men inte kommer på något själv. Väljer
+     ett SLUMPMÄSSIGT ord ur hela GUESS_SET som klarar hardModeCheck —
+     avsiktligt UTAN att undvika hemligheten. Om den filtrerade bort
+     hemligheten skulle knappen vara en gratis auto-vinst varje dag (bara
+     klicka och Enter 6 gånger) — nu bär den samma risk som en egen
+     gissning skulle, och blir farligare ju färre kandidater som är kvar,
+     precis som resten av spelet redan fungerar. */
+  function suggestWord(){
+    if(animating) return;
+    if(state.status !== 'playing'){ toast('Inget att föreslå just nu'); return; }
+    var hc = hardModeConstraints();
+    var already = {};
+    state.guesses.forEach(function(g){ already[g.word] = true; });
+    var candidates = [];
+    for(var i=0;i<ORDLEK_GUESSES.length;i++){
+      var w = ORDLEK_GUESSES[i];
+      if(already[w]) continue;
+      if(!hardModeCheck(w, hc).blocked) candidates.push(w);
+    }
+    if(!candidates.length){ toast('Inget giltigt ord kvar att föreslå'); return; }
+    current = candidates[Math.floor(Math.random() * candidates.length)];
+    renderBoard();
   }
 
   /* ---------- Kvarvarande kandidater ---------- */
@@ -1074,6 +1101,7 @@
       '<p style="text-align:left"><b>Hårt läge:</b> varje ny gissning måste följa ledtrådarna hittills — gröna bokstäver stannar kvar, gula måste vara med, gråa får inte vara med. Du kan inte gömma dig bakom orelaterade ord.</p>' +
       '<p style="text-align:left">🃏 Du har <b>'+JOKER_BUDGET+' jokrar</b> för hela partiet: en gissning som annars skulle bryta mot en grå bokstav tillåts ändå om du har jokrar kvar — kostar en joker, oavsett vilken bokstav. Utan jokrar gäller hårt läge fullt ut. Annars blir svenskans begränsade ordförråd nästan olösligt i slutet av partiet.</p>' +
       '<p style="text-align:left">🔍-siffran ovanför brädet visar hur många ord i dagens-ord-listan som fortfarande kan vara rätt. Når den 1 är du farligt nära!</p>' +
+      '<p style="text-align:left">🎲 Kommer du inte på ett ord som följer ledtrådarna? Knappen ovanför brädet föreslår ett slumpmässigt giltigt ord — men den vet inte vilket ord som är rätt, så den kan råka föreslå det också.</p>' +
       '<p style="text-align:left">🏆 Familjetopplistan rankar alla — inte bara de som överlever — efter hur långt de kom. 🏁 Maratontabellen räknar ihop hela månaden, samma golfpoäng-system som vanliga Ordlek.</p>' +
       '<p style="text-align:left"><b>Egen utmaning:</b> ett läge du kan spela hur många gånger som helst, mot din egen statistik — påverkar aldrig familjetävlingen. Byt läge längst upp på sidan — men först när du spelat klart dagens ord.</p>' +
       '<button id="pClose">Nu kör vi!</button>';
@@ -1089,6 +1117,7 @@
     startPractice();
   };
   document.getElementById('btnMarathon').onclick = showMarathonPanel;
+  document.getElementById('btnSuggest').onclick = suggestWord;
   document.getElementById('btnStats').onclick = showStatsPanel;
   document.getElementById('btnRules').onclick = showRulesPanel;
   document.getElementById('overlay').addEventListener('click', function(e){ if(e.target.id === 'overlay') hideOverlay(); });
