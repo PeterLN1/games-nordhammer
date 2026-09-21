@@ -1,24 +1,30 @@
 # Var är jag? — Street View-gissningsspel
 
-Test-prototyp: du ser en riktig Google Street View-bild från en slumpad
-plats var som helst i världen (inte begränsat till städer/kända platser).
-Du kan inte förflytta dig, men du kan snurra runt och zooma. Gissa vilket
-**land** bilden är tagen i. 5 rundor, max 5000 p totalt:
+Du ser en riktig Google Street View-bild från en slumpad plats var som
+helst i världen (inte begränsat till städer/kända platser). Du kan inte
+förflytta dig, men du kan snurra runt och zooma. Gissa vilket **land**
+bilden är tagen i genom att peka på en klickbar världskarta.
 
-- Rätt land: 1000 p
-- Fel land men rätt världsdel: 300 p
-- Ledtrådar, fritt valbara i valfri ordning (kostar sammanlagt max 700 p):
-  - 📍 Avstånd till Stockholm (−100 p)
-  - 🔤 Landets första bokstav (−300 p)
-  - 🌐 Grannländer (−300 p)
-
-  Tar man alla tre ledtrådarna och gissar rätt får man ändå 300 p kvar.
+- Rätt land direkt = rundan klar.
+- Fel land: landet markeras och du får peka på ett nytt. Efter 2 fel
+  visas en lista med de länder som geografiskt ligger närmast rätt svar
+  (klickbara direkt) som hjälp att snäva in gissningen.
+- Max **10 gissningar per runda** — når du taket avslöjas rätt land och
+  räknas som 10, och spelet går vidare.
+- Varje land du pekar på (rätt eller fel) visar sitt namn direkt, så man
+  lär sig geografi på vägen.
+- 5 rundor per spel. Totalt antal gissningar (lägre är bättre, tid som
+  utslag vid lika) skickas automatiskt till en global topplista — spela
+  hur många gånger du vill, ingen daglig begränsning.
 
 ## Skaffa en Google Maps API-nyckel
 
-Spelet använder tre Google Maps Platform-API:er. Det finns en gratisnivå,
-men du behöver ett Google Cloud-konto med betalinformation kopplat (se
-"Kostnadsskydd" nedan för hur du undviker överraskande kostnader).
+Spelet använder tre Google Maps Platform-API:er (för Street View-bilden
+och för att avgöra vilket land en plats faktiskt ligger i — själva
+kartan man pekar på är en gratis, nyckelfri vektorkarta, se nedan). Det
+finns en gratisnivå, men du behöver ett Google Cloud-konto med
+betalinformation kopplat (se "Kostnadsskydd" nedan för hur du undviker
+överraskande kostnader).
 
 1. Gå till [Google Cloud Console](https://console.cloud.google.com/).
 2. Skapa ett nytt projekt (eller använd ett befintligt), t.ex.
@@ -26,7 +32,7 @@ men du behöver ett Google Cloud-konto med betalinformation kopplat (se
 3. Gå till **APIs & Services → Library** och aktivera:
    - **Maps JavaScript API** (visar Street View-panoraman)
    - **Street View Static API** (används implicit av panorama-visningen)
-   - **Geocoding API** (avgör vilket land en plats faktiskt ligger i)
+   - **Geocoding API** (avgör vilket land en slumpad plats ligger i)
 4. Gå till **APIs & Services → Credentials → Create Credentials → API key**.
    En nyckel skapas direkt.
 5. Klicka på nyckeln för att redigera den och lägg på begränsningar
@@ -68,30 +74,61 @@ byggsteg måste göra det för att nyckeln ska finnas i produktion) — det är
 säkert så länge nyckeln är domän-begränsad enligt steg 5 ovan, precis som
 Google själva rekommenderar för klientsidans Maps-nycklar.
 
-## Hur platsen väljs
+## Hur kartan och gissningen fungerar
 
-`countries.js` innehåller ungefärliga mittpunkter för ~110 länder. Spelet
-slumpar ett land, förskjuter punkten slumpmässigt upp till 250 km åt
-valfritt håll, och letar upp närmaste Street View-panorama därifrån —
-bilden hamnar alltså var som helst i (eller nära) landet, inte bara i
-huvudstaden. Det faktiska rätta landet avgörs sedan genom omvänd
-geokodning av panoramats verkliga koordinat, så om punkten råkar hamna
-strax över en landsgräns blir svaret ändå rättvist bedömt.
+`world-countries.geo.json` är ett öppet, gratis dataset (Natural Earth,
+via [johan/world.geo.json](https://github.com/johan/world.geo.json)) med
+180 länder som riktiga klickbara polygoner — renderas med Leaflet, ingen
+Google-nyckel behövs för själva kartan. Varje land har ett ISO
+alpha-3-id (t.ex. `SWE`, `FRA`).
+
+`countries.js` innehåller:
+- `STREETVIEW_SEED_LOCATIONS` — ungefärliga mittpunkter för ~106 länder
+  (bara de som faktiskt finns som egen yta i 180-landsdatasetet). Spelet
+  slumpar ett av dessa, förskjuter punkten slumpmässigt upp till 250 km
+  åt valfritt håll, och letar upp närmaste Street View-panorama därifrån
+  — bilden hamnar alltså var som helst i (eller nära) landet, inte bara
+  i huvudstaden.
+- `STREETVIEW_COUNTRY_NAMES_SV` — svenska namn för alla 180 länder.
+- `STREETVIEW_ALPHA2_TO_ALPHA3` — Google Geocoding ger ISO alpha-2 (t.ex.
+  `SE`), kartans GeoJSON använder alpha-3 (`SWE`) — den här tabellen
+  kopplar ihop dem.
+
+Det faktiska rätta landet avgörs genom omvänd geokodning av panoramats
+verkliga koordinat, så om punkten råkar hamna strax över en landsgräns
+blir svaret ändå rättvist bedömt (även om den seedade avsikten var ett
+annat land).
+
+Avstånd för "närmaste länder"-ledtråden räknas mot varje lands
+bounding-box-mittpunkt (beräknad direkt från kartans polygoner vid
+sidladdning) — en enkel approximation, tillräckligt bra för en ledtråd.
+
+## Topplista
+
+Använder samma delade Railway/Supabase-backend (`server/index.js`) som
+Ordlek och Mahjong, mode `"streetview"`. Till skillnad från de andra
+spelen rankas topplistan efter **flest → färst gissningar** (med tid som
+utslag), inte tid — se `sortBy=moves` på `/api/leaderboard` samt
+`store.topByMoves()` i `server/index.js`. Namnet hämtas automatiskt från
+den valda "Vem spelar?"-profilen (`shared/profile.js`); spelet ber om en
+profil innan första rundan om ingen är vald än.
 
 ## Struktur
 
 ```
 streetview/
-├── index.html    # Spelet (Street View + land-gissning + poäng)
-├── config.js     # API-nyckel
-├── countries.js  # Frö-koordinater för länder (världen över)
+├── index.html               # Spelet (Street View + karta + topplista)
+├── config.js                # Google Maps API-nyckel
+├── countries.js              # Frö-koordinater, landnamn, alpha2->alpha3
+├── world-countries.geo.json  # Klickbara landgränser (Leaflet, gratis)
 └── README.md
 ```
 
 ## Vidareutveckling (idéer)
 
-- Fler länder / bättre spridda frö-koordinater i `countries.js`.
-- Tidsbegränsning per runda.
-- Flerspelarläge (samma rundor, jämför poäng) — kan återanvända
-  `shared/profile.js` som andra spel i repot gör.
-- Svårighetsnivåer (t.ex. bara Europa, eller kontinent-läge).
+- Bättre centroidberäkning (riktig polygon-centroid, inte bounding-box)
+  för en mer träffsäker "närmaste länder"-lista.
+- Fler frö-koordinater i `STREETVIEW_SEED_LOCATIONS` för jämnare global
+  spridning.
+- Svårighetsnivåer (t.ex. bara Europa).
+- Visa flagga eller annan snabb visuell ledtråd vid tveksamhet.

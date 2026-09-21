@@ -8,6 +8,7 @@
 <meta name="theme-color" content="#eef1f9" data-light="#eef1f9" data-dark="#0b1020">
 <title>Var är jag?</title>
 <script src="/shared/theme.js"></script>
+<script src="/shared/profile.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
   :root {
@@ -80,56 +81,73 @@
 
   #pano { position: absolute; inset: 0; background: #000; }
 
-  /* --- guess bar (country text input) --- */
-  .guessbar {
-    position: absolute; z-index: 30; left: 50%; bottom: max(16px, env(safe-area-inset-bottom));
-    transform: translateX(-50%);
-    display: flex; gap: 8px; align-items: center;
-    background: rgba(0,0,0,.55);
-    padding: 6px 6px 6px 16px; border-radius: 999px;
-    box-shadow: 0 6px 24px rgba(0,0,0,.4);
-    max-width: calc(100% - 32px);
+  /* --- kartvy (peka-på-land) --- */
+  #mapView {
+    position: absolute; inset: 0; z-index: 25; background: #0b1020;
   }
-  .guessbar input {
-    border: none; background: transparent; color: #fff; font-family: inherit; font-size: 15px;
-    outline: none; width: 220px; max-width: 40vw;
+  /* z-index (utan att synas i lagringsordningen) tvingar fram en egen
+     stacking context, så Leaflets interna lager (z-index 200-700) inte
+     läcker ut och kapar klick tänkta för confirmbar/nearestpanel ovanpå. */
+  #guessMap { position: absolute; inset: 0; z-index: 1; }
+  .maptopbar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+    padding: max(56px, calc(env(safe-area-inset-top) + 50px)) 16px 10px;
+    text-align: center; font-size: 14px; font-weight: 700; color: #fff;
+    background: linear-gradient(rgba(0,0,0,.5), rgba(0,0,0,0));
+    pointer-events: none;
   }
-  .guessbar input::placeholder { color: rgba(255,255,255,.6); }
-  .guessbar button {
-    font-family: inherit; font-weight: 800; font-size: 14px;
-    padding: 11px 22px; border-radius: 999px; border: none;
+
+  .toggleviewbtn {
+    position: absolute; z-index: 40; left: 50%; transform: translateX(-50%);
+    bottom: max(16px, env(safe-area-inset-bottom));
+    font-family: inherit; font-weight: 800; font-size: 15px;
+    padding: 13px 28px; border-radius: 999px; border: none;
     background: var(--accent); color: var(--accent-ink); cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0,0,0,.4);
   }
-  .guessbar button:disabled { opacity: .4; cursor: default; }
 
-  .hintbar {
-    position: absolute; z-index: 30; left: 50%; transform: translateX(-50%);
-    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 62px);
-    display: flex; gap: 6px; max-width: calc(100% - 32px);
+  .confirmbar {
+    position: absolute; z-index: 45; left: 16px; right: 16px;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(0,0,0,.75); color: #fff; border-radius: 16px;
+    padding: 12px 14px; box-shadow: 0 8px 26px rgba(0,0,0,.45);
   }
-  .hintbar button {
-    font-family: inherit; font-weight: 800; font-size: 12.5px; white-space: nowrap;
-    padding: 8px 12px; border-radius: 999px; border: none;
-    background: rgba(0,0,0,.55); color: #fff; cursor: pointer;
-    box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  .confirmbar .name { flex: 1; font-weight: 800; font-size: 15px; }
+  .confirmbar button {
+    font-family: inherit; font-weight: 800; font-size: 14px; border: none;
+    border-radius: 999px; padding: 10px 16px; cursor: pointer;
   }
-  .hintbar button:disabled { opacity: .45; cursor: default; }
+  .confirmbar .cancel { background: rgba(255,255,255,.14); color: #fff; }
+  .confirmbar .guess { background: var(--accent); color: var(--accent-ink); }
 
-  .hintlabel {
-    position: absolute; z-index: 30; left: 50%; transform: translateX(-50%);
-    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 110px);
-    background: rgba(0,0,0,.6); color: #fff; font-size: 13px; font-weight: 700;
-    padding: 8px 16px; border-radius: 14px; text-align: center;
-    max-width: calc(100% - 32px);
+  .guesscounter {
+    position: absolute; z-index: 30; right: 14px;
+    top: calc(max(6px, env(safe-area-inset-top)) + 46px);
+    background: rgba(0,0,0,.5); color: #fff; font-size: 12.5px; font-weight: 700;
+    padding: 5px 10px; border-radius: 999px;
   }
-  .hintlabel div { margin: 3px 0; }
+
+  .nearestpanel {
+    position: absolute; z-index: 35; left: 16px; right: 16px;
+    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 70px);
+    background: rgba(0,0,0,.7); border-radius: 14px; padding: 10px 12px;
+    color: #fff;
+  }
+  .nearestpanel .title { font-size: 12px; font-weight: 700; opacity: .8; margin-bottom: 6px; }
+  .nearestpanel .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .nearestpanel button {
+    font-family: inherit; font-weight: 700; font-size: 12.5px; border: none;
+    border-radius: 999px; padding: 7px 12px; cursor: pointer;
+    background: rgba(255,255,255,.16); color: #fff;
+  }
 
   /* --- overlays --- */
   .overlay {
     position: absolute; inset: 0; z-index: 50;
     background: rgba(0,0,0,.6);
     display: flex; align-items: center; justify-content: center;
-    padding: 16px;
+    padding: 16px; overflow-y: auto;
   }
   .hidden { display: none !important; }
   .panel {
@@ -137,10 +155,10 @@
     padding: 22px; max-width: 420px; width: 100%;
     box-shadow: 0 20px 60px rgba(0,0,0,.5);
     text-align: center;
+    margin: auto;
   }
   .panel h2 { margin: 0 0 6px; font-size: 20px; }
   .panel h2.good { color: var(--good); }
-  .panel h2.mid { color: var(--accent); }
   .panel h2.bad { color: var(--bad); }
   .panel p { margin: 6px 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
   .panel .big { font-size: 15px; color: var(--ink); font-weight: 700; }
@@ -165,6 +183,17 @@
   .setup code {
     background: var(--key-bg); padding: 2px 6px; border-radius: 6px; font-size: 12.5px;
   }
+
+  /* --- topplista --- */
+  .lb-title { font-weight: 800; font-size: 14px; margin: 16px 0 8px; }
+  .lb-list { text-align: left; font-size: 13.5px; }
+  .lb-row { display: flex; align-items: center; gap: 8px; padding: 5px 2px; border-bottom: 1px solid var(--line); }
+  .lb-row.me { background: rgba(255,179,0,.12); border-radius: 8px; }
+  .lb-rank { width: 22px; text-align: center; font-weight: 700; color: var(--muted); flex: 0 0 auto; }
+  .lb-name { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-guesses { color: var(--muted); font-size: 12.5px; flex: 0 0 auto; }
+  .lb-time { color: var(--muted); font-size: 12.5px; flex: 0 0 auto; min-width: 40px; text-align: right; }
+  .lb-empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
 </style>
 </head>
 <body>
@@ -174,19 +203,28 @@
       <div class="spacer"></div>
       <div class="info">
         <span class="pill" id="roundPill">Runda 1/5</span>
-        <span class="pill" id="scorePill">Poäng: 0</span>
+        <button class="nh-badge" id="profileBadge" aria-label="Byt profil"></button>
       </div>
     </header>
 
     <div id="pano"></div>
 
-    <div class="hintlabel hidden" id="hintLabel"></div>
-    <div class="hintbar" id="hintBar"></div>
-    <div class="guessbar" id="guessBar">
-      <input id="guessInput" type="text" list="countryDatalist" placeholder="Vilket land?" autocomplete="off" autocorrect="off" spellcheck="false">
-      <datalist id="countryDatalist"></datalist>
-      <button id="guessBtn" disabled>Gissa</button>
+    <div id="mapView" class="hidden">
+      <div id="guessMap"></div>
+      <div class="maptopbar">Peka på landet du tror det är</div>
+      <div class="guesscounter" id="guessCounter">Gissningar: 0/10</div>
+      <div class="nearestpanel hidden" id="nearestPanel">
+        <div class="title">Närmaste länder till rätt svar:</div>
+        <div class="chips" id="nearestChips"></div>
+      </div>
+      <div class="confirmbar hidden" id="confirmBar">
+        <span class="name" id="confirmName"></span>
+        <button class="cancel" id="confirmCancel" type="button">Avbryt</button>
+        <button class="guess" id="confirmGuess" type="button">Gissa</button>
+      </div>
     </div>
+
+    <button class="toggleviewbtn" id="toggleViewBtn" type="button">🌍 Gissa</button>
 
     <!-- Laddar / fel -->
     <div class="overlay" id="loadingOverlay">
@@ -211,8 +249,8 @@
     <div class="overlay hidden" id="resultOverlay">
       <div class="panel">
         <h2 id="resultTitle">Resultat</h2>
-        <div class="score" id="resultPoints">0 p</div>
         <p class="big" id="resultCountry"></p>
+        <p id="resultGuesses"></p>
         <div class="resultmap" id="resultMap"></div>
         <button class="primary" id="nextRoundBtn">Nästa runda →</button>
       </div>
@@ -222,12 +260,13 @@
     <div class="overlay hidden" id="finalOverlay">
       <div class="panel">
         <h2>Spelet klart!</h2>
-        <div class="score" id="finalScore">0 p</div>
-        <p>av max <span id="finalMax">0</span> poäng</p>
+        <div class="score" id="finalGuesses">0</div>
+        <p>gissningar totalt över 5 rundor, på <span id="finalTime">0:00</span></p>
         <table class="roundtable">
-          <thead><tr><th>Runda</th><th>Land</th><th>Resultat</th><th>Poäng</th></tr></thead>
+          <thead><tr><th>Runda</th><th>Land</th><th>Gissningar</th></tr></thead>
           <tbody id="roundBody"></tbody>
         </table>
+        <div id="lbArea"></div>
         <button class="primary" id="playAgainBtn">Spela igen</button>
       </div>
     </div>
@@ -241,69 +280,26 @@
     "use strict";
 
     var TOTAL_ROUNDS = 5;
-    var POINTS_PER_ROUND = 1000;
-    var CONTINENT_BONUS = 300;
-    var MAX_ATTEMPTS_PER_ROUND = 5;
-    var JITTER_KM = 250;
-    var HOME_LAT = 59.33, HOME_LNG = 18.06; // Stockholm, referenspunkt för avstånds-ledtråden
+    var MAX_GUESSES_PER_ROUND = 10;
+    var NEAREST_HINT_AFTER = 2; // visa "närmaste länder" efter så här många fel
+    var NEAREST_HINT_COUNT = 5;
 
-    // Ledtrådar, fritt valbara i valfri ordning — var och en kan bara tas
-    // en gång per runda. Summan av alla tre (700p) är mindre än full poäng
-    // (1000p) — tar man alla ledtrådar och gissar rätt får man ändå 300p kvar.
-    var HINT_TIERS = [
-      {
-        icon: '📍',
-        cost: 100,
-        compute: function(t){
-          var km = Math.round(distKm(HOME_LAT, HOME_LNG, t.lat, t.lng) / 50) * 50;
-          return 'Avstånd: ca ' + km + ' km från Stockholm';
-        }
-      },
-      {
-        icon: '🔤',
-        cost: 300,
-        compute: function(t){
-          return 'Landets namn börjar på "' + t.countryName.charAt(0).toUpperCase() + '"';
-        }
-      },
-      {
-        icon: '🌐',
-        cost: 300,
-        compute: function(t){
-          var borders = bordersLookup[normalize(t.countryName)];
-          if (borders === undefined) return null;
-          return borders.length ? 'Gränsar till: ' + borders.join(', ') : 'Inga landgränser (ö-nation)';
-        }
-      }
-    ];
-
-    // Normaliserade synonymer som ska räknas som samma land som varandra.
-    var ALIAS_GROUPS = [
-      ["usa", "amerika", "amerikas forenta stater", "forenta staterna", "us", "united states"],
-      ["storbritannien", "england", "uk", "great britain", "united kingdom", "grossbritannien"],
-      ["sydkorea", "korea", "sodra korea", "south korea"],
-      ["ryssland", "russia"],
-      ["forenade arabemiraten", "uae", "emiraten"],
-      ["tjeckien", "tjeckiska republiken", "czechia"],
-      ["nederlanderna", "holland"],
-      ["elfenbenskusten", "cote divoire", "ivory coast"]
-    ];
-    var ALIAS_LOOKUP = {};
-    ALIAS_GROUPS.forEach(function(group, gi){
-      group.forEach(function(w){ ALIAS_LOOKUP[w] = gi; });
-    });
-
-    var results = []; // { countryName, guessText, correct, continentCorrect, hintCostUsed, points, lat, lng }
-    var usedIndexes = new Set();
+    var results = []; // { code, nameSv, guesses, solved }
+    var usedSeedIndexes = new Set();
     var currentRound = 0;
-    var currentTarget = null; // { lat, lng, pano, countryName, continent }
-    var totalScore = 0;
+    var currentTarget = null; // { lat, lng, pano, code, nameSv }
     var panorama = null;
     var resultMapInstance = null;
-    var hintsUsed = [false, false, false]; // vilka av HINT_TIERS som tagits denna runda
-    var hintCostUsed = 0;
-    var countryContinent = {}; // normaliserat landnamn -> kontinent
-    var bordersLookup = {}; // normaliserat landnamn -> array av grannländer
+    var guessMap = null;
+    var countryLayer = null;
+    var countryLayersByCode = {}; // code -> Leaflet layer
+    var countryCentroids = {}; // code -> { lat, lng }
+    var wrongCodesThisRound = {};
+    var pendingCode = null;
+    var attemptsThisRound = 0;
+    var gameStartedAt = null;
+    var gameFinishedAt = null;
+    var submitted = false;
 
     var loadingOverlay = document.getElementById('loadingOverlay');
     var loadingSpinner = document.getElementById('loadingSpinner');
@@ -312,72 +308,15 @@
     var setupOverlay = document.getElementById('setupOverlay');
     var resultOverlay = document.getElementById('resultOverlay');
     var finalOverlay = document.getElementById('finalOverlay');
-    var guessBar = document.getElementById('guessBar');
-    var guessInput = document.getElementById('guessInput');
-    var guessBtn = document.getElementById('guessBtn');
-    var hintBar = document.getElementById('hintBar');
-    var hintLabel = document.getElementById('hintLabel');
-    var hintButtons = HINT_TIERS.map(function(tier, i){
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.disabled = true;
-      hintBar.appendChild(btn);
-      btn.addEventListener('click', function(){ useHint(i); });
-      return btn;
-    });
     var roundPill = document.getElementById('roundPill');
-    var scorePill = document.getElementById('scorePill');
     var headerInfo = document.querySelector('header .info');
-
-    function shuffle(arr){
-      for (var i = arr.length - 1; i > 0; i--){
-        var j = Math.floor(Math.random() * (i + 1));
-        var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
-      }
-      return arr;
-    }
-
-    function normalize(str){
-      return String(str || '')
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase().trim();
-    }
-
-    function sameCountry(guessNorm, correctNorm){
-      if (!guessNorm) return false;
-      if (guessNorm === correctNorm) return true;
-      var ga = ALIAS_LOOKUP[guessNorm];
-      var gb = ALIAS_LOOKUP[correctNorm];
-      return ga !== undefined && ga === gb;
-    }
-
-    function buildContinentLookup(){
-      window.STREETVIEW_COUNTRIES.forEach(function(c){
-        countryContinent[normalize(c.name)] = c.continent;
-      });
-      var fallback = window.STREETVIEW_CONTINENT_FALLBACK || {};
-      Object.keys(fallback).forEach(function(name){
-        var norm = normalize(name);
-        if (!countryContinent[norm]) countryContinent[norm] = fallback[name];
-      });
-
-      var borders = window.STREETVIEW_BORDERS || {};
-      Object.keys(borders).forEach(function(name){
-        bordersLookup[normalize(name)] = borders[name];
-      });
-    }
-
-    // Slår upp kontinent för ett normaliserat landnamn, även om det bara
-    // finns som synonym (alias) till ett land vi redan känner kontinenten för.
-    function getContinent(norm){
-      if (countryContinent[norm]) return countryContinent[norm];
-      var gid = ALIAS_LOOKUP[norm];
-      if (gid === undefined) return null;
-      for (var key in countryContinent){
-        if (ALIAS_LOOKUP[key] === gid) return countryContinent[key];
-      }
-      return null;
-    }
+    var mapView = document.getElementById('mapView');
+    var toggleViewBtn = document.getElementById('toggleViewBtn');
+    var guessCounter = document.getElementById('guessCounter');
+    var confirmBar = document.getElementById('confirmBar');
+    var confirmName = document.getElementById('confirmName');
+    var nearestPanel = document.getElementById('nearestPanel');
+    var nearestChips = document.getElementById('nearestChips');
 
     function distKm(lat1, lng1, lat2, lng2){
       var R = 6371;
@@ -389,6 +328,14 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
+    function shuffle(arr){
+      for (var i = arr.length - 1; i > 0; i--){
+        var j = Math.floor(Math.random() * (i + 1));
+        var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+      }
+      return arr;
+    }
+
     // Slumpar en punkt inom en cirkel (jämnt fördelad över ytan) runt (lat,lng).
     function jitterPoint(lat, lng, maxKm){
       var angle = Math.random() * 2 * Math.PI;
@@ -398,11 +345,111 @@
       return { lat: lat + dLat, lng: lng + dLng };
     }
 
-    function populateDatalist(){
-      var list = document.getElementById('countryDatalist');
-      var names = window.STREETVIEW_COUNTRIES.map(function(c){ return c.name; }).sort();
-      list.innerHTML = names.map(function(n){ return '<option value="' + n.replace(/"/g, '&quot;') + '">'; }).join('');
+    function codeForFeature(feature){
+      if (feature.id === '-99'){
+        var ov = window.STREETVIEW_DASH99_OVERRIDES[feature.properties.name];
+        return ov ? ov.code : null;
+      }
+      return feature.id;
     }
+
+    function nameForFeature(feature){
+      if (feature.id === '-99'){
+        var ov = window.STREETVIEW_DASH99_OVERRIDES[feature.properties.name];
+        return ov ? ov.nameSv : feature.properties.name;
+      }
+      return window.STREETVIEW_COUNTRY_NAMES_SV[feature.id] || feature.properties.name;
+    }
+
+    // ---- Karta (Leaflet + GeoJSON, ingen Google-nyckel behövs) ----
+    function initGuessMap(){
+      // zoomControl: false — Leaflets standardplacering (uppe till vänster)
+      // krockar med sidhuvudets tillbakapil på samma hörn. Pinch/scroll/
+      // dubbelklick för att zooma fungerar ändå.
+      guessMap = L.map('guessMap', { attributionControl: false, worldCopyJump: true, minZoom: 1, zoomControl: false })
+        .setView([20, 10], 2);
+      L.control.attribution({ prefix: false }).addTo(guessMap);
+
+      return fetch('/streetview/world-countries.geo.json')
+        .then(function(r){ return r.json(); })
+        .then(function(geo){
+          countryLayer = L.geoJSON(geo, {
+            style: baseStyle,
+            onEachFeature: function(feature, layer){
+              var code = codeForFeature(feature);
+              if (code){
+                countryLayersByCode[code] = layer;
+                countryCentroids[code] = layer.getBounds().getCenter();
+              }
+              layer.on('click', function(){ onCountryTap(feature, layer); });
+            }
+          }).addTo(guessMap);
+        });
+    }
+
+    function baseStyle(){
+      return { color: 'rgba(255,255,255,.55)', weight: 1, fillColor: '#4a6fa5', fillOpacity: .55 };
+    }
+    function wrongStyle(){
+      return { color: 'rgba(255,255,255,.4)', weight: 1, fillColor: '#3a3f52', fillOpacity: .55 };
+    }
+    function pendingStyle(){
+      return { color: '#fff', weight: 2, fillColor: '#ffb300', fillOpacity: .75 };
+    }
+
+    function restyleLayer(code){
+      var layer = countryLayersByCode[code];
+      if (!layer) return;
+      if (code === pendingCode) layer.setStyle(pendingStyle());
+      else if (wrongCodesThisRound[code]) layer.setStyle(wrongStyle());
+      else layer.setStyle(baseStyle());
+    }
+
+    function onCountryTap(feature, layer){
+      var code = codeForFeature(feature);
+      if (!code || wrongCodesThisRound[code]) return;
+      var previous = pendingCode;
+      pendingCode = code;
+      // Måste sätta pendingCode INNAN vi återställer den förra rutan —
+      // annars ser restyleLayer(previous) fortfarande det gamla pendingCode-
+      // värdet och målar tillbaka den förra rutan som "vald" igen.
+      if (previous && previous !== code) restyleLayer(previous);
+      restyleLayer(code);
+      confirmName.textContent = nameForFeature(feature);
+      confirmBar.classList.remove('hidden');
+    }
+
+    document.getElementById('confirmCancel').addEventListener('click', function(){
+      var prev = pendingCode;
+      pendingCode = null;
+      confirmBar.classList.add('hidden');
+      if (prev) restyleLayer(prev);
+    });
+    document.getElementById('confirmGuess').addEventListener('click', function(){
+      if (pendingCode) submitGuess(pendingCode);
+    });
+
+    function resetMapForRound(){
+      wrongCodesThisRound = {};
+      pendingCode = null;
+      confirmBar.classList.add('hidden');
+      nearestPanel.classList.add('hidden');
+      nearestChips.innerHTML = '';
+      if (countryLayer){
+        countryLayer.eachLayer(function(layer){ layer.setStyle(baseStyle()); });
+      }
+      if (guessMap) guessMap.setView([20, 10], 2);
+    }
+
+    // ---- Vy-växling bild/karta ----
+    var showingMap = false;
+    function setMapVisible(show){
+      showingMap = show;
+      mapView.classList.toggle('hidden', !show);
+      toggleViewBtn.textContent = show ? '📷 Bild' : '🌍 Gissa';
+      if (show && guessMap) setTimeout(function(){ guessMap.invalidateSize(); }, 50);
+    }
+    toggleViewBtn.addEventListener('click', function(){ setMapVisible(!showingMap); });
 
     // ---- Street View / Geocoding ----
     function loadGoogleMaps(){
@@ -441,7 +488,10 @@
       });
     }
 
-    function reverseGeocodeCountry(lat, lng){
+    // Returnerar ISO alpha-3-koden (samma som kartans GeoJSON-id) för en
+    // riktig koordinat, eller null om Google gav ett land som inte finns
+    // med som egen yta på vår karta.
+    function reverseGeocodeCountryCode(lat, lng){
       return new Promise(function(resolve){
         var geocoder = new google.maps.Geocoder();
         geocoder.geocode({ location: { lat: lat, lng: lng } }, function(res, status){
@@ -450,7 +500,8 @@
               var comps = res[i].address_components;
               for (var j = 0; j < comps.length; j++){
                 if (comps[j].types.indexOf('country') !== -1){
-                  resolve(comps[j].long_name);
+                  var alpha2 = comps[j].short_name;
+                  resolve(window.STREETVIEW_ALPHA2_TO_ALPHA3[alpha2] || null);
                   return;
                 }
               }
@@ -463,22 +514,22 @@
 
     async function findRoundLocation(){
       var indexes = [];
-      for (var i = 0; i < window.STREETVIEW_COUNTRIES.length; i++){
-        if (!usedIndexes.has(i)) indexes.push(i);
+      for (var i = 0; i < window.STREETVIEW_SEED_LOCATIONS.length; i++){
+        if (!usedSeedIndexes.has(i)) indexes.push(i);
       }
       shuffle(indexes);
-      var attempts = Math.min(MAX_ATTEMPTS_PER_ROUND, indexes.length);
+      var attempts = Math.min(6, indexes.length);
       for (var k = 0; k < attempts; k++){
         var idx = indexes[k];
-        var seed = window.STREETVIEW_COUNTRIES[idx];
-        var jittered = jitterPoint(seed.lat, seed.lng, JITTER_KM);
+        var seed = window.STREETVIEW_SEED_LOCATIONS[idx];
+        var jittered = jitterPoint(seed.lat, seed.lng, 250);
         var res = await resolvePanorama(jittered, 50000);
         if (!res.ok) res = await resolvePanorama(jittered, 150000);
         if (res.ok){
-          var countryName = await reverseGeocodeCountry(res.lat, res.lng);
-          if (countryName){
-            usedIndexes.add(idx);
-            return { lat: res.lat, lng: res.lng, pano: res.pano, countryName: countryName };
+          var code = await reverseGeocodeCountryCode(res.lat, res.lng);
+          if (code && window.STREETVIEW_COUNTRY_NAMES_SV[code]){
+            usedSeedIndexes.add(idx);
+            return { lat: res.lat, lng: res.lng, pano: res.pano, code: code, nameSv: window.STREETVIEW_COUNTRY_NAMES_SV[code] };
           }
         }
       }
@@ -500,46 +551,15 @@
       });
     }
 
-    // ---- Round flow ----
+    // ---- Rundflöde ----
     async function startRound(){
       currentRound++;
       roundPill.textContent = 'Runda ' + currentRound + '/' + TOTAL_ROUNDS;
-      guessInput.value = '';
-      guessBtn.disabled = true;
-      hintsUsed = [false, false, false];
-      hintCostUsed = 0;
-      hintLabel.innerHTML = '';
-      hintLabel.classList.add('hidden');
-      hintButtons.forEach(function(btn){ btn.disabled = true; });
+      attemptsThisRound = 0;
+      guessCounter.textContent = 'Gissningar: 0/' + MAX_GUESSES_PER_ROUND;
+      resetMapForRound();
+      setMapVisible(false);
       await loadRound();
-    }
-
-    function refreshHintButtons(){
-      hintButtons.forEach(function(btn, i){
-        var tier = HINT_TIERS[i];
-        if (hintsUsed[i]){
-          btn.disabled = true;
-          btn.textContent = tier.icon + ' ✓';
-        } else {
-          btn.disabled = !currentTarget;
-          btn.textContent = tier.icon + ' −' + tier.cost + 'p';
-        }
-      });
-    }
-
-    function useHint(i){
-      if (hintsUsed[i] || !currentTarget) return;
-      var tier = HINT_TIERS[i];
-      var text = tier.compute(currentTarget);
-      hintsUsed[i] = true;
-      if (text !== null){
-        hintCostUsed += tier.cost;
-        var line = document.createElement('div');
-        line.textContent = text;
-        hintLabel.appendChild(line);
-        hintLabel.classList.remove('hidden');
-      }
-      refreshHintButtons();
     }
 
     async function loadRound(){
@@ -555,111 +575,197 @@
         loadingText.textContent = 'Hittade ingen Street View-bild just nu.';
         return;
       }
-      target.continent = getContinent(normalize(target.countryName));
       currentTarget = target;
-      refreshHintButtons();
       renderPanorama(target);
       loadingOverlay.classList.add('hidden');
     }
 
     retryBtn.addEventListener('click', loadRound);
 
-    function lockGuess(){
-      var typed = guessInput.value.trim();
-      if (!typed || !currentTarget) return;
-      var guessNorm = normalize(typed);
-      var correctNorm = normalize(currentTarget.countryName);
-      var correct = sameCountry(guessNorm, correctNorm);
-      var continentCorrect = false;
-      if (!correct){
-        var guessContinent = getContinent(guessNorm);
-        continentCorrect = !!guessContinent && !!currentTarget.continent && guessContinent === currentTarget.continent;
-      }
-      var pts = correct ? POINTS_PER_ROUND : (continentCorrect ? CONTINENT_BONUS : 0);
-      pts = Math.max(0, pts - hintCostUsed);
-      totalScore += pts;
-      results.push({
-        countryName: currentTarget.countryName,
-        guessText: typed,
-        correct: correct,
-        continentCorrect: continentCorrect,
-        hintCostUsed: hintCostUsed,
-        points: pts,
-        lat: currentTarget.lat,
-        lng: currentTarget.lng
+    function nearestCountriesTo(target, excludeCode, count){
+      var list = [];
+      Object.keys(countryCentroids).forEach(function(code){
+        if (code === excludeCode) return;
+        var c = countryCentroids[code];
+        list.push({ code: code, name: window.STREETVIEW_COUNTRY_NAMES_SV[code] || code, km: distKm(target.lat, target.lng, c.lat, c.lng) });
       });
-      scorePill.textContent = 'Poäng: ' + totalScore;
+      list.sort(function(a, b){ return a.km - b.km; });
+      return list.slice(0, count);
+    }
+
+    function showNearestHint(){
+      var list = nearestCountriesTo(currentTarget, currentTarget.code, NEAREST_HINT_COUNT);
+      nearestChips.innerHTML = '';
+      list.forEach(function(item){
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = item.name;
+        btn.addEventListener('click', function(){ submitGuess(item.code); });
+        nearestChips.appendChild(btn);
+      });
+      nearestPanel.classList.remove('hidden');
+    }
+
+    function submitGuess(code){
+      pendingCode = null;
+      confirmBar.classList.add('hidden');
+      attemptsThisRound++;
+      guessCounter.textContent = 'Gissningar: ' + attemptsThisRound + '/' + MAX_GUESSES_PER_ROUND;
+
+      if (code === currentTarget.code){
+        finishRound(true);
+        return;
+      }
+
+      wrongCodesThisRound[code] = true;
+      restyleLayer(code);
+
+      if (attemptsThisRound >= MAX_GUESSES_PER_ROUND){
+        finishRound(false);
+        return;
+      }
+      if (attemptsThisRound >= NEAREST_HINT_AFTER){
+        showNearestHint();
+      }
+    }
+
+    function finishRound(solved){
+      results.push({ code: currentTarget.code, nameSv: currentTarget.nameSv, guesses: attemptsThisRound, solved: solved });
       showRoundResult(results[results.length - 1]);
     }
 
-    guessBtn.addEventListener('click', lockGuess);
-    guessInput.addEventListener('input', function(){
-      guessBtn.disabled = guessInput.value.trim().length === 0;
-    });
-    guessInput.addEventListener('keydown', function(ev){
-      if (ev.key === 'Enter' && !guessBtn.disabled) lockGuess();
-    });
-
     function showRoundResult(r){
       var titleEl = document.getElementById('resultTitle');
-      var titleText = r.correct ? 'Rätt!' : (r.continentCorrect ? 'Nästan!' : 'Fel!');
-      titleEl.textContent = titleText;
-      titleEl.className = r.correct ? 'good' : (r.continentCorrect ? 'mid' : 'bad');
-      document.getElementById('resultPoints').textContent = r.points + ' p';
-      var msg;
-      if (r.correct){
-        msg = 'Det var ' + r.countryName + '.';
-      } else if (r.continentCorrect){
-        msg = 'Du gissade ' + r.guessText + ' — fel land, men rätt världsdel! Rätt svar var ' + r.countryName + '.';
-      } else {
-        msg = 'Du gissade ' + r.guessText + ' — rätt svar var ' + r.countryName + '.';
-      }
-      if (r.hintCostUsed > 0) msg += ' (ledtrådar använda, −' + r.hintCostUsed + ' p)';
-      document.getElementById('resultCountry').textContent = msg;
+      titleEl.textContent = r.solved ? 'Rätt!' : 'Slut på gissningar';
+      titleEl.className = r.solved ? 'good' : 'bad';
+      document.getElementById('resultCountry').textContent = 'Det var ' + r.nameSv + '.';
+      document.getElementById('resultGuesses').textContent = r.solved ?
+        ('Du klarade det på ' + r.guesses + ' gissning' + (r.guesses === 1 ? '' : 'ar') + '.') :
+        ('Du hann inte gissa rätt på ' + MAX_GUESSES_PER_ROUND + ' försök.');
       resultOverlay.classList.remove('hidden');
 
       if (resultMapInstance){ resultMapInstance.remove(); resultMapInstance = null; }
       resultMapInstance = L.map('resultMap', { attributionControl: false, zoomControl: false, dragging: false, scrollWheelZoom: false });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(resultMapInstance);
-      L.circleMarker([r.lat, r.lng], {
+      L.circleMarker([currentTarget.lat, currentTarget.lng], {
         radius: 8, color: '#fff', weight: 2, fillColor: '#c94b4b', fillOpacity: 1
       }).addTo(resultMapInstance);
-      resultMapInstance.setView([r.lat, r.lng], 5);
+      resultMapInstance.setView([currentTarget.lat, currentTarget.lng], 5);
     }
 
     document.getElementById('nextRoundBtn').addEventListener('click', function(){
       resultOverlay.classList.add('hidden');
       if (currentRound >= TOTAL_ROUNDS){
+        gameFinishedAt = Date.now();
         showFinal();
       } else {
         startRound();
       }
     });
 
+    function fmtTime(seconds){
+      seconds = Math.round(seconds);
+      var m = Math.floor(seconds / 60), s = seconds % 60;
+      return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
     function showFinal(){
       var body = document.getElementById('roundBody');
       body.innerHTML = '';
+      var totalGuesses = 0;
       results.forEach(function(r, i){
+        totalGuesses += r.guesses;
         var tr = document.createElement('tr');
-        var resultIcon = r.correct ? '✅' : (r.continentCorrect ? '🌍' : '❌');
-        tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + r.countryName + '</td><td>' +
-          resultIcon + '</td><td>' + r.points + (r.hintCostUsed > 0 ? ' 💡' : '') + '</td>';
+        tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + r.nameSv + '</td><td>' +
+          r.guesses + (r.solved ? '' : ' (ej löst)') + '</td>';
         body.appendChild(tr);
       });
-      document.getElementById('finalScore').textContent = totalScore + ' p';
-      document.getElementById('finalMax').textContent = (TOTAL_ROUNDS * POINTS_PER_ROUND) + ' p';
+      var seconds = Math.max(1, Math.round((gameFinishedAt - gameStartedAt) / 1000));
+      document.getElementById('finalGuesses').textContent = totalGuesses;
+      document.getElementById('finalTime').textContent = fmtTime(seconds);
       finalOverlay.classList.remove('hidden');
+      submitScore(totalGuesses, seconds);
     }
 
     document.getElementById('playAgainBtn').addEventListener('click', function(){
       results = [];
-      usedIndexes = new Set();
+      usedSeedIndexes = new Set();
       currentRound = 0;
-      totalScore = 0;
-      scorePill.textContent = 'Poäng: 0';
+      submitted = false;
       finalOverlay.classList.add('hidden');
+      gameStartedAt = Date.now();
       startRound();
     });
+
+    // ---- Topplista (samma Railway/Supabase-backend som Ordlek/Mahjong) ----
+    var LEADERBOARD_API = 'https://games-nordhammer-production.up.railway.app';
+    function apiBase(){
+      try { return (localStorage.getItem('streetview:api') || LEADERBOARD_API || '').replace(/\/+$/, ''); }
+      catch(e){ return LEADERBOARD_API; }
+    }
+    function hasLeaderboard(){ return !!apiBase(); }
+    function getName(){ var p = window.NordhammerProfile && NordhammerProfile.current(); return p ? p.name : ''; }
+    function lbFetch(cb){
+      var base = apiBase(); if (!base) return cb(new Error('ingen topplista'));
+      fetch(base + '/api/leaderboard?mode=streetview&tiles=' + TOTAL_ROUNDS + '&sortBy=moves&limit=20')
+        .then(function(r){ return r.json(); })
+        .then(function(d){ cb(d && d.error ? new Error(d.error) : null, (d && d.scores) || []); })
+        .catch(function(e){ cb(e); });
+    }
+    function lbSubmit(payload, cb){
+      var base = apiBase(); if (!base) return cb && cb(new Error('ingen topplista'));
+      fetch(base + '/api/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        .then(function(r){ return r.json(); })
+        .then(function(d){ cb && cb(d && d.error ? new Error(d.error) : null, d); })
+        .catch(function(e){ cb && cb(e); });
+    }
+    function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+    function lbRenderList(el, list, myName){
+      if (!list || !list.length){ el.innerHTML = '<div class="lb-empty">Var först på topplistan!</div>'; return; }
+      var medals = ['🥇', '🥈', '🥉'];
+      el.innerHTML = list.map(function(s, i){
+        var me = (myName && s.name === myName) ? ' me' : '';
+        var rank = i < 3 ? medals[i] : (i + 1);
+        return '<div class="lb-row' + me + '"><span class="lb-rank">' + rank + '</span>' +
+          '<span class="lb-name">' + esc(s.name) + '</span>' +
+          '<span class="lb-guesses">' + s.moves + ' gissn.</span>' +
+          '<span class="lb-time">' + fmtTime(s.seconds) + '</span></div>';
+      }).join('');
+    }
+    function submitScore(totalGuesses, seconds){
+      var area = document.getElementById('lbArea');
+      if (!hasLeaderboard()){ area.innerHTML = ''; return; }
+      function showList(){
+        area.innerHTML = '<div class="lb-title">🏆 Topplista</div><div class="lb-list">Laddar…</div>';
+        lbFetch(function(err, list){
+          var el = area.querySelector('.lb-list');
+          if (err){ el.textContent = 'Kunde inte hämta topplistan'; return; }
+          lbRenderList(el, list, getName());
+        });
+      }
+      if (submitted){ showList(); return; }
+      submitted = true;
+      lbSubmit({ name: getName(), mode: 'streetview', tiles: TOTAL_ROUNDS, seconds: seconds, moves: totalGuesses }, showList);
+      showList();
+    }
+
+    // ---- Profil ("Vem spelar?") ----
+    var profileBadge = document.getElementById('profileBadge');
+    function renderProfileBadge(){
+      var p = window.NordhammerProfile && NordhammerProfile.current();
+      profileBadge.innerHTML = p ?
+        '<span class="nh-avatar" style="background:' + p.color + '">' + p.avatar + '</span>' :
+        '<span class="nh-avatar nh-avatar-add" style="width:24px;height:24px;font-size:14px">?</span>';
+    }
+    profileBadge.addEventListener('click', function(){
+      NordhammerProfile.openSwitcher(renderProfileBadge);
+    });
+    function ensureProfile(){
+      return new Promise(function(resolve){
+        if (!window.NordhammerProfile){ resolve(); return; }
+        NordhammerProfile.ensurePicker(function(){ renderProfileBadge(); resolve(); });
+      });
+    }
 
     // ---- Boot ----
     async function boot(){
@@ -667,12 +773,12 @@
       if (!key || key.indexOf('DIN_') === 0){
         loadingOverlay.classList.add('hidden');
         setupOverlay.classList.remove('hidden');
-        guessBar.classList.add('hidden');
+        toggleViewBtn.classList.add('hidden');
         headerInfo.classList.add('hidden');
         return;
       }
-      populateDatalist();
-      buildContinentLookup();
+      renderProfileBadge();
+      await initGuessMap();
       try {
         await loadGoogleMaps();
       } catch (e){
@@ -680,6 +786,8 @@
         loadingText.textContent = 'Kunde inte ladda Google Maps. Kontrollera API-nyckeln i config.js.';
         return;
       }
+      await ensureProfile();
+      gameStartedAt = Date.now();
       startRound();
     }
 

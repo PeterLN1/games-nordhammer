@@ -21,7 +21,7 @@ const GHOSTTRAINS_RESOLVE_SECRET = process.env.GHOSTTRAINS_RESOLVE_SECRET || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const FLASHBACK_GENERATE_SECRET = process.env.FLASHBACK_GENERATE_SECRET || '';
 
-const MODES = new Set(['classic', 'tilematch', 'ordlek', 'ordlek-anti', 'flashback']);
+const MODES = new Set(['classic', 'tilematch', 'ordlek', 'ordlek-anti', 'flashback', 'streetview']);
 // enkel olämplighetsfilter (utökas vid behov)
 const BAD_WORDS = ['fitta', 'kuk', 'hora', 'knulla', 'jävla', 'javla', 'fuck', 'shit', 'bitch', 'cunt', 'nigger', 'nigga', 'slut'];
 
@@ -176,6 +176,20 @@ if (DATABASE_URL) {
         );
         return r.rows;
       },
+      // Som top(), men rankar på flest -> färst gissningar (moves) med tid
+      // som utslagstiebreak — för spel där antal försök är huvudmåttet
+      // (t.ex. "Var är jag?") snarare än tid.
+      async topByMoves(mode, tiles, limit) {
+        const r = await pool.query(
+          `select name, seconds, moves from (
+             select distinct on (name) name, seconds, moves
+             from scores where mode=$1 and tiles=$2 and from_share=false
+             order by name, moves asc, seconds asc
+           ) t order by moves asc, seconds asc limit $3`,
+          [mode, tiles, limit]
+        );
+        return r.rows;
+      },
       async topBySeed(seed, limit) {
         // moves hämtas ihopparat med samma rad som gav bästa tiden per
         // spelare (distinct on), inte ett fristående min() — annars kunde
@@ -289,6 +303,16 @@ if (DATABASE_URL) {
       return Object.keys(best).map(name => ({ name, seconds: best[name] }))
         .sort((a, b) => a.seconds - b.seconds).slice(0, limit);
     },
+    async topByMoves(mode, tiles, limit) {
+      const best = {};
+      mem.filter(x => !x.fromShare && x.mode === mode && x.tiles === tiles).forEach(x => {
+        const b = best[x.name];
+        if (!b || x.moves < b.moves || (x.moves === b.moves && x.seconds < b.seconds)) {
+          best[x.name] = { name: x.name, seconds: x.seconds, moves: x.moves };
+        }
+      });
+      return Object.values(best).sort((a, b) => (a.moves - b.moves) || (a.seconds - b.seconds)).slice(0, limit);
+    },
     async topBySeed(seed, limit) {
       const best = {};
       mem.filter(x => x.seed === seed).forEach(x => {
@@ -392,7 +416,12 @@ app.get('/api/leaderboard', async (req, res) => {
     const tiles = parseInt(req.query.tiles, 10);
     const mode = MODES.has(req.query.mode) ? req.query.mode : 'classic';
     if (!(tiles > 0)) return res.status(400).json({ error: 'tiles kravs' });
-    res.json({ mode, tiles, scores: await store.top(mode, tiles, limit) });
+    // sortBy=moves: rankar flest -> färst gissningar (tid som tiebreak) —
+    // för spel som "Var är jag?" där antal försök är huvudmåttet, inte tid.
+    const scores = req.query.sortBy === 'moves'
+      ? await store.topByMoves(mode, tiles, limit)
+      : await store.top(mode, tiles, limit);
+    res.json({ mode, tiles, scores });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'databasfel' });
   }
