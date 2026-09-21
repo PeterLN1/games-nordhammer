@@ -86,15 +86,19 @@
     position: absolute; inset: 0; z-index: 25; background: #0b1020;
   }
   /* z-index (utan att synas i lagringsordningen) tvingar fram en egen
-     stacking context, så Leaflets interna lager (z-index 200-700) inte
-     läcker ut och kapar klick tänkta för confirmbar/nearestpanel ovanpå. */
-  #guessMap { position: absolute; inset: 0; z-index: 1; }
+     stacking context, så jordglobens interna lager inte läcker ut och
+     kapar klick tänkta för confirmbar/guesslist ovanpå. */
+  #guessGlobe { position: absolute; inset: 0; z-index: 1; }
   .maptopbar {
     position: absolute; top: 0; left: 0; right: 0; z-index: 10;
     padding: max(56px, calc(env(safe-area-inset-top) + 50px)) 16px 10px;
-    text-align: center; font-size: 14px; font-weight: 700; color: #fff;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
     background: linear-gradient(rgba(0,0,0,.5), rgba(0,0,0,0));
     pointer-events: none;
+  }
+  .maptopbar .instruction {
+    text-align: center; font-size: 14px; font-weight: 700; color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,.5);
   }
 
   .toggleviewbtn {
@@ -106,9 +110,11 @@
     box-shadow: 0 6px 20px rgba(0,0,0,.4);
   }
 
+  /* Ligger ovanför toggleviewbtn (istället för på samma rad) så de två
+     inte överlappar varandra på smala mobilskärmar. */
   .confirmbar {
     position: absolute; z-index: 45; left: 16px; right: 16px;
-    bottom: max(16px, env(safe-area-inset-bottom));
+    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 66px);
     display: flex; align-items: center; gap: 10px;
     background: rgba(0,0,0,.75); color: #fff; border-radius: 16px;
     padding: 12px 14px; box-shadow: 0 8px 26px rgba(0,0,0,.45);
@@ -122,25 +128,36 @@
   .confirmbar .guess { background: var(--accent); color: var(--accent-ink); }
 
   .guesscounter {
-    position: absolute; z-index: 30; right: 14px;
-    top: calc(max(6px, env(safe-area-inset-top)) + 46px);
     background: rgba(0,0,0,.5); color: #fff; font-size: 12.5px; font-weight: 700;
     padding: 5px 10px; border-radius: 999px;
   }
 
-  .nearestpanel {
-    position: absolute; z-index: 35; left: 16px; right: 16px;
-    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 70px);
-    background: rgba(0,0,0,.7); border-radius: 14px; padding: 10px 12px;
-    color: #fff;
+  /* Lista över redan gissade länder, närmast rätt svar överst (som i
+     Globle). Ligger i maptopbars flex-flöde istället för egen absolut
+     position — växer nedåt utan att krocka med annat. */
+  .guesslist {
+    pointer-events: auto;
+    width: 100%; max-width: 380px; max-height: 28vh; overflow-y: auto;
+    background: rgba(0,0,0,.55); border-radius: 14px; padding: 4px 12px;
   }
-  .nearestpanel .title { font-size: 12px; font-weight: 700; opacity: .8; margin-bottom: 6px; }
-  .nearestpanel .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .nearestpanel button {
-    font-family: inherit; font-weight: 700; font-size: 12.5px; border: none;
-    border-radius: 999px; padding: 7px 12px; cursor: pointer;
-    background: rgba(255,255,255,.16); color: #fff;
+  .guessrow {
+    display: flex; align-items: center; gap: 10px; color: #fff; font-size: 13.5px;
+    padding: 7px 2px; border-bottom: 1px solid rgba(255,255,255,.12);
   }
+  .guessrow:last-child { border-bottom: none; }
+  .guessrow .flag { font-size: 18px; flex: 0 0 auto; line-height: 1; }
+  .guessrow .gname { flex: 1; font-weight: 700; }
+  .guessrow .gdist { color: rgba(255,255,255,.7); font-size: 12px; flex: 0 0 auto; }
+
+  /* Kort feedback-toast vid fel gissning. */
+  .toast {
+    position: absolute; z-index: 55; left: 50%; top: 22%;
+    transform: translate(-50%, -8px); opacity: 0; pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+    background: rgba(30,10,10,.9); color: #fff; font-weight: 800; font-size: 14px;
+    padding: 10px 18px; border-radius: 999px; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
   /* --- overlays --- */
   .overlay {
@@ -210,12 +227,13 @@
     <div id="pano"></div>
 
     <div id="mapView" class="hidden">
-      <div id="guessMap"></div>
-      <div class="maptopbar">Peka på landet du tror det är</div>
-      <div class="guesscounter" id="guessCounter">Gissningar: 0/10</div>
-      <div class="nearestpanel hidden" id="nearestPanel">
-        <div class="title">Närmaste länder till rätt svar:</div>
-        <div class="chips" id="nearestChips"></div>
+      <div id="guessGlobe"></div>
+      <div class="maptopbar">
+        <div class="instruction">Peka på landet du tror det är</div>
+        <span class="guesscounter" id="guessCounter">Gissningar: 0/10</span>
+        <div class="guesslist hidden" id="guessList">
+          <div id="guessListInner"></div>
+        </div>
       </div>
       <div class="confirmbar hidden" id="confirmBar">
         <span class="name" id="confirmName"></span>
@@ -224,6 +242,7 @@
       </div>
     </div>
 
+    <div class="toast" id="toast"></div>
     <button class="toggleviewbtn" id="toggleViewBtn" type="button">🌍 Gissa</button>
 
     <!-- Laddar / fel -->
@@ -273,6 +292,7 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/globe.gl"></script>
   <script src="/streetview/config.js"></script>
   <script src="/streetview/countries.js"></script>
   <script>
@@ -281,8 +301,6 @@
 
     var TOTAL_ROUNDS = 5;
     var MAX_GUESSES_PER_ROUND = 10;
-    var NEAREST_HINT_AFTER = 2; // visa "närmaste länder" efter så här många fel
-    var NEAREST_HINT_COUNT = 5;
 
     var results = []; // { code, nameSv, guesses, solved }
     var usedSeedIndexes = new Set();
@@ -290,11 +308,11 @@
     var currentTarget = null; // { lat, lng, pano, code, nameSv }
     var panorama = null;
     var resultMapInstance = null;
-    var guessMap = null;
-    var countryLayer = null;
-    var countryLayersByCode = {}; // code -> Leaflet layer
-    var countryCentroids = {}; // code -> { lat, lng }
+    var globeInstance = null;
+    var countryCentroids = {}; // code -> { lat, lng }, grovt uppskattad (medel av polygonens punkter)
+    var alpha3ToAlpha2 = {}; // för flaggemoji
     var wrongCodesThisRound = {};
+    var roundGuesses = []; // { code, name, km }, sorterad närmast->längst bort
     var pendingCode = null;
     var attemptsThisRound = 0;
     var gameStartedAt = null;
@@ -315,8 +333,10 @@
     var guessCounter = document.getElementById('guessCounter');
     var confirmBar = document.getElementById('confirmBar');
     var confirmName = document.getElementById('confirmName');
-    var nearestPanel = document.getElementById('nearestPanel');
-    var nearestChips = document.getElementById('nearestChips');
+    var guessList = document.getElementById('guessList');
+    var guessListInner = document.getElementById('guessListInner');
+    var toastEl = document.getElementById('toast');
+    var toastTimer = null;
 
     function distKm(lat1, lng1, lat2, lng2){
       var R = 6371;
@@ -361,93 +381,164 @@
       return window.STREETVIEW_COUNTRY_NAMES_SV[feature.id] || feature.properties.name;
     }
 
-    // ---- Karta (Leaflet + GeoJSON, ingen Google-nyckel behövs) ----
-    function initGuessMap(){
-      // zoomControl: false — Leaflets standardplacering (uppe till vänster)
-      // krockar med sidhuvudets tillbakapil på samma hörn. Pinch/scroll/
-      // dubbelklick för att zooma fungerar ändå.
-      guessMap = L.map('guessMap', { attributionControl: false, worldCopyJump: true, minZoom: 1, zoomControl: false })
-        .setView([20, 10], 2);
-      L.control.attribution({ prefix: false }).addTo(guessMap);
+    // Grovt centroid-medel av en geometris alla punkter (Polygon/MultiPolygon).
+    // Inte en riktig areacentroid, men tillräckligt bra för avståndsledtrådar.
+    function geometryCentroid(geometry){
+      var lngSum = 0, latSum = 0, count = 0;
+      function walk(coords){
+        if (typeof coords[0] === 'number'){ lngSum += coords[0]; latSum += coords[1]; count++; }
+        else coords.forEach(walk);
+      }
+      if (geometry && geometry.coordinates) walk(geometry.coordinates);
+      return count ? { lat: latSum / count, lng: lngSum / count } : null;
+    }
+
+    function flagEmoji(code){
+      var a2 = alpha3ToAlpha2[code];
+      if (!a2 || a2.length !== 2) return '🏳️';
+      var chars = a2.toUpperCase().split('').map(function(c){
+        return String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65);
+      });
+      return chars.join('');
+    }
+
+    // ---- Jordglob (globe.gl + GeoJSON, ingen Google-nyckel behövs) ----
+    function polygonColor(feature){
+      var code = codeForFeature(feature);
+      if (code && code === pendingCode) return 'rgba(255,179,0,.85)';
+      if (code && wrongCodesThisRound[code]) return 'rgba(58,63,82,.75)';
+      return 'rgba(74,111,165,.75)';
+    }
+    function polygonHeight(feature){
+      return codeForFeature(feature) === pendingCode ? 0.02 : 0.006;
+    }
+    function refreshGlobeColors(){
+      if (!globeInstance) return;
+      globeInstance.polygonCapColor(polygonColor).polygonAltitude(polygonHeight);
+    }
+    function resizeGlobe(){
+      if (!globeInstance) return;
+      var el = document.getElementById('guessGlobe');
+      globeInstance.width(el.clientWidth).height(el.clientHeight);
+    }
+    window.addEventListener('resize', resizeGlobe);
+
+    // De flesta ringar i datasetet är medurs, men enstaka länder (t.ex.
+    // Bermuda) har fel varvriktning — det gör att jordglobs-biblioteket
+    // ritar landets yta "inverterad" (hela klotet utom landet självt).
+    // Normalisera alla ringar till samma varvriktning innan de renderas.
+    function ringSignedArea(ring){
+      var s = 0;
+      for (var i = 0; i < ring.length; i++){
+        var p1 = ring[i], p2 = ring[(i + 1) % ring.length];
+        s += (p2[0] - p1[0]) * (p2[1] + p1[1]);
+      }
+      return s;
+    }
+    function normalizeWinding(geometry){
+      function fixPart(rings){
+        if (ringSignedArea(rings[0]) < 0) rings.forEach(function(ring){ ring.reverse(); });
+      }
+      if (geometry.type === 'Polygon') fixPart(geometry.coordinates);
+      else if (geometry.type === 'MultiPolygon') geometry.coordinates.forEach(fixPart);
+    }
+
+    function initGuessGlobe(){
+      Object.keys(window.STREETVIEW_ALPHA2_TO_ALPHA3).forEach(function(a2){
+        alpha3ToAlpha2[window.STREETVIEW_ALPHA2_TO_ALPHA3[a2]] = a2;
+      });
 
       return fetch('/streetview/world-countries.geo.json')
         .then(function(r){ return r.json(); })
         .then(function(geo){
-          countryLayer = L.geoJSON(geo, {
-            style: baseStyle,
-            onEachFeature: function(feature, layer){
-              var code = codeForFeature(feature);
-              if (code){
-                countryLayersByCode[code] = layer;
-                countryCentroids[code] = layer.getBounds().getCenter();
-              }
-              layer.on('click', function(){ onCountryTap(feature, layer); });
-            }
-          }).addTo(guessMap);
+          geo.features.forEach(function(feature){
+            normalizeWinding(feature.geometry);
+            var code = codeForFeature(feature);
+            if (code) countryCentroids[code] = geometryCentroid(feature.geometry);
+          });
+
+          globeInstance = Globe()(document.getElementById('guessGlobe'))
+            .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-dark.jpg')
+            .backgroundColor('rgba(0,0,0,0)')
+            .showAtmosphere(true)
+            .atmosphereColor('#6f8fd1')
+            .atmosphereAltitude(0.18)
+            .polygonsData(geo.features)
+            .polygonCapColor(polygonColor)
+            .polygonSideColor(function(){ return 'rgba(20,26,45,.6)'; })
+            .polygonStrokeColor(function(){ return 'rgba(255,255,255,.55)'; })
+            .polygonAltitude(polygonHeight)
+            .polygonLabel(function(){ return ''; })
+            .polygonsTransitionDuration(150)
+            .onPolygonClick(onCountryTap);
+          resizeGlobe();
+          globeInstance.pointOfView({ lat: 15, lng: 10, altitude: 2.3 }, 0);
         });
     }
 
-    function baseStyle(){
-      return { color: 'rgba(255,255,255,.55)', weight: 1, fillColor: '#4a6fa5', fillOpacity: .55 };
-    }
-    function wrongStyle(){
-      return { color: 'rgba(255,255,255,.4)', weight: 1, fillColor: '#3a3f52', fillOpacity: .55 };
-    }
-    function pendingStyle(){
-      return { color: '#fff', weight: 2, fillColor: '#ffb300', fillOpacity: .75 };
-    }
-
-    function restyleLayer(code){
-      var layer = countryLayersByCode[code];
-      if (!layer) return;
-      if (code === pendingCode) layer.setStyle(pendingStyle());
-      else if (wrongCodesThisRound[code]) layer.setStyle(wrongStyle());
-      else layer.setStyle(baseStyle());
-    }
-
-    function onCountryTap(feature, layer){
+    function onCountryTap(feature){
       var code = codeForFeature(feature);
       if (!code || wrongCodesThisRound[code]) return;
-      var previous = pendingCode;
       pendingCode = code;
-      // Måste sätta pendingCode INNAN vi återställer den förra rutan —
-      // annars ser restyleLayer(previous) fortfarande det gamla pendingCode-
-      // värdet och målar tillbaka den förra rutan som "vald" igen.
-      if (previous && previous !== code) restyleLayer(previous);
-      restyleLayer(code);
+      refreshGlobeColors();
       confirmName.textContent = nameForFeature(feature);
       confirmBar.classList.remove('hidden');
     }
 
     document.getElementById('confirmCancel').addEventListener('click', function(){
-      var prev = pendingCode;
       pendingCode = null;
       confirmBar.classList.add('hidden');
-      if (prev) restyleLayer(prev);
+      refreshGlobeColors();
     });
     document.getElementById('confirmGuess').addEventListener('click', function(){
       if (pendingCode) submitGuess(pendingCode);
     });
 
+    function showToast(text){
+      toastEl.textContent = text;
+      toastEl.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 1600);
+    }
+
+    function renderGuessList(){
+      if (!roundGuesses.length){ guessList.classList.add('hidden'); return; }
+      guessListInner.innerHTML = roundGuesses.map(function(g){
+        return '<div class="guessrow"><span class="flag">' + flagEmoji(g.code) + '</span>' +
+          '<span class="gname">' + g.name + '</span>' +
+          '<span class="gdist">' + Math.round(g.km) + ' km</span></div>';
+      }).join('');
+      guessList.classList.remove('hidden');
+    }
+
+    // Lägger till en felgissning i listan, sorterad närmast->längst bort
+    // från rätt svar (som i Globle) — inte en lista över ledtrådar man
+    // inte provat, utan ett facit över vad man redan gissat.
+    function recordWrongGuess(code){
+      var centroid = countryCentroids[code];
+      var km = centroid ? distKm(currentTarget.lat, currentTarget.lng, centroid.lat, centroid.lng) : Infinity;
+      roundGuesses.push({ code: code, name: window.STREETVIEW_COUNTRY_NAMES_SV[code] || code, km: km });
+      roundGuesses.sort(function(a, b){ return a.km - b.km; });
+      renderGuessList();
+    }
+
     function resetMapForRound(){
       wrongCodesThisRound = {};
       pendingCode = null;
+      roundGuesses = [];
       confirmBar.classList.add('hidden');
-      nearestPanel.classList.add('hidden');
-      nearestChips.innerHTML = '';
-      if (countryLayer){
-        countryLayer.eachLayer(function(layer){ layer.setStyle(baseStyle()); });
-      }
-      if (guessMap) guessMap.setView([20, 10], 2);
+      renderGuessList();
+      refreshGlobeColors();
+      if (globeInstance) globeInstance.pointOfView({ lat: 15, lng: 10, altitude: 2.3 }, 300);
     }
 
-    // ---- Vy-växling bild/karta ----
+    // ---- Vy-växling bild/jordglob ----
     var showingMap = false;
     function setMapVisible(show){
       showingMap = show;
       mapView.classList.toggle('hidden', !show);
       toggleViewBtn.textContent = show ? '📷 Bild' : '🌍 Gissa';
-      if (show && guessMap) setTimeout(function(){ guessMap.invalidateSize(); }, 50);
+      if (show) setTimeout(resizeGlobe, 50);
     }
     toggleViewBtn.addEventListener('click', function(){ setMapVisible(!showingMap); });
 
@@ -582,30 +673,6 @@
 
     retryBtn.addEventListener('click', loadRound);
 
-    function nearestCountriesTo(target, excludeCode, count){
-      var list = [];
-      Object.keys(countryCentroids).forEach(function(code){
-        if (code === excludeCode) return;
-        var c = countryCentroids[code];
-        list.push({ code: code, name: window.STREETVIEW_COUNTRY_NAMES_SV[code] || code, km: distKm(target.lat, target.lng, c.lat, c.lng) });
-      });
-      list.sort(function(a, b){ return a.km - b.km; });
-      return list.slice(0, count);
-    }
-
-    function showNearestHint(){
-      var list = nearestCountriesTo(currentTarget, currentTarget.code, NEAREST_HINT_COUNT);
-      nearestChips.innerHTML = '';
-      list.forEach(function(item){
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = item.name;
-        btn.addEventListener('click', function(){ submitGuess(item.code); });
-        nearestChips.appendChild(btn);
-      });
-      nearestPanel.classList.remove('hidden');
-    }
-
     function submitGuess(code){
       pendingCode = null;
       confirmBar.classList.add('hidden');
@@ -613,20 +680,20 @@
       guessCounter.textContent = 'Gissningar: ' + attemptsThisRound + '/' + MAX_GUESSES_PER_ROUND;
 
       if (code === currentTarget.code){
+        refreshGlobeColors();
         finishRound(true);
         return;
       }
 
       wrongCodesThisRound[code] = true;
-      restyleLayer(code);
+      refreshGlobeColors();
+      recordWrongGuess(code);
 
       if (attemptsThisRound >= MAX_GUESSES_PER_ROUND){
         finishRound(false);
         return;
       }
-      if (attemptsThisRound >= NEAREST_HINT_AFTER){
-        showNearestHint();
-      }
+      showToast('Fel! Försök igen.');
     }
 
     function finishRound(solved){
@@ -778,7 +845,7 @@
         return;
       }
       renderProfileBadge();
-      await initGuessMap();
+      await initGuessGlobe();
       try {
         await loadGoogleMaps();
       } catch (e){

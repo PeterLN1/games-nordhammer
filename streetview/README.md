@@ -3,12 +3,14 @@
 Du ser en riktig Google Street View-bild från en slumpad plats var som
 helst i världen (inte begränsat till städer/kända platser). Du kan inte
 förflytta dig, men du kan snurra runt och zooma. Gissa vilket **land**
-bilden är tagen i genom att peka på en klickbar världskarta.
+bilden är tagen i genom att peka på en klickbar jordglob (rotera med
+drag, zooma med scroll/pinch).
 
 - Rätt land direkt = rundan klar.
-- Fel land: landet markeras och du får peka på ett nytt. Efter 2 fel
-  visas en lista med de länder som geografiskt ligger närmast rätt svar
-  (klickbara direkt) som hjälp att snäva in gissningen.
+- Fel land: landet markeras grått och du får peka på ett nytt (en
+  toast bekräftar felet). Landet läggs till i en lista längst upp —
+  sorterad efter avstånd till rätt svar, närmast överst, och växer för
+  varje gissning (som i spelet Globle). Varje rad har landets flagga.
 - Max **10 gissningar per runda** — når du taket avslöjas rätt land och
   räknas som 10, och spelet går vidare.
 - Varje land du pekar på (rätt eller fel) visar sitt namn direkt, så man
@@ -74,13 +76,21 @@ byggsteg måste göra det för att nyckeln ska finnas i produktion) — det är
 säkert så länge nyckeln är domän-begränsad enligt steg 5 ovan, precis som
 Google själva rekommenderar för klientsidans Maps-nycklar.
 
-## Hur kartan och gissningen fungerar
+## Hur jordgloben och gissningen fungerar
 
+Jordgloben renderas med [globe.gl](https://github.com/vasturiano/globe.gl)
+(Three.js under huven) — ingen Google-nyckel behövs för själva globen.
 `world-countries.geo.json` är ett öppet, gratis dataset (Natural Earth,
 via [johan/world.geo.json](https://github.com/johan/world.geo.json)) med
-180 länder som riktiga klickbara polygoner — renderas med Leaflet, ingen
-Google-nyckel behövs för själva kartan. Varje land har ett ISO
+180 länder som riktiga klickbara polygoner. Varje land har ett ISO
 alpha-3-id (t.ex. `SWE`, `FRA`).
+
+**Viktigt om datasetet:** de flesta ringarna i filen är medurs, men
+enstaka länder (upptäckt: Bermuda) har fel varvriktning, vilket får
+globe.gl att rendera landets yta "inverterad" (hela klotet utom landet
+själv, och alla klick tolkas som det landet). `index.html` normaliserar
+varvriktningen för alla polygoner vid inläsning (`normalizeWinding()`)
+— rör inte den funktionen utan att förstå varför den finns.
 
 `countries.js` innehåller:
 - `STREETVIEW_SEED_LOCATIONS` — ungefärliga mittpunkter för ~106 länder
@@ -92,16 +102,16 @@ alpha-3-id (t.ex. `SWE`, `FRA`).
 - `STREETVIEW_COUNTRY_NAMES_SV` — svenska namn för alla 180 länder.
 - `STREETVIEW_ALPHA2_TO_ALPHA3` — Google Geocoding ger ISO alpha-2 (t.ex.
   `SE`), kartans GeoJSON använder alpha-3 (`SWE`) — den här tabellen
-  kopplar ihop dem.
+  kopplar ihop dem (och används omvänd för flaggemoji).
 
 Det faktiska rätta landet avgörs genom omvänd geokodning av panoramats
 verkliga koordinat, så om punkten råkar hamna strax över en landsgräns
 blir svaret ändå rättvist bedömt (även om den seedade avsikten var ett
 annat land).
 
-Avstånd för "närmaste länder"-ledtråden räknas mot varje lands
-bounding-box-mittpunkt (beräknad direkt från kartans polygoner vid
-sidladdning) — en enkel approximation, tillräckligt bra för en ledtråd.
+Avstånd i gissningslistan räknas mot varje lands ungefärliga centroid
+(medelvärde av polygonens punkter, beräknat vid sidladdning) — en enkel
+approximation, tillräckligt bra för att ranka listan.
 
 ## Topplista
 
@@ -117,18 +127,19 @@ profil innan första rundan om ingen är vald än.
 
 ```
 streetview/
-├── index.html               # Spelet (Street View + karta + topplista)
+├── index.html               # Spelet (Street View + jordglob + topplista)
 ├── config.js                # Google Maps API-nyckel
 ├── countries.js              # Frö-koordinater, landnamn, alpha2->alpha3
-├── world-countries.geo.json  # Klickbara landgränser (Leaflet, gratis)
+├── world-countries.geo.json  # Klickbara landgränser (globe.gl, gratis)
 └── README.md
 ```
 
 ## Vidareutveckling (idéer)
 
-- Bättre centroidberäkning (riktig polygon-centroid, inte bounding-box)
-  för en mer träffsäker "närmaste länder"-lista.
+- Bättre centroidberäkning (riktig polygon-centroid, inte medelpunkt)
+  för mer exakta avstånd i gissningslistan.
 - Fler frö-koordinater i `STREETVIEW_SEED_LOCATIONS` för jämnare global
   spridning.
 - Svårighetsnivåer (t.ex. bara Europa).
-- Visa flagga eller annan snabb visuell ledtråd vid tveksamhet.
+- Ljusare/mer detaljerad globtextur (just nu `earth-dark.jpg` — små
+  länder kan vara svåra att träffa exakt mot den mörka bakgrunden).
