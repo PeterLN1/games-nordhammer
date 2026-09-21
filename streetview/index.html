@@ -309,7 +309,7 @@
     var panorama = null;
     var resultMapInstance = null;
     var globeInstance = null;
-    var countryCentroids = {}; // code -> { lat, lng }, grovt uppskattad (medel av polygonens punkter)
+    var countryGeometries = {}; // code -> GeoJSON-geometri, för avstånd-till-gräns i gissningslistan
     var alpha3ToAlpha2 = {}; // för flaggemoji
     var wrongCodesThisRound = {};
     var roundGuesses = []; // { code, name, km }, sorterad närmast->längst bort
@@ -381,16 +381,41 @@
       return window.STREETVIEW_COUNTRY_NAMES_SV[feature.id] || feature.properties.name;
     }
 
-    // Grovt centroid-medel av en geometris alla punkter (Polygon/MultiPolygon).
-    // Inte en riktig areacentroid, men tillräckligt bra för avståndsledtrådar.
-    function geometryCentroid(geometry){
-      var lngSum = 0, latSum = 0, count = 0;
-      function walk(coords){
-        if (typeof coords[0] === 'number'){ lngSum += coords[0]; latSum += coords[1]; count++; }
-        else coords.forEach(walk);
+    // Kortaste avstånd (km) från en punkt till en linjesegment, i ett lokalt
+    // plant koordinatsystem (km per grad, longitud skalad efter latitud) —
+    // gott nog på de avstånd det handlar om här.
+    function pointToSegmentKm(lat, lng, lat1, lng1, lat2, lng2){
+      var kmPerLat = 111.32;
+      var kmPerLng = 111.32 * Math.cos(lat * Math.PI / 180);
+      var px = lng * kmPerLng, py = lat * kmPerLat;
+      var x1 = lng1 * kmPerLng, y1 = lat1 * kmPerLat;
+      var x2 = lng2 * kmPerLng, y2 = lat2 * kmPerLat;
+      var dx = x2 - x1, dy = y2 - y1;
+      var lenSq = dx * dx + dy * dy;
+      var t = lenSq > 0 ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+      t = Math.max(0, Math.min(1, t));
+      var cx = x1 + t * dx, cy = y1 + t * dy;
+      var ddx = px - cx, ddy = py - cy;
+      return Math.sqrt(ddx * ddx + ddy * ddy);
+    }
+
+    // Kortaste avstånd (km) från en punkt till närmaste kant i en
+    // Polygon/MultiPolygon-geometri — dvs. hur nära landets faktiska gräns
+    // gissningen låg (inte avstånd till landets mittpunkt, som kan bli
+    // missvisande stort för ett stort grannland).
+    function distanceToCountryKm(lat, lng, geometry){
+      var min = Infinity;
+      function walkRing(ring){
+        for (var i = 0; i < ring.length; i++){
+          var p1 = ring[i], p2 = ring[(i + 1) % ring.length];
+          var d = pointToSegmentKm(lat, lng, p1[1], p1[0], p2[1], p2[0]);
+          if (d < min) min = d;
+        }
       }
-      if (geometry && geometry.coordinates) walk(geometry.coordinates);
-      return count ? { lat: latSum / count, lng: lngSum / count } : null;
+      function walkPart(rings){ rings.forEach(walkRing); }
+      if (geometry.type === 'Polygon') walkPart(geometry.coordinates);
+      else if (geometry.type === 'MultiPolygon') geometry.coordinates.forEach(walkPart);
+      return min;
     }
 
     function flagEmoji(code){
@@ -454,7 +479,7 @@
           geo.features.forEach(function(feature){
             normalizeWinding(feature.geometry);
             var code = codeForFeature(feature);
-            if (code) countryCentroids[code] = geometryCentroid(feature.geometry);
+            if (code) countryGeometries[code] = feature.geometry;
           });
 
           globeInstance = Globe()(document.getElementById('guessGlobe'))
@@ -515,8 +540,8 @@
     // från rätt svar (som i Globle) — inte en lista över ledtrådar man
     // inte provat, utan ett facit över vad man redan gissat.
     function recordWrongGuess(code){
-      var centroid = countryCentroids[code];
-      var km = centroid ? distKm(currentTarget.lat, currentTarget.lng, centroid.lat, centroid.lng) : Infinity;
+      var geometry = countryGeometries[code];
+      var km = geometry ? distanceToCountryKm(currentTarget.lat, currentTarget.lng, geometry) : Infinity;
       roundGuesses.push({ code: code, name: window.STREETVIEW_COUNTRY_NAMES_SV[code] || code, km: km });
       roundGuesses.sort(function(a, b){ return a.km - b.km; });
       renderGuessList();

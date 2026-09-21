@@ -109,9 +109,10 @@ verkliga koordinat, så om punkten råkar hamna strax över en landsgräns
 blir svaret ändå rättvist bedömt (även om den seedade avsikten var ett
 annat land).
 
-Avstånd i gissningslistan räknas mot varje lands ungefärliga centroid
-(medelvärde av polygonens punkter, beräknat vid sidladdning) — en enkel
-approximation, tillräckligt bra för att ranka listan.
+Avstånd i gissningslistan räknas till närmaste punkt på det gissade
+landets faktiska gräns (`distanceToCountryKm()`), inte till landets
+mittpunkt — annars kan ett stort grannland (t.ex. Ryssland eller Kanada)
+visa flera hundra mil trots att gränsen ligger precis intill.
 
 ## Topplista
 
@@ -136,8 +137,6 @@ streetview/
 
 ## Vidareutveckling (idéer)
 
-- Bättre centroidberäkning (riktig polygon-centroid, inte medelpunkt)
-  för mer exakta avstånd i gissningslistan.
 - Fler frö-koordinater i `STREETVIEW_SEED_LOCATIONS` för jämnare global
   spridning.
 - Svårighetsnivåer (t.ex. bara Europa).
