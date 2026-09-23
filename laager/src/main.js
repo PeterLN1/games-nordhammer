@@ -4,6 +4,7 @@ import { createJournal } from "./core/journal.js";
 import { loadSave, writeSave, clearSave } from "./core/save.js";
 import { buildGround, terrainHeight } from "./world/terrain.js";
 import { buildForest } from "./world/forest.js";
+import { buildFireflies } from "./world/fireflies.js";
 import { createAtmosphere } from "./world/atmosphere.js";
 import { LANDMARKS, checkDiscoveries } from "./world/landmarks.js";
 import { buildLandmarkVisuals } from "./world/landmarkVisuals.js";
@@ -56,7 +57,8 @@ const exclusions = [
   { x: EXIT_POS.x, z: EXIT_POS.z, radius: 5 },
   ...LANDMARKS.map((lm) => ({ x: lm.x, z: lm.z, radius: 2.2 })),
 ];
-const treeObstacles = buildForest(scene, PALETTE, { seed: FOREST_SEED, exclusions });
+const { obstacles: treeObstacles, updateWind } = buildForest(scene, PALETTE, { seed: FOREST_SEED, exclusions });
+const fireflies = buildFireflies(scene, PALETTE, FOREST_SEED ^ 0x51ed);
 const landmarkVisuals = buildLandmarkVisuals(scene, PALETTE);
 
 const exitMarker = new THREE.Mesh(
@@ -143,6 +145,7 @@ resize();
 
 // ---------- render loop ----------
 const clock = new THREE.Clock();
+const lookDir = new THREE.Vector3();
 let fpsAccum = 0, fpsFrames = 0, fpsTimer = 0;
 let saveTimer = 0;
 
@@ -160,12 +163,20 @@ function tick() {
   const pos = playerCam.position;
 
   atmosphere.playerLight.position.set(camera.position.x, camera.position.y + 0.2, camera.position.z);
+  camera.getWorldDirection(lookDir);
+  atmosphere.playerLightTarget.position.set(
+    camera.position.x + lookDir.x * 5,
+    camera.position.y + lookDir.y * 5,
+    camera.position.z + lookDir.z * 5
+  );
 
   const exitDist = distanceToExit(pos);
   const closeness = 1 - THREE.MathUtils.clamp(exitDist / EXIT_GLOW_START_DIST, 0, 1);
   atmosphere.setExitCloseness(closeness);
   atmosphere.update(dt);
 
+  updateWind(elapsed);
+  fireflies.update(elapsed, atmosphere.duskT);
   landmarkVisuals.update(dt, elapsed);
   ambience.onDistanceWalked(playerCam.distanceWalked);
 

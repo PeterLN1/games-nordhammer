@@ -4,9 +4,13 @@ import * as THREE from "three";
 // unwelcoming even before anything happens, not like a cozy campsite.
 export const PALETTE = {
   skyDay: new THREE.Color(0x5c6a5e),
+  skyGolden: new THREE.Color(0x8a6a42),
   skyDusk: new THREE.Color(0x241f2c),
+  skyNight: new THREE.Color(0x0b0e0a),
   fogDay: new THREE.Color(0x6e7a6a),
+  fogGolden: new THREE.Color(0x9c7c4e),
   fogDusk: new THREE.Color(0x1c1622),
+  fogNight: new THREE.Color(0x090b08),
   ground: 0x3a4232,
   trunk: 0x3a2e22,
   trunkBirch: 0x5c584e,
@@ -19,4 +23,5 @@ export const PALETTE = {
   landmarkGlow: 0xd8b06a,
   exitGlow: 0xf0d9a0,
   playerLight: 0xe9c98a,
+  fireflyGlow: 0xcfe37a,
 };

@@ -14,6 +14,36 @@ const TRUNK_COLLIDE_RADIUS = 0.32;
 
 const up = new THREE.Vector3(0, 1, 0);
 
+// A canopy material whose vertex shader offsets each vertex sideways by a
+// tiny sine wave — cheap wind sway with zero per-frame CPU cost (it's all
+// on the GPU), and per-instance phase comes straight from the instance's
+// own position so a whole forest doesn't sway in lockstep. Only the upper
+// half of the local geometry moves (`max(transformed.y, 0.0)`), so cones
+// stay anchored to their trunk instead of the whole shape drifting.
+// Trunks intentionally don't use this — only canopies sway.
+function makeCanopyMaterial() {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = { value: 0 };
+    mat.userData.shader = shader;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nuniform float uTime;")
+      .replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+#ifdef USE_INSTANCING
+  float windPhase = instanceMatrix[3].x * 1.3 + instanceMatrix[3].z * 0.9;
+#else
+  float windPhase = 0.0;
+#endif
+  float sway = sin(uTime * 1.6 + windPhase) * 0.05 * max(transformed.y, 0.0);
+  transformed.x += sway;
+  transformed.z += sway * 0.6;`
+      );
+  };
+  return mat;
+}
+
 // Combines the tree's facing rotation with a small random lean — real
 // trees are never perfectly vertical — and returns the composed
 // quaternion. `tiltAxis`/`tiltAngle` are per-tree, drawn once and reused
@@ -62,8 +92,7 @@ export function buildForest(scene, palette, { seed, exclusions }) {
   const conifTrunks = new THREE.InstancedMesh(conifTrunkGeo, conifTrunkMat, conifers.length);
   const conifTierMeshes = CONIFER_TIERS.map((tier) => {
     const geo = new THREE.ConeGeometry(tier.radius, tier.height, 7);
-    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 });
-    return new THREE.InstancedMesh(geo, mat, conifers.length);
+    return new THREE.InstancedMesh(geo, makeCanopyMaterial(), conifers.length);
   });
 
   const m = new THREE.Matrix4(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), color = new THREE.Color();
@@ -100,8 +129,7 @@ export function buildForest(scene, palette, { seed, exclusions }) {
   const decidTrunks = new THREE.InstancedMesh(decidTrunkGeo, decidTrunkMat, deciduous.length);
   const decidBlobMeshes = DECIDUOUS_BLOBS.map((blob) => {
     const geo = new THREE.IcosahedronGeometry(blob.radius, 0);
-    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 });
-    return new THREE.InstancedMesh(geo, mat, deciduous.length);
+    return new THREE.InstancedMesh(geo, makeCanopyMaterial(), deciduous.length);
   });
 
   deciduous.forEach((it, i) => {
@@ -130,5 +158,14 @@ export function buildForest(scene, palette, { seed, exclusions }) {
 
   scene.add(decidTrunks, ...decidBlobMeshes);
 
-  return items.map((it) => ({ x: it.x, z: it.z, radius: TRUNK_COLLIDE_RADIUS * it.scale }));
+  const swayMaterials = [...conifTierMeshes, ...decidBlobMeshes].map((mesh) => mesh.material);
+
+  return {
+    obstacles: items.map((it) => ({ x: it.x, z: it.z, radius: TRUNK_COLLIDE_RADIUS * it.scale })),
+    updateWind(elapsed) {
+      for (const mat of swayMaterials) {
+        if (mat.userData.shader) mat.userData.shader.uniforms.uTime.value = elapsed;
+      }
+    },
+  };
 }
