@@ -1,7 +1,10 @@
 // Deterministic dart-throwing point scatter within a circular area, so the
 // forest generates the same layout for a given seed (the node test checks
 // spacing against this) while still looking organically random in-game.
-function mulberry32(seed) {
+// Exported so other seeded-but-deterministic needs (tree species/shape
+// variation in forest.js) can reuse the same generator instead of a second
+// implementation.
+export function mulberry32(seed) {
   let a = seed >>> 0;
   return function rng() {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
