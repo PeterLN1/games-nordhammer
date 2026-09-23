@@ -1,23 +1,16 @@
 import * as THREE from "three";
 
+// Dusk-worn, desaturated palette — the forest should feel a little
+// unwelcoming even before anything happens, not like a cozy campsite.
 export const PALETTE = {
-  skyTop: new THREE.Color(0x150c2c),
-  skyHorizon: new THREE.Color(0xdd7a4a),
-  ground: 0x3c5c3a,
-  trunk: 0x4a3524,
-  leaves: [0x2f4a34, 0x35553c, 0x3c5c3f],
-  rock: 0x77786f,
-  stoneBuilt: 0x8f8f83,
-  plank: 0x6b4a30,
-  fence: 0x5b4430,
-  grass: 0x8a9c3f,
-  logs: 0x33210f,
-  moon: 0xf3ecd6,
-  playerCloak: 0x4c7a8a,
-  playerHead: 0xe0b98c,
-  water: 0x3d6f93,
-  berry: 0xa3273f,
+  skyDay: new THREE.Color(0x5c6a5e),
+  skyDusk: new THREE.Color(0x241f2c),
+  fogDay: new THREE.Color(0x6e7a6a),
+  fogDusk: new THREE.Color(0x1c1622),
+  ground: 0x3a4232,
+  trunk: 0x3a2e22,
+  leaves: [0x293b2a, 0x2f4530, 0x24331f],
+  landmarkGlow: 0xd8b06a,
+  exitGlow: 0xf0d9a0,
+  playerLight: 0xe9c98a,
 };
-
-// direction toward the moon/moonlight, shared by the sky dome and the lights
-export const MOON_DIR = new THREE.Vector3(-14, 16, -8).normalize();

@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#140d24">
-<title>Läger — 3D-demo</title>
+<meta name="theme-color" content="#0f130d">
+<title>Trapped in the Forest!</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
-    background: #140d24; color: #f2eee0;
+    background: #0f130d; color: #eef0e6;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   #app { position: fixed; inset: 0; }
@@ -19,82 +19,43 @@
 
   .hud {
     position: fixed; left: 0; right: 0; z-index: 5;
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: flex-start; justify-content: space-between;
     padding: max(14px, env(safe-area-inset-top)) 16px 0;
     pointer-events: none;
   }
-  .hud a {
+  .hud a, .pill-btn {
     pointer-events: auto;
-    text-decoration: none; color: #f2eee0; font-size: 13px; font-weight: 600;
-    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
+    text-decoration: none; color: #eef0e6; font-size: 13px; font-weight: 600;
+    background: rgba(12,16,10,.55); border: 1px solid rgba(255,255,255,.14);
     padding: 8px 13px; border-radius: 999px; backdrop-filter: blur(6px);
   }
-  .hud h1 {
-    margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .3px;
-    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
-    padding: 8px 13px; border-radius: 999px; backdrop-filter: blur(6px);
-  }
-  .hud-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; }
-  .hud-right > * { pointer-events: auto; }
   .hud-left { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
   .hud-left > * { pointer-events: auto; }
-  .hud-reset {
-    font-size: 12px; font-weight: 600; color: #f2eee0;
-    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
-    padding: 6px 12px; border-radius: 999px; backdrop-filter: blur(6px);
-  }
-  .daynight {
-    display: flex; align-items: center; gap: 6px;
-    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
-    padding: 6px 10px; border-radius: 999px; backdrop-filter: blur(6px);
-    font-size: 11px; font-variant-numeric: tabular-nums;
-  }
-  .daynight input[type=range] { width: 84px; height: 16px; accent-color: #ffb14a; }
-
-  /* Always-visible resource count — the build panel's own copy only
-     shows while build mode is open, but the player should be able to
-     see what they've gathered any time. */
-  .resources-hud {
-    display: flex; gap: 10px;
-    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
-    padding: 6px 12px; border-radius: 999px; backdrop-filter: blur(6px);
-    font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+  .hud-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; }
+  .hud-right h1 {
+    margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .2px;
+    background: rgba(12,16,10,.55); border: 1px solid rgba(255,255,255,.14);
+    padding: 8px 13px; border-radius: 999px; backdrop-filter: blur(6px);
   }
 
-  /* Health/hunger/thirst — always visible, same reasoning as
-     .resources-hud: the player needs to see these draining without
-     having to open a panel first. */
-  .survival-hud {
-    display: flex; flex-direction: column; gap: 5px; width: 132px;
-    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
-    padding: 7px 10px; border-radius: 14px; backdrop-filter: blur(6px);
-  }
-  .survival-row { display: flex; align-items: center; gap: 6px; font-size: 11px; }
-  .survival-bar { flex: 1; height: 6px; border-radius: 4px; background: rgba(255,255,255,.14); overflow: hidden; }
-  .survival-bar-fill { height: 100%; border-radius: 4px; transition: width .3s ease; }
-  .survival-bar-fill.health { background: #e0665a; }
-  .survival-bar-fill.hunger { background: #c98a3f; }
-  .survival-bar-fill.thirst { background: #4a90c9; }
-  .survival-row.cold .survival-bar-fill.health { background: #8fc7e0; } /* tints icy while cold is actively draining health */
+  .pill-btn { border: none; cursor: pointer; }
 
-  /* Pops in right after a successful gather tap, fades back out — the
-     confirmation that a tap actually did something and what it gave. */
-  .gather-toast {
-    position: fixed; left: 50%; top: max(64px, calc(env(safe-area-inset-top) + 64px));
-    transform: translateX(-50%) translateY(-4px);
-    z-index: 7; pointer-events: none;
-    font-size: 14px; font-weight: 700; color: #ffe9b0;
-    background: rgba(20,13,36,.75); border: 1px solid rgba(255,255,255,.2);
-    padding: 6px 14px; border-radius: 999px; backdrop-filter: blur(6px);
-    opacity: 0; transition: opacity .2s ease, transform .2s ease;
+  .discovery-toast {
+    position: fixed; left: 50%; bottom: max(96px, calc(env(safe-area-inset-bottom) + 96px));
+    transform: translateX(-50%) translateY(6px);
+    z-index: 7; pointer-events: none; max-width: min(84vw, 380px); text-align: center;
+    font-size: 14px; line-height: 1.4; color: #f4ecd6; font-style: italic;
+    background: rgba(12,16,10,.75); border: 1px solid rgba(255,255,255,.16);
+    padding: 10px 16px; border-radius: 16px; backdrop-filter: blur(6px);
+    opacity: 0; transition: opacity .6s ease, transform .6s ease;
   }
-  .gather-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .discovery-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   .hint {
     position: fixed; left: 50%; bottom: max(22px, env(safe-area-inset-bottom));
     transform: translateX(-50%);
-    font-size: 12.5px; color: rgba(242,238,224,.75);
-    background: rgba(20,13,36,.55); border: 1px solid rgba(255,255,255,.15);
+    font-size: 12.5px; color: rgba(238,240,230,.7); text-align: center; width: 88vw; max-width: 420px;
+    background: rgba(12,16,10,.55); border: 1px solid rgba(255,255,255,.14);
     padding: 7px 14px; border-radius: 999px; backdrop-filter: blur(6px);
     z-index: 5; transition: opacity .6s ease; pointer-events: none;
   }
@@ -102,66 +63,42 @@
 
   .fps {
     position: fixed; right: 10px; bottom: 10px; z-index: 5;
-    font-size: 10px; color: rgba(242,238,224,.4); font-variant-numeric: tabular-nums;
+    font-size: 10px; color: rgba(238,240,230,.35); font-variant-numeric: tabular-nums;
     pointer-events: none;
   }
 
-  .fab {
-    position: fixed; right: 16px; bottom: max(22px, env(safe-area-inset-bottom));
-    z-index: 6; width: 52px; height: 52px; border-radius: 999px;
-    display: flex; align-items: center; justify-content: center; font-size: 22px;
-    background: rgba(20,13,36,.7); border: 1px solid rgba(255,255,255,.18);
-    color: #f2eee0; backdrop-filter: blur(6px);
-  }
-  .fab.on { background: #ffb14a; color: #241505; border-color: transparent; }
-  .fab.demolish { bottom: max(84px, calc(env(safe-area-inset-bottom) + 84px)); }
-  .fab.demolish.on { background: #e0665a; color: #2a0d0a; }
-
-  .build-panel {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
-    padding: 12px 16px max(14px, env(safe-area-inset-bottom));
-    background: rgba(16,11,26,.82); backdrop-filter: blur(10px);
-    border-top: 1px solid rgba(255,255,255,.12);
-    display: flex; flex-direction: column; gap: 10px;
-  }
-  .build-panel.hidden { display: none; }
-
-  .resources { display: flex; gap: 14px; font-size: 13px; font-weight: 600; }
-
-  .structures { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
-  .struct-btn {
-    flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 3px;
-    font-size: 11px; font-weight: 600; color: #f2eee0;
-    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14);
-    border-radius: 12px; padding: 8px 12px; min-width: 62px;
-  }
-  .struct-btn .ic { font-size: 18px; }
-  .struct-btn.selected { border-color: #ffb14a; background: rgba(255,177,74,.16); }
-  .struct-btn .cost { opacity: .6; font-weight: 500; }
-
-  .build-actions { display: flex; gap: 10px; }
-  .build-actions button {
-    flex: 1; padding: 10px; border-radius: 12px; font-size: 14px; font-weight: 700;
-    border: 1px solid rgba(255,255,255,.14);
-  }
-  #buildCancel, #buildRotate { background: rgba(255,255,255,.06); color: #f2eee0; }
-  #buildRotate { flex: 0 0 auto; padding: 10px 16px; }
-  #buildConfirm { background: #ffb14a; color: #241505; border-color: transparent; }
-  #buildConfirm:disabled { background: rgba(255,255,255,.1); color: rgba(242,238,224,.4); }
-
-  .death-overlay {
+  .overlay {
     position: fixed; inset: 0; z-index: 20;
     display: flex; align-items: center; justify-content: center;
-    background: rgba(9,5,16,.9); backdrop-filter: blur(4px);
+    background: rgba(6,8,5,.88); backdrop-filter: blur(4px);
+    padding: 24px;
   }
-  .death-overlay.hidden { display: none; }
-  .death-card { text-align: center; padding: 0 28px; }
-  .death-title { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
-  .death-message { font-size: 14px; color: rgba(242,238,224,.8); margin-bottom: 22px; }
-  #deathRestart {
-    font-size: 14px; font-weight: 700; padding: 11px 22px; border-radius: 999px;
-    border: none; background: #ffb14a; color: #241505;
+  .overlay.hidden { display: none; }
+
+  .journal-card {
+    width: 100%; max-width: 420px; max-height: 78vh; overflow-y: auto;
+    background: rgba(18,22,15,.92); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 18px; padding: 20px;
   }
+  .journal-card h2 { margin: 0 0 4px; font-size: 17px; }
+  .journal-card .journal-sub { margin: 0 0 14px; font-size: 12px; color: rgba(238,240,230,.55); }
+  .journal-card p { font-size: 14px; line-height: 1.5; font-style: italic; color: #e8e4d2; margin: 0 0 12px; }
+  .journal-card .journal-empty { font-style: normal; color: rgba(238,240,230,.5); }
+  #journalClose {
+    margin-top: 6px; width: 100%; padding: 10px; border-radius: 12px; font-size: 14px; font-weight: 700;
+    border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.06); color: #eef0e6; cursor: pointer;
+  }
+
+  .ending-card { text-align: center; padding: 0 12px; max-width: 360px; }
+  .ending-title { font-size: 24px; font-weight: 800; margin-bottom: 10px; }
+  .ending-message { font-size: 14px; color: rgba(238,240,230,.8); margin-bottom: 22px; line-height: 1.5; }
+  .ending-actions { display: flex; gap: 10px; justify-content: center; }
+  .ending-actions button {
+    font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 999px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,.14);
+  }
+  #endingContinue { background: rgba(255,255,255,.08); color: #eef0e6; }
+  #endingRestart { background: #d8b06a; color: #241a05; border-color: transparent; }
 </style>
 </head>
 <body>
@@ -170,61 +107,34 @@
   <div class="hud">
     <div class="hud-left">
       <a href="/">← Spel</a>
-      <div class="resources-hud" id="resourcesHud">
-        <span>🪵 <span id="resWoodHud">0</span></span>
-        <span>🪨 <span id="resStoneHud">0</span></span>
-        <span>🌾 <span id="resGrassHud">0</span></span>
-      </div>
-      <div class="survival-hud" id="survivalHud">
-        <div class="survival-row" id="healthRow">
-          <span>❤️</span>
-          <div class="survival-bar"><div class="survival-bar-fill health" id="healthBar"></div></div>
-        </div>
-        <div class="survival-row">
-          <span>🍗</span>
-          <div class="survival-bar"><div class="survival-bar-fill hunger" id="hungerBar"></div></div>
-        </div>
-        <div class="survival-row">
-          <span>💧</span>
-          <div class="survival-bar"><div class="survival-bar-fill thirst" id="thirstBar"></div></div>
-        </div>
-      </div>
+      <button class="pill-btn" id="journalToggle">📖 <span id="fragmentCount">0/0</span></button>
     </div>
     <div class="hud-right">
-      <h1>Läger · 3D-demo</h1>
-      <button class="hud-reset" id="resetGame" aria-label="Börja om från början">↺ Börja om</button>
-      <div class="daynight" id="dayNightPanel">
-        <span id="dayNightIcon">☀️</span>
-        <input type="range" id="dayNightSlider" min="0" max="24" step="0.25" value="12">
-        <span id="dayNightLabel">12:00</span>
-      </div>
+      <h1>Trapped in the Forest!</h1>
     </div>
   </div>
-  <div class="gather-toast" id="gatherToast"></div>
-  <div class="hint" id="hint">Tryck för att gå dit · dra för att rotera · nyp för att zooma</div>
+
+  <div class="discovery-toast" id="discoveryToast"></div>
+  <div class="hint" id="hint">Vänster: dra för att gå · Höger: dra för att titta (eller WASD + musdrag)</div>
   <div class="fps" id="fps"></div>
 
-  <button class="fab demolish" id="demolishToggle" aria-label="Riv-läge">🗑</button>
-  <button class="fab" id="buildToggle" aria-label="Bygg-läge">🔨</button>
-  <div class="build-panel hidden" id="buildPanel">
-    <div class="resources">
-      <span>🪵 <span id="resWood">0</span></span>
-      <span>🪨 <span id="resStone">0</span></span>
-      <span>🌾 <span id="resGrass">0</span></span>
-    </div>
-    <div class="structures" id="structureList"></div>
-    <div class="build-actions">
-      <button id="buildCancel">✕ Avbryt</button>
-      <button id="buildRotate">↻ Rotera</button>
-      <button id="buildConfirm" disabled>✓ Bygg</button>
+  <div class="overlay hidden" id="journalOverlay">
+    <div class="journal-card">
+      <h2>Fynd</h2>
+      <p class="journal-sub">Det du har hittat i skogen hittills.</p>
+      <div id="journalList"></div>
+      <button id="journalClose">Stäng</button>
     </div>
   </div>
 
-  <div class="death-overlay hidden" id="deathOverlay">
-    <div class="death-card">
-      <div class="death-title">Du dog</div>
-      <div class="death-message" id="deathMessage"></div>
-      <button id="deathRestart">↺ Börja om</button>
+  <div class="overlay hidden" id="endingOverlay">
+    <div class="ending-card">
+      <div class="ending-title">Du hittade ut.</div>
+      <div class="ending-message">Skogen släppte taget. Bakom dig blir den lika tät och likgiltig som förut, som om ingen någonsin gått där.</div>
+      <div class="ending-actions">
+        <button id="endingContinue">Fortsätt utforska</button>
+        <button id="endingRestart">↺ Börja om</button>
+      </div>
     </div>
   </div>
 

@@ -1,29 +1,42 @@
-const KEY = "laager-save-v1";
+// A new key from the old build/survival game's "laager-save-v1" — that
+// save shape (resources, placed structures) doesn't mean anything here, so
+// reusing the key would just let a stale old save collide with this game.
+const KEY = "trapped-in-forest-save-v1";
 
-// Wrapped in try/catch throughout: localStorage can throw (private
-// browsing in some browsers, storage disabled, quota exceeded) — none of
-// that should ever crash the game, just silently fall back to "no save".
-export function loadSave() {
+function safeStorage() {
   try {
-    const raw = localStorage.getItem(KEY);
+    return typeof localStorage !== "undefined" ? localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+// `storage` is injectable so tests can pass a plain in-memory mock instead
+// of touching real localStorage.
+export function loadSave(storage = safeStorage()) {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-export function writeSave(state) {
+export function writeSave(data, storage = safeStorage()) {
+  if (!storage) return;
   try {
-    localStorage.setItem(KEY, JSON.stringify(state));
+    storage.setItem(KEY, JSON.stringify(data));
   } catch {
-    // storage full/blocked — this session still plays fine, it just won't persist
+    // storage full/unavailable — losing the save silently is fine here
   }
 }
 
-export function clearSave() {
+export function clearSave(storage = safeStorage()) {
+  if (!storage) return;
   try {
-    localStorage.removeItem(KEY);
+    storage.removeItem(KEY);
   } catch {
-    // nothing to do — if removal fails there was nothing usable stored anyway
+    // nothing to do if removal fails
   }
 }

@@ -1,105 +1,75 @@
-import * as THREE from "three";
+const MOVE_ZONE_RADIUS = 46; // px of drag for full-speed movement
 
-// A single finger down doesn't commit to "walk here" immediately — it
-// waits this long for a second finger to show up and turn the gesture into
-// a pinch instead. Long enough to catch a real pinch's second finger,
-// short enough that a normal tap doesn't feel delayed.
-const TAP_DELAY_MS = 140;
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-// How far a single finger has to move before it's treated as a camera-
-// rotate drag instead of a stationary tap.
-const DRAG_THRESHOLD_PX = 10;
+// Two touch zones on `container`: left half = drag-to-walk (an invisible
+// joystick — direction and speed from the drag vector, released = stop),
+// right half = drag-to-look. A mouse pointer always looks (desktop moves
+// with WASD instead, handled below), since there's no natural way to split
+// a single mouse cursor into two zones the way two thumbs can.
+export function createControls(container, { onLook }) {
+  const keys = new Set();
+  let movePointerId = null, moveOrigin = null, moveDX = 0, moveDY = 0;
+  let lookPointerId = null, lookLast = null;
 
-// One finger taps to interact with whatever's actually under it —
-// raycast against the ground *and* every built structure (nearest hit
-// wins), not just the ground plane. Building/demolishing at height used
-// to always project onto the flat ground no matter what was visually
-// under your finger, which put the inferred point nowhere near an
-// elevated wall/platform and made tapping it directly unreliable. A
-// single finger that moves past a small threshold instead orbits the
-// camera. Two fingers pinch to zoom the follow camera in/out.
-//
-// getTargets() is called fresh on every tap (not just once) since the
-// set of built structures changes as the player builds/demolishes.
-export function createTouchControls(renderer, camera, getTargets, { onTap, onPinchZoom, onRotateDrag }) {
-  const raycaster = new THREE.Raycaster();
-  const ndc = new THREE.Vector2();
-  const pointers = new Map(); // pointerId -> {x, y}
-  let prevPinchDist = null;
-  let tapTimer = null;
-  let tapPos = null;
-  let dragging = false;
-  let lastDragPos = null;
-
-  function raycastFrom(clientX, clientY) {
-    const rect = renderer.domElement.getBoundingClientRect();
-    ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-    ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(ndc, camera);
-    return raycaster.intersectObjects(getTargets(), true);
+  function isMoveZone(clientX) {
+    return clientX < window.innerWidth / 2;
   }
 
-  function pick(clientX, clientY) {
-    const hits = raycastFrom(clientX, clientY);
-    if (hits.length) onTap(hits[0].point, hits[0].object);
-  }
-
-  function pinchDistance() {
-    const [a, b] = [...pointers.values()];
-    return Math.hypot(a.x - b.x, a.y - b.y);
-  }
-
-  function cancelPendingTap() {
-    clearTimeout(tapTimer);
-    tapTimer = null;
-  }
-
-  const el = renderer.domElement;
-
-  el.addEventListener("pointerdown", (e) => {
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointers.size === 1) {
-      tapPos = { x: e.clientX, y: e.clientY };
-      lastDragPos = { x: e.clientX, y: e.clientY };
-      dragging = false;
-      cancelPendingTap();
-      tapTimer = setTimeout(() => {
-        tapTimer = null;
-        if (pointers.size < 2 && !dragging) pick(tapPos.x, tapPos.y);
-      }, TAP_DELAY_MS);
-    } else if (pointers.size === 2) {
-      cancelPendingTap(); // a second finger arrived — this is a pinch, not a tap/drag
-      dragging = false;
-      prevPinchDist = pinchDistance();
+  container.addEventListener("pointerdown", (e) => {
+    // Rare browsers/multi-touch transitions can reject capture for a
+    // pointer id that's already gone by the time this runs — losing
+    // capture there just means drags stop tracking outside the canvas,
+    // not worth failing the whole handler over.
+    try { container.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (e.pointerType !== "mouse" && isMoveZone(e.clientX)) {
+      movePointerId = e.pointerId;
+      moveOrigin = { x: e.clientX, y: e.clientY };
+      moveDX = 0; moveDY = 0;
+    } else {
+      lookPointerId = e.pointerId;
+      lookLast = { x: e.clientX, y: e.clientY };
     }
   });
 
-  el.addEventListener("pointermove", (e) => {
-    if (!pointers.has(e.pointerId)) return;
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  container.addEventListener("pointermove", (e) => {
+    if (e.pointerId === movePointerId && moveOrigin) {
+      moveDX = e.clientX - moveOrigin.x;
+      moveDY = e.clientY - moveOrigin.y;
+    } else if (e.pointerId === lookPointerId && lookLast) {
+      const dx = e.clientX - lookLast.x;
+      const dy = e.clientY - lookLast.y;
+      lookLast = { x: e.clientX, y: e.clientY };
+      onLook(dx, dy);
+    }
+  });
 
-    if (pointers.size === 1) {
-      if (!dragging) {
-        const dx = e.clientX - tapPos.x, dy = e.clientY - tapPos.y;
-        if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-        dragging = true;
-        cancelPendingTap();
-        lastDragPos = { x: e.clientX, y: e.clientY };
+  function endPointer(e) {
+    if (e.pointerId === movePointerId) {
+      movePointerId = null; moveOrigin = null; moveDX = 0; moveDY = 0;
+    }
+    if (e.pointerId === lookPointerId) {
+      lookPointerId = null; lookLast = null;
+    }
+  }
+  container.addEventListener("pointerup", endPointer);
+  container.addEventListener("pointercancel", endPointer);
+
+  window.addEventListener("keydown", (e) => keys.add(e.code));
+  window.addEventListener("keyup", (e) => keys.delete(e.code));
+
+  return {
+    getMoveInput() {
+      let forward = 0, strafe = 0;
+      if (movePointerId !== null) {
+        forward = -moveDY / MOVE_ZONE_RADIUS;
+        strafe = moveDX / MOVE_ZONE_RADIUS;
       }
-      onRotateDrag(e.clientX - lastDragPos.x, e.clientY - lastDragPos.y);
-      lastDragPos = { x: e.clientX, y: e.clientY };
-    } else if (pointers.size === 2) {
-      const dist = pinchDistance();
-      if (prevPinchDist != null) onPinchZoom(dist - prevPinchDist);
-      prevPinchDist = dist;
-    }
-  });
-
-  function release(e) {
-    pointers.delete(e.pointerId);
-    if (pointers.size < 2) prevPinchDist = null;
-    if (pointers.size === 0) dragging = false;
-  }
-  el.addEventListener("pointerup", release);
-  el.addEventListener("pointercancel", release);
+      if (keys.has("KeyW") || keys.has("ArrowUp")) forward += 1;
+      if (keys.has("KeyS") || keys.has("ArrowDown")) forward -= 1;
+      if (keys.has("KeyD") || keys.has("ArrowRight")) strafe += 1;
+      if (keys.has("KeyA") || keys.has("ArrowLeft")) strafe -= 1;
+      return { forward: clamp(forward, -1, 1), strafe: clamp(strafe, -1, 1) };
+    },
+  };
 }

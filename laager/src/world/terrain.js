@@ -1,16 +1,15 @@
 import * as THREE from "three";
 
-// Pure height function so the player/camera can sample the same terrain
-// shape the ground mesh was built with, without raycasting every frame.
-// No flattened patch anywhere — the player wakes up in the middle of the
-// wilderness, not at a prepared camp spot, so the ground undulates the
-// same near spawn as everywhere else.
+// Pure height function so the player camera and the forest scatter sample
+// exactly the same ground shape the mesh was built with, with no per-frame
+// raycasting. Gentle, everywhere — no flattened clearing at spawn, the
+// player just starts in the middle of it like everywhere else.
 export function terrainHeight(x, z) {
-  return (Math.sin(x * 0.35) + Math.cos(z * 0.3)) * 0.22 + Math.sin(x * 0.9 + z * 0.6) * 0.08;
+  return (Math.sin(x * 0.18) + Math.cos(z * 0.15)) * 0.35 + Math.sin(x * 0.6 + z * 0.4) * 0.12;
 }
 
 export function buildGround(scene, palette) {
-  const size = 46, seg = 40;
+  const size = 170, seg = 80;
   const geo = new THREE.PlaneGeometry(size, size, seg, seg);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;

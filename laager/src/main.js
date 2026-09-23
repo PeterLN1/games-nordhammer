@@ -1,423 +1,201 @@
 import * as THREE from "three";
 import { PALETTE } from "./core/palette.js";
-import { createShadowMaterial } from "./core/shadowDecals.js";
-import { createSky } from "./world/sky.js";
-import { createLighting } from "./world/lighting.js";
-import { buildGround, terrainHeight } from "./world/terrain.js";
-import { buildEmbers } from "./world/fire.js";
-import { buildTrees } from "./world/trees.js";
-import { buildRocks } from "./world/rocks.js";
-import { buildBerries } from "./world/berries.js";
-import { buildWater } from "./world/water.js";
-import { createGathering } from "./world/gathering.js";
-import { isSheltered } from "./world/shelter.js";
-import { Player } from "./player/player.js";
-import { createTouchControls } from "./player/controls.js";
-import { createMoveMarker } from "./player/moveMarker.js";
-import { FollowCamera } from "./camera/followCamera.js";
-import { createResources } from "./core/resources.js";
-import { createSurvival } from "./core/survival.js";
+import { createJournal } from "./core/journal.js";
 import { loadSave, writeSave, clearSave } from "./core/save.js";
-import { createBuildMode, platformSurfaceAt } from "./build/buildMode.js";
-import { STRUCTURES } from "./build/structures.js";
-import { createCutaway } from "./build/cutaway.js";
-import { createPlatformClimb } from "./build/platformClimb.js";
-import { createCollision } from "./world/collision.js";
-
-const ROTATE_STEP = Math.PI / 2; // 90° per tap — building is grid-only, no in-between angles
-const CAMERA_DRAG_SPEED = 0.008; // radians per pixel of drag
-const DAY_LENGTH_SECONDS = 480; // a full day/night cycle in real time — 8 min: long enough for night to feel like its own stretch, short enough that the cold-night challenge actually comes around
+import { buildGround, terrainHeight } from "./world/terrain.js";
+import { buildForest } from "./world/forest.js";
+import { createAtmosphere } from "./world/atmosphere.js";
+import { LANDMARKS, checkDiscoveries } from "./world/landmarks.js";
+import { buildLandmarkVisuals } from "./world/landmarkVisuals.js";
+import { EXIT_POS, distanceToExit, hasReachedExit } from "./world/exit.js";
+import { createPlayerCamera } from "./player/camera.js";
+import { createControls } from "./player/controls.js";
+import { createAmbience } from "./audio/ambience.js";
 
 /* ---------------------------------------------------------------------
-   Läger — stiliserad low-poly 3D-prototyp
-   Fas 1: spelarkontroll (tap-to-move) + kamera som följer spelaren.
-   Mål: snyggt & levande men billigt att rendera på mobil — flat shading
-   istället för texturer, inga realtids-skuggor (falska skuggblobbar
-   istället), instancing för upprepade objekt.
+   Trapped in the Forest! — förstapersons atmosfärisk walking sim.
+   Inget hot, ingen död: bara en tät, disorienterande skog, spridda
+   textfragment att hitta, och en väg ut någonstans därute.
 --------------------------------------------------------------------- */
+
+const FOREST_SEED = 1337;
+const PLAY_BOUNDS = 62;
+const EXIT_GLOW_START_DIST = 26;
+const AUTOSAVE_INTERVAL = 10;
 
 const container = document.getElementById("app");
 const hint = document.getElementById("hint");
 const fpsEl = document.getElementById("fps");
-const buildToggleBtn = document.getElementById("buildToggle");
-const demolishToggleBtn = document.getElementById("demolishToggle");
-const buildPanel = document.getElementById("buildPanel");
-const structureList = document.getElementById("structureList");
-const buildCancelBtn = document.getElementById("buildCancel");
-const buildRotateBtn = document.getElementById("buildRotate");
-const buildConfirmBtn = document.getElementById("buildConfirm");
-const resWoodEl = document.getElementById("resWood");
-const resStoneEl = document.getElementById("resStone");
-const resGrassEl = document.getElementById("resGrass");
-const resWoodHudEl = document.getElementById("resWoodHud");
-const resStoneHudEl = document.getElementById("resStoneHud");
-const resGrassHudEl = document.getElementById("resGrassHud");
-const gatherToastEl = document.getElementById("gatherToast");
-const resetBtn = document.getElementById("resetGame");
-const dayNightSlider = document.getElementById("dayNightSlider");
-const dayNightIcon = document.getElementById("dayNightIcon");
-const dayNightLabel = document.getElementById("dayNightLabel");
-const healthBarEl = document.getElementById("healthBar");
-const hungerBarEl = document.getElementById("hungerBar");
-const thirstBarEl = document.getElementById("thirstBar");
-const healthRowEl = document.getElementById("healthRow");
-const deathOverlayEl = document.getElementById("deathOverlay");
-const deathMessageEl = document.getElementById("deathMessage");
-const deathRestartBtn = document.getElementById("deathRestart");
-
-const PLAY_RADIUS = 17; // how far from spawn the player is allowed to walk
+const fragmentCountEl = document.getElementById("fragmentCount");
+const journalToggleBtn = document.getElementById("journalToggle");
+const journalOverlay = document.getElementById("journalOverlay");
+const journalList = document.getElementById("journalList");
+const journalCloseBtn = document.getElementById("journalClose");
+const discoveryToastEl = document.getElementById("discoveryToast");
+const endingOverlay = document.getElementById("endingOverlay");
+const endingContinueBtn = document.getElementById("endingContinue");
+const endingRestartBtn = document.getElementById("endingRestart");
 
 // ---------- renderer / scene / camera ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = 1.0;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-
-const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
-const followCam = new FollowCamera(camera);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 120);
 
 // ---------- world ----------
-const shadowMat = createShadowMaterial();
-const sky = createSky(scene, PALETTE);
-const lighting = createLighting(scene);
-const { ground } = buildGround(scene, PALETTE);
-const treeItems = buildTrees(scene, PALETTE, shadowMat);
-const rockItems = buildRocks(scene, PALETTE);
-const berryItems = buildBerries(scene, PALETTE);
-const waterItems = buildWater(scene, PALETTE, terrainHeight);
+const atmosphere = createAtmosphere(scene, PALETTE);
+buildGround(scene, PALETTE);
 
-// ---------- build system ----------
-// Loaded once at startup: a previous session's resources/buildings, if
-// any, so the camp is exactly as it was left instead of resetting on
-// every reload/revisit.
+const exclusions = [
+  { x: 0, z: 0, radius: 4 },
+  { x: EXIT_POS.x, z: EXIT_POS.z, radius: 5 },
+  ...LANDMARKS.map((lm) => ({ x: lm.x, z: lm.z, radius: 2.2 })),
+];
+const treeObstacles = buildForest(scene, PALETTE, { seed: FOREST_SEED, exclusions });
+const landmarkVisuals = buildLandmarkVisuals(scene, PALETTE);
+
+const exitMarker = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.05, 0.4, 2.4, 8),
+  new THREE.MeshStandardMaterial({ color: PALETTE.exitGlow, emissive: PALETTE.exitGlow, emissiveIntensity: 1.2, flatShading: true })
+);
+exitMarker.position.set(EXIT_POS.x, terrainHeight(EXIT_POS.x, EXIT_POS.z) + 1.2, EXIT_POS.z);
+scene.add(exitMarker);
+atmosphere.exitGlow.position.set(EXIT_POS.x, terrainHeight(EXIT_POS.x, EXIT_POS.z) + 1.5, EXIT_POS.z);
+
+// ---------- journal / save ----------
 const saved = loadSave();
-const resources = createResources(saved?.resources);
-const survival = createSurvival(saved?.survival);
-const buildMode = createBuildMode({ scene, palette: PALETTE, shadowMat, resources, terrainHeight, buildRadius: PLAY_RADIUS });
-if (saved?.placed?.length) buildMode.restore(saved.placed);
-const cutaway = createCutaway();
-const gathering = createGathering({ treeItems, rockItems, berryItems, waterItems, resources, survival });
+const journal = createJournal(saved?.discoveredIds);
+journal.discovered.forEach((id) => landmarkVisuals.hide(id));
 
-// ---------- fires: each built "fire" structure gets its own embers
-// particle system; only one drives the flicker light (see
-// world/lighting.js) since a second dynamic light per campfire isn't
-// worth the render cost here. The player no longer spawns with one
-// already lit — see build/structures.js's "fire" entry.
-const fireEmbers = new Map(); // placed-entry -> embers handle
-function addFireEmbers(entry) {
-  const handle = buildEmbers();
-  handle.points.position.set(entry.x, entry.y, entry.z);
-  scene.add(handle.points);
-  fireEmbers.set(entry, handle);
-  lighting.setFirePosition(entry.x, entry.y, entry.z);
-  lighting.setFireActive(true);
-}
-function removeFireEmbers(entry) {
-  const handle = fireEmbers.get(entry);
-  if (!handle) return;
-  scene.remove(handle.points);
-  fireEmbers.delete(entry);
-  const remaining = fireEmbers.keys().next().value;
-  if (remaining) lighting.setFirePosition(remaining.x, remaining.y, remaining.z);
-  else lighting.setFireActive(false);
-}
-for (const entry of buildMode.placed) {
-  if (entry.structure.id === "fire") addFireEmbers(entry);
-}
-
-// Persisted after every build/demolish/door-toggle (see call sites below)
-// rather than on a timer — those are the only actions that actually
-// change what a reload needs to reproduce, so there's no reason to write
-// to storage any more often than that.
+// endingShown is declared further down (with the rest of the player/ending
+// wiring) but referenced here — safe since saveGame() is only ever called
+// from the render loop, after that declaration has run.
 function saveGame() {
-  writeSave({
-    version: 1,
-    resources: { wood: resources.wood, stone: resources.stone, grass: resources.grass },
-    survival: { health: survival.health, hunger: survival.hunger, thirst: survival.thirst, deathCauses: survival.deathCauses },
-    placed: buildMode.placed.map((p) => ({
-      id: p.structure.id, x: p.x, y: p.y, z: p.z, rotY: p.rotY, buildArgs: p.buildArgs, open: p.open,
-    })),
-  });
+  writeSave({ discoveredIds: [...journal.discovered], reachedExit: endingShown });
 }
 
-// ---------- player ----------
-// The player only stands on a platform's surface after climbing a ladder
-// attached to it, and stays up there until walking off its footprint —
-// otherwise it's ground height as usual.
-const platformClimb = createPlatformClimb();
-function playerHeightAt(x, z) {
-  return platformClimb.update(x, z, buildMode.placed) ?? terrainHeight(x, z);
+function updateFragmentCount() {
+  fragmentCountEl.textContent = `${journal.discovered.size}/${LANDMARKS.length}`;
 }
-const collision = createCollision({ trees: treeItems, rocks: rockItems, buildMode, terrainHeight });
-const player = new Player(scene, PALETTE, shadowMat, playerHeightAt, collision);
-const marker = createMoveMarker(scene);
+journal.subscribe(updateFragmentCount);
 
-resources.subscribe(({ wood, stone, grass }) => {
-  resWoodEl.textContent = wood;
-  resStoneEl.textContent = stone;
-  resGrassEl.textContent = grass;
-  resWoodHudEl.textContent = wood;
-  resStoneHudEl.textContent = stone;
-  resGrassHudEl.textContent = grass;
-});
-
-const DEATH_CAUSE_LABELS = { cold: "kylan", hunger: "svält", thirst: "uttorkning" };
-function deathMessage(causes) {
-  const labels = causes.map((c) => DEATH_CAUSE_LABELS[c]).filter(Boolean);
-  if (labels.length === 0) return "Vildmarken tog dig.";
-  if (labels.length === 1) return `Du dog av ${labels[0]}.`;
-  return `Du dog av ${labels.slice(0, -1).join(", ")} och ${labels[labels.length - 1]}.`;
-}
-
-// subscribe() fires immediately with the current state (see
-// core/survival.js), so restoring an already-dead save shows the death
-// screen again right away instead of quietly reviving the player.
-survival.subscribe(({ health, hunger, thirst }) => {
-  healthBarEl.style.width = `${health}%`;
-  hungerBarEl.style.width = `${hunger}%`;
-  thirstBarEl.style.width = `${thirst}%`;
-  if (survival.isDead) {
-    deathMessageEl.textContent = deathMessage(survival.deathCauses);
-    deathOverlayEl.classList.remove("hidden");
-    saveGame();
+function renderJournalList() {
+  journalList.innerHTML = "";
+  if (journal.discovered.size === 0) {
+    journalList.innerHTML = '<p class="journal-empty">Inget hittat än.</p>';
+    return;
   }
+  for (const lm of LANDMARKS) {
+    if (!journal.has(lm.id)) continue;
+    const p = document.createElement("p");
+    p.textContent = lm.text;
+    journalList.appendChild(p);
+  }
+}
+
+journalToggleBtn.addEventListener("click", () => {
+  renderJournalList();
+  journalOverlay.classList.remove("hidden");
 });
-deathRestartBtn.addEventListener("click", () => {
+journalCloseBtn.addEventListener("click", () => journalOverlay.classList.add("hidden"));
+
+let discoveryToastTimer = null;
+function showDiscoveryToast(text) {
+  discoveryToastEl.textContent = text;
+  discoveryToastEl.classList.add("show");
+  clearTimeout(discoveryToastTimer);
+  discoveryToastTimer = setTimeout(() => discoveryToastEl.classList.remove("show"), 5000);
+}
+
+// ---------- player / controls / audio ----------
+const playerCam = createPlayerCamera(camera, { x: 0, z: 0 });
+const controls = createControls(renderer.domElement, {
+  onLook(dx, dy) { playerCam.applyLook(dx, dy); },
+});
+const ambience = createAmbience();
+renderer.domElement.addEventListener("pointerdown", () => ambience.start(), { once: true });
+window.addEventListener("keydown", () => ambience.start(), { once: true });
+
+let hintHidden = false;
+let endingShown = saved?.reachedExit ?? false;
+if (endingShown) endingOverlay.classList.remove("hidden");
+
+endingContinueBtn.addEventListener("click", () => endingOverlay.classList.add("hidden"));
+endingRestartBtn.addEventListener("click", () => {
   clearSave();
   location.reload();
-});
-
-const GATHER_ICON = { wood: "🪵", stone: "🪨" };
-let gatherToastTimer = null;
-
-// Pops the "+N 🪵" toast in and schedules its fade-out — restarting the
-// timer on every call so a quick run of taps keeps it visible instead of
-// having it flicker out mid-streak.
-function showGatherToast(type, amount) {
-  gatherToastEl.textContent = `+${amount} ${GATHER_ICON[type]}`;
-  gatherToastEl.classList.add("show");
-  clearTimeout(gatherToastTimer);
-  gatherToastTimer = setTimeout(() => gatherToastEl.classList.remove("show"), 800);
-}
-
-function costLabel(cost) {
-  const parts = [];
-  if (cost.wood) parts.push(`🪵${cost.wood}`);
-  if (cost.stone) parts.push(`🪨${cost.stone}`);
-  if (cost.grass) parts.push(`🌾${cost.grass}`);
-  return parts.join(" ");
-}
-
-function formatClock(hours) {
-  const h = Math.floor(hours) % 24;
-  const m = Math.round((hours % 1) * 60) % 60;
-  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
-}
-function refreshDayNightUI() {
-  dayNightLabel.textContent = formatClock(sky.hours);
-  dayNightIcon.textContent = sky.isNight ? "🌙" : "☀️";
-}
-dayNightSlider.value = sky.hours;
-refreshDayNightUI();
-dayNightSlider.addEventListener("input", () => {
-  sky.setHours(parseFloat(dayNightSlider.value));
-  refreshDayNightUI();
-});
-// Runs on its own from here — the slider still works as a manual jump
-// (see the listener above), it just no longer stays put afterward.
-sky.setSpeed(24 / DAY_LENGTH_SECONDS);
-
-Object.values(STRUCTURES).forEach((s) => {
-  const btn = document.createElement("button");
-  btn.className = "struct-btn";
-  btn.dataset.id = s.id;
-  btn.innerHTML = `<span class="ic">${s.icon}</span><span>${s.label}</span><span class="cost">${costLabel(s.cost)}</span>`;
-  btn.addEventListener("click", () => {
-    buildMode.selectStructure(s.id);
-    [...structureList.children].forEach((c) => c.classList.toggle("selected", c === btn));
-    buildConfirmBtn.disabled = !buildMode.canConfirm;
-    hint.textContent = "Tryck på marken för att placera · ✓ för att bygga";
-    hint.classList.remove("hidden");
-  });
-  structureList.appendChild(btn);
-});
-
-function setBuildActive(active) {
-  buildMode.toggle(active);
-  buildToggleBtn.classList.toggle("on", active);
-  buildPanel.classList.toggle("hidden", !active);
-  demolishToggleBtn.classList.toggle("on", buildMode.demolishActive);
-  if (active) {
-    [...structureList.children].forEach((c) => c.classList.remove("selected"));
-    buildConfirmBtn.disabled = true;
-    hint.textContent = "Tryck på marken för att placera · ✓ för att bygga";
-    hint.classList.remove("hidden");
-  } else {
-    hint.classList.add("hidden");
-  }
-}
-
-function setDemolishActive(active) {
-  buildMode.toggleDemolish(active);
-  demolishToggleBtn.classList.toggle("on", active);
-  buildToggleBtn.classList.toggle("on", buildMode.active);
-  buildPanel.classList.toggle("hidden", !buildMode.active);
-  hint.textContent = "Tryck på en byggnad för att riva den";
-  hint.classList.toggle("hidden", !active);
-}
-
-buildToggleBtn.addEventListener("click", () => setBuildActive(!buildMode.active));
-demolishToggleBtn.addEventListener("click", () => setDemolishActive(!buildMode.demolishActive));
-
-// Wipes the save and reloads rather than trying to reset every in-memory
-// system (built meshes, resources, player position, ...) by hand — a
-// fresh page load already does that correctly for the "no save" case, so
-// clear-then-reload gets a genuinely clean slate for free.
-resetBtn.addEventListener("click", () => {
-  if (window.confirm("Börja om från början? Allt du har byggt försvinner.")) {
-    clearSave();
-    location.reload();
-  }
-});
-
-// Avbryt always backs all the way out of build mode — a partial "just clear
-// the ghost but stay in the panel" state read as broken (tapping it seemed
-// to do nothing whenever no ghost happened to be showing).
-buildCancelBtn.addEventListener("click", () => setBuildActive(false));
-
-buildRotateBtn.addEventListener("click", () => {
-  buildMode.rotate(ROTATE_STEP);
-  buildConfirmBtn.disabled = !buildMode.canConfirm;
-});
-
-buildConfirmBtn.addEventListener("click", () => {
-  if (buildMode.confirm()) {
-    const last = buildMode.placed[buildMode.placed.length - 1];
-    if (last.structure.id === "fire") addFireEmbers(last);
-    buildConfirmBtn.disabled = !buildMode.canConfirm;
-    saveGame();
-  }
-});
-
-// Raycast targets include every built structure (not just the ground
-// plane), so a tap lands on whatever's actually visually under it —
-// recomputed fresh each tap since what's built changes over time.
-// Currently-faded structures (a roof over the player, a wall between
-// camera and player — see cutaway.js) are left out, so tapping "through"
-// one of those reaches the wall/ground behind it instead of hitting the
-// see-through-but-still-solid mesh.
-function tapTargets() {
-  const faded = cutaway.getFaded();
-  const structureMeshes = buildMode.placed.filter((p) => !faded.has(p.mesh)).map((p) => p.mesh);
-  return [ground, ...structureMeshes];
-}
-
-createTouchControls(renderer, camera, tapTargets, {
-  onTap(point, hitObject) {
-    if (buildMode.demolishActive) {
-      const removed = buildMode.tryDemolish(point, hitObject);
-      if (removed) {
-        if (removed.structure.id === "fire") removeFireEmbers(removed);
-        saveGame();
-      }
-      return;
-    }
-    if (buildMode.active) {
-      buildMode.handleTap(point);
-      buildConfirmBtn.disabled = !buildMode.canConfirm;
-      return;
-    }
-    if (buildMode.tryToggleDoor(point, hitObject)) { saveGame(); return; }
-
-    // Trees/rocks aren't raycast targets themselves (see tapTargets above)
-    // — a tap that visually lands on one still resolves to roughly its
-    // ground position via the ground-plane hit, which is exactly what
-    // gathering.tryGather matches against. Too far away just walks the
-    // player closer instead of gathering, same as tapping any other spot.
-    const gathered = gathering.tryGather(point, player.position);
-    if (gathered) {
-      const gy = terrainHeight(gathered.x, gathered.z);
-      marker.show(gathered.x, gy, gathered.z);
-      if (gathered.gathered) {
-        showGatherToast(gathered.type, gathered.amount);
-        saveGame();
-      } else {
-        player.moveTo(gathered.x, gathered.z);
-      }
-      hint.classList.add("hidden");
-      return;
-    }
-
-    const len = Math.hypot(point.x, point.z);
-    const p = len > PLAY_RADIUS ? point.clone().multiplyScalar(PLAY_RADIUS / len) : point;
-    player.moveTo(p.x, p.z);
-    marker.show(p.x, platformSurfaceAt(p.x, p.z, buildMode.placed) ?? terrainHeight(p.x, p.z), p.z);
-    hint.classList.add("hidden");
-  },
-  onPinchZoom(deltaPx) {
-    followCam.zoomBy(deltaPx);
-  },
-  onRotateDrag(deltaX, deltaY) {
-    followCam.rotateBy(-deltaX * CAMERA_DRAG_SPEED, deltaY * CAMERA_DRAG_SPEED);
-  },
 });
 
 // ---------- resize ----------
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h);
-  followCam.resize(w / h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
 }
 window.addEventListener("resize", resize);
 resize();
-followCam.snapTo(player.group.position);
 
 // ---------- render loop ----------
 const clock = new THREE.Clock();
 let fpsAccum = 0, fpsFrames = 0, fpsTimer = 0;
 let saveTimer = 0;
-const AUTOSAVE_INTERVAL = 8; // seconds — hunger/thirst/health drain on their own between build/gather actions, so those need periodic saving too, just not every single frame
 
 function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
+  const elapsed = clock.elapsedTime;
 
-  sky.update(dt);
-  lighting.updateFireFlicker(clock.elapsedTime);
-  fireEmbers.forEach((handle) => handle.update(dt));
-  gathering.advance(dt);
-  player.update(dt);
-  marker.update(dt);
-  followCam.update(player.group.position, dt);
-  cutaway.update(buildMode.placed, player.group.position, camera, dt);
+  const input = controls.getMoveInput();
+  if (!hintHidden && (input.forward || input.strafe)) {
+    hintHidden = true;
+    hint.classList.add("hidden");
+  }
 
-  // Cold only bites at night, and only with nothing to shield against it
-  // — see world/shelter.js. Toggling .cold on the health row is purely
-  // cosmetic (tints the bar icy instead of red) but makes "yes, the cold
-  // is what's hurting you right now" legible at a glance.
-  const cold = sky.isNight && !isSheltered(buildMode.placed, player.group.position);
-  healthRowEl.classList.toggle("cold", cold);
-  survival.tick(dt, { cold });
+  playerCam.update(dt, input, treeObstacles, PLAY_BOUNDS);
+  const pos = playerCam.position;
 
-  saveTimer += dt;
-  if (saveTimer > AUTOSAVE_INTERVAL) {
-    saveTimer = 0;
+  atmosphere.playerLight.position.set(camera.position.x, camera.position.y + 0.2, camera.position.z);
+
+  const exitDist = distanceToExit(pos);
+  const closeness = 1 - THREE.MathUtils.clamp(exitDist / EXIT_GLOW_START_DIST, 0, 1);
+  atmosphere.setExitCloseness(closeness);
+  atmosphere.update(dt);
+
+  landmarkVisuals.update(dt, elapsed);
+  ambience.onDistanceWalked(playerCam.distanceWalked);
+
+  const newlyFound = checkDiscoveries(pos, journal.discovered);
+  for (const id of newlyFound) {
+    journal.add(id);
+    landmarkVisuals.hide(id);
+    const lm = LANDMARKS.find((l) => l.id === id);
+    showDiscoveryToast(lm.text);
+    saveGame();
+  }
+
+  if (!endingShown && hasReachedExit(pos)) {
+    endingShown = true;
+    endingOverlay.classList.remove("hidden");
     saveGame();
   }
 
   renderer.render(scene, camera);
 
+  saveTimer += dt;
+  if (saveTimer > AUTOSAVE_INTERVAL) { saveTimer = 0; saveGame(); }
+
   fpsAccum += dt; fpsFrames++; fpsTimer += dt;
   if (fpsTimer > 0.5) {
     fpsEl.textContent = Math.round(fpsFrames / fpsAccum) + " fps";
     fpsAccum = 0; fpsFrames = 0; fpsTimer = 0;
-    dayNightSlider.value = sky.hours;
-    refreshDayNightUI();
   }
 
   requestAnimationFrame(tick);
 }
+updateFragmentCount();
 tick();
