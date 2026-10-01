@@ -60,6 +60,7 @@
     padding: max(28px, env(safe-area-inset-top)) 20px 60px;
     position: relative; z-index: 1;
   }
+  body::before { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; background: var(--season-tint, none); }
   #seasonFx { position: fixed; inset: 0; z-index: 50; pointer-events: none; }
   @media (prefers-reduced-motion: reduce) { #seasonFx { display: none; } }
   .topbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 4px; }
@@ -73,7 +74,7 @@
   }
   header { text-align: center; margin-bottom: 34px; }
   .logo { font-size: 30px; font-weight: 800; letter-spacing: .5px; margin: 0; }
-  .logo .dot { color: #ffd200; }
+  .logo .dot { color: var(--season-accent, #ffd200); }
   .tagline { margin: 8px 0 0; opacity: .65; font-size: 14px; font-weight: 500; }
 
   .grid {
@@ -89,7 +90,7 @@
     transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
   }
   .card.playable:active { transform: scale(.98); }
-  @media (hover:hover){ .card.playable:hover { transform: translateY(-3px); border-color: var(--card-hover-border); box-shadow: 0 10px 30px var(--card-shadow); } }
+  @media (hover:hover){ .card.playable:hover { transform: translateY(-3px); border-color: var(--season-accent, var(--card-hover-border)); box-shadow: 0 10px 30px var(--card-shadow); } }
   .art {
     height: 120px; border-radius: 12px; margin-bottom: 16px;
     display: flex; align-items: center; justify-content: center;
@@ -207,116 +208,90 @@
   </div>
   <script>
     // ---------- Säsongstema baserat på månad ----------
+    // Varje månad har en accentfärg, en svag bakgrundston och en
+    // partikeleffekt. Effekterna körs i en gemensam motor (runParticles)
+    // och beskriver bara hur en partikel skapas, rör sig och ritas.
     (function(){
-      var SEASON_EFFECTS = {
-        8: initFallingLeaves, // september (0-indexerad månad)
-        9: initBats           // oktober
-      };
+      var TAU = Math.PI * 2;
+      function rand(a, b){ return a + Math.random() * (b - a); }
+      function pick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+
+      var SEASONS = [
+        { accent: '#7fa8ff', tint: ['rgba(40,90,210,.16)',   'rgba(180,205,255,.14)'], effect: newYearGlitter },  // januari: nyår & vinter
+        { accent: '#ff7fa8', tint: ['rgba(150,195,245,.16)', 'rgba(255,150,190,.12)'], effect: snowAndHearts },   // februari: sportlov & alla hjärtans dag
+        { accent: '#7fb0d6', tint: ['rgba(255,220,140,.16)', 'rgba(140,170,200,.14)'], effect: lateWinter },      // mars: vårvinter
+        { accent: '#f2c81e', tint: ['rgba(255,225,110,.18)', 'rgba(230,180,255,.12)'], effect: easter },          // april: påsk
+        { accent: '#4cbc5c', tint: ['rgba(150,220,255,.16)', 'rgba(110,205,110,.14)'], effect: springBlossom },   // maj: vår & valborg
+        { accent: '#2f72d8', tint: ['rgba(255,215,60,.14)',  'rgba(60,130,230,.14)'],  effect: midsummer },       // juni: midsommar
+        { accent: '#21b8b4', tint: ['rgba(60,205,205,.16)',  'rgba(240,205,140,.18)'], effect: highSummer },      // juli: högsommar
+        { accent: '#c2412c', tint: ['rgba(40,40,110,.14)',   'rgba(170,50,35,.14)'],   effect: lateSummerNight }, // augusti: sensommar & kräftskiva
+        { accent: '#e08a1e', tint: ['rgba(230,170,40,.14)',  'rgba(210,100,30,.12)'],  effect: fallingLeaves },   // september: skörd & tidig höst
+        { accent: '#ff7a1a', tint: ['rgba(255,120,20,.14)',  'rgba(60,20,80,.14)'],    effect: bats },            // oktober: halloween
+        { accent: '#a77cf0', tint: ['rgba(90,60,170,.18)',   'rgba(255,170,80,.10)'],  effect: lightsInDark },    // november: mörker & ljus
+        { accent: '#d9303c', tint: ['rgba(210,40,50,.12)',   'rgba(40,140,70,.12)'],   effect: christmas }        // december: jul
+      ];
+
       // ?month=1-12 i URL:en förhandsgranskar en månads tema
       var forced = parseInt(new URLSearchParams(location.search).get('month'), 10);
       var month = forced >= 1 && forced <= 12 ? forced - 1 : new Date().getMonth();
-      var effect = SEASON_EFFECTS[month];
-      if (!effect) return;
-      if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      effect();
+      var season = SEASONS[month];
 
-      function initFallingLeaves(){
+      var rootStyle = document.documentElement.style;
+      rootStyle.setProperty('--season-accent', season.accent);
+      rootStyle.setProperty('--season-tint',
+        'radial-gradient(900px 600px at 10% -5%, ' + season.tint[0] + ', transparent 70%),' +
+        'radial-gradient(900px 700px at 100% 105%, ' + season.tint[1] + ', transparent 70%)');
+
+      if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      runParticles(season.effect());
+
+      // ---------- Motor ----------
+      // cfg: count(w,h), make(env, spawnAnywhere), update(p, dt, env) -> false = ersätt,
+      //      draw(ctx, p, env), valfria before/after(ctx, env, dt)
+      function runParticles(cfg){
         var canvas = document.getElementById('seasonFx');
         if (!canvas || !canvas.getContext) return;
         var ctx = canvas.getContext('2d');
         var dpr = Math.min(window.devicePixelRatio || 1, 2);
-        var w = 0, h = 0;
+        var env = { w: 0, h: 0, t: 0, wind: 0, dark: false };
 
         function resize(){
-          w = window.innerWidth; h = window.innerHeight;
-          canvas.width = Math.round(w * dpr);
-          canvas.height = Math.round(h * dpr);
-          canvas.style.width = w + 'px';
-          canvas.style.height = h + 'px';
+          env.w = window.innerWidth; env.h = window.innerHeight;
+          canvas.width = Math.round(env.w * dpr);
+          canvas.height = Math.round(env.h * dpr);
+          canvas.style.width = env.w + 'px';
+          canvas.style.height = env.h + 'px';
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
         window.addEventListener('resize', resize);
         resize();
 
-        var SHAPES = [
-          { path: pathOval, tip: 1, base: 1 },
-          { path: pathMaple, tip: 1.05, base: 0.62 },
-          { path: pathSlim, tip: 1.15, base: 1.15 }
-        ];
+        var parts = [];
+        var count = cfg.count(env.w, env.h);
+        for (var i = 0; i < count; i++) parts.push(cfg.make(env, true));
 
-        function rand(a, b){ return a + Math.random() * (b - a); }
-
-        function randomAutumnColor(){
-          var r = Math.random();
-          if (r < 0.35) return { hue: rand(40, 55), sat: rand(60, 85), light: rand(42, 55) };
-          if (r < 0.65) return { hue: rand(20, 38), sat: rand(60, 85), light: rand(38, 50) };
-          if (r < 0.85) return { hue: rand(3, 15), sat: rand(55, 80), light: rand(34, 46) };
-          return { hue: rand(18, 28), sat: rand(25, 45), light: rand(24, 38) };
-        }
-
-        function makeLeaf(spawnAnywhere){
-          var depth = Math.random();
-          var c = randomAutumnColor();
-          return {
-            depth: depth,
-            baseX: rand(-40, w + 40),
-            windDrift: 0,
-            y: spawnAnywhere ? rand(-h, h) : rand(-60, -10),
-            vy: 12 + depth * 24,
-            size: 8 + depth * 11,
-            hue: c.hue,
-            sat: c.sat,
-            light: c.light,
-            shapeDef: SHAPES[Math.floor(Math.random() * SHAPES.length)],
-            angle: rand(0, Math.PI * 2),
-            rotSpeed: rand(-1.1, 1.1) * (0.5 + depth),
-            swingPhase: rand(0, Math.PI * 2),
-            swingFreq: rand(0.5, 1.3),
-            swingAmp: rand(12, 30) * (0.5 + depth)
-          };
-        }
-
-        var count = Math.max(16, Math.min(32, Math.round(w / 45)));
-        var leaves = [];
-        for (var i = 0; i < count; i++) leaves.push(makeLeaf(true));
-
-        var windPhase = 0;
         var last = performance.now();
         var rafId = null;
 
         function frame(now){
           var dt = Math.min((now - last) / 1000, 0.05);
           last = now;
-          windPhase += dt;
-          var wind = Math.sin(windPhase * 0.25) * 16 + Math.sin(windPhase * 0.9) * 7;
+          env.t += dt;
+          env.dark = !!(window.NordhammerTheme && NordhammerTheme.isDark());
+          env.wind = Math.sin(env.t * 0.25) * 16 + Math.sin(env.t * 0.9) * 7;
 
-          ctx.clearRect(0, 0, w, h);
-          for (var j = 0; j < leaves.length; j++){
-            var L = leaves[j];
-            L.windDrift += wind * (0.35 + L.depth * 0.9) * dt;
-            L.y += L.vy * dt;
-            L.angle += L.rotSpeed * dt;
-            L.swingPhase += L.swingFreq * dt;
-
-            var x = L.baseX + L.windDrift + Math.sin(L.swingPhase) * L.swingAmp;
-
-            if (L.y - L.size > h + 20 || x < -100 || x > w + 100){
-              var fresh = makeLeaf(false);
-              fresh.baseX = x < -100 ? w + rand(20, 60) : (x > w + 100 ? rand(-60, -20) : rand(0, w));
-              leaves[j] = fresh;
+          ctx.clearRect(0, 0, env.w, env.h);
+          if (cfg.before){ ctx.save(); cfg.before(ctx, env, dt); ctx.restore(); }
+          for (var j = 0; j < parts.length; j++){
+            if (!cfg.update(parts[j], dt, env)){
+              parts[j] = cfg.make(env, false);
               continue;
             }
-
-            var flip = Math.cos(L.swingPhase * 1.4);
             ctx.save();
-            ctx.translate(x, L.y);
-            ctx.rotate(L.angle);
-            ctx.scale(flip || 0.06, 1);
-            if (L.depth < 0.35) ctx.filter = 'blur(1px)';
-            ctx.globalAlpha = 0.55 + L.depth * 0.4;
-            renderLeaf(ctx, L, flip < 0);
+            cfg.draw(ctx, parts[j], env);
             ctx.restore();
           }
+          if (cfg.after){ ctx.save(); cfg.after(ctx, env, dt); ctx.restore(); }
           rafId = requestAnimationFrame(frame);
         }
 
@@ -331,6 +306,555 @@
         });
 
         rafId = requestAnimationFrame(frame);
+      }
+
+      // ---------- Gemensamt för saker som singlar ner ----------
+      function faller(env, anywhere, vMin, vMax, sMin, sMax){
+        var d = Math.random();
+        return {
+          depth: d,
+          baseX: rand(-40, env.w + 40),
+          drift: 0,
+          y: anywhere ? rand(-env.h * 0.2, env.h) : rand(-60, -10),
+          vy: vMin + d * (vMax - vMin),
+          size: sMin + d * (sMax - sMin),
+          angle: rand(0, TAU),
+          rotSpeed: rand(-1.1, 1.1) * (0.5 + d),
+          sw: rand(0, TAU),
+          swF: rand(0.5, 1.3),
+          swA: rand(12, 30) * (0.5 + d),
+          x: 0, flip: 1
+        };
+      }
+
+      function stepFaller(p, dt, env){
+        p.drift += env.wind * (0.35 + p.depth * 0.9) * dt;
+        p.y += p.vy * dt;
+        p.angle += p.rotSpeed * dt;
+        p.sw += p.swF * dt;
+        p.x = p.baseX + p.drift + Math.sin(p.sw) * p.swA;
+        p.flip = Math.cos(p.sw * 1.4);
+        if (p.x < -100) p.baseX += env.w + 180;
+        else if (p.x > env.w + 100) p.baseX -= env.w + 180;
+        return p.y - p.size * 2 < env.h + 20;
+      }
+
+      function depthLook(c, p){
+        if (p.depth < 0.35) c.filter = 'blur(1px)';
+        c.globalAlpha = 0.55 + p.depth * 0.4;
+      }
+
+      // Snöflinga – i ljust läge får den en blågrå kant så den syns mot ljus bakgrund
+      function makeSnow(env, anywhere){
+        var p = faller(env, anywhere, 18, 50, 2, 9);
+        p.kind = 'snow';
+        p.swA *= 0.5;
+        p.rotSpeed *= 0.4;
+        p.crystal = p.size > 6 && Math.random() < 0.6;
+        return p;
+      }
+
+      function drawSnow(c, p, env){
+        c.translate(p.x, p.y);
+        c.globalAlpha = 0.5 + p.depth * 0.45;
+        if (!env.dark){ c.shadowColor = 'rgba(70,95,140,.6)'; c.shadowBlur = 3; }
+        c.fillStyle = '#fff';
+        c.strokeStyle = '#fff';
+        if (!p.crystal){
+          c.beginPath();
+          c.arc(0, 0, p.size * 0.45, 0, TAU);
+          c.fill();
+          return;
+        }
+        var s = p.size * 0.9;
+        c.rotate(p.angle);
+        c.lineWidth = Math.max(1, s * 0.13);
+        c.lineCap = 'round';
+        c.beginPath();
+        for (var k = 0; k < 6; k++){
+          c.rotate(TAU / 6);
+          c.moveTo(0, 0); c.lineTo(0, -s);
+          c.moveTo(0, -s * 0.55); c.lineTo(s * 0.25, -s * 0.8);
+          c.moveTo(0, -s * 0.55); c.lineTo(-s * 0.25, -s * 0.8);
+        }
+        c.stroke();
+      }
+
+      // Fyruddig glittrande stjärna
+      function sparkle(c, r){
+        c.beginPath();
+        c.moveTo(0, -r);
+        c.quadraticCurveTo(0, 0, r, 0);
+        c.quadraticCurveTo(0, 0, 0, r);
+        c.quadraticCurveTo(0, 0, -r, 0);
+        c.quadraticCurveTo(0, 0, 0, -r);
+        c.fill();
+      }
+
+      function star5(c, r){
+        c.beginPath();
+        for (var k = 0; k < 10; k++){
+          var a = -Math.PI / 2 + k * Math.PI / 5;
+          var rr = k % 2 ? r * 0.45 : r;
+          c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+        }
+        c.closePath();
+        c.fill();
+      }
+
+      function drawFlower(c, s, petals, petalColor, centerColor, petalW){
+        c.fillStyle = petalColor;
+        for (var k = 0; k < petals; k++){
+          c.rotate(TAU / petals);
+          c.beginPath();
+          c.ellipse(0, -s * 0.55, s * (petalW || 0.32), s * 0.5, 0, 0, TAU);
+          c.fill();
+        }
+        c.fillStyle = centerColor;
+        c.beginPath();
+        c.arc(0, 0, s * 0.26, 0, TAU);
+        c.fill();
+      }
+
+      function snowMix(otherShare, makeOther, drawOther, countFn){
+        return {
+          count: countFn || function(w){ return Math.max(24, Math.min(60, Math.round(w / 22))); },
+          make: function(env, anywhere){
+            return Math.random() < otherShare ? makeOther(env, anywhere) : makeSnow(env, anywhere);
+          },
+          update: stepFaller,
+          draw: function(c, p, env){
+            if (p.kind === 'snow') drawSnow(c, p, env); else drawOther(c, p, env);
+          }
+        };
+      }
+
+      // ---------- Januari: silverglitter, snö och nyårsfyrverkerier ----------
+      function newYearGlitter(){
+        var cfg = snowMix(0.45, function(env, anywhere){
+          var p = faller(env, anywhere, 6, 16, 3, 8);
+          p.kind = 'glitter';
+          p.tw = rand(0, TAU);
+          p.twF = rand(2, 5);
+          p.ci = Math.floor(Math.random() * 3);
+          return p;
+        }, function(c, p, env){
+          c.translate(p.x, p.y);
+          c.rotate(p.angle * 0.2);
+          c.globalAlpha = (0.25 + 0.75 * Math.abs(Math.sin(env.t * p.twF + p.tw))) * (0.5 + 0.5 * p.depth);
+          c.fillStyle = (env.dark ? ['#ffffff', '#dfe8ff', '#c9d6f2'] : ['#6f86b4', '#8e9dbd', '#5b77ad'])[p.ci];
+          if (env.dark){ c.shadowColor = 'rgba(200,220,255,.9)'; c.shadowBlur = 6; }
+          sparkle(c, p.size);
+        });
+
+        var sparks = [];
+        var nextBurst = rand(1.5, 4);
+        cfg.after = function(c, env, dt){
+          nextBurst -= dt;
+          if (nextBurst <= 0){
+            nextBurst = rand(4, 8);
+            var bx = rand(env.w * 0.15, env.w * 0.85), by = rand(env.h * 0.1, env.h * 0.4);
+            var colors = env.dark ? ['#ffd76a', '#9fc4ff', '#ff9fd0', '#ffffff'] : ['#d99a00', '#3c6fd6', '#d64b8f', '#7d8bb0'];
+            var col = pick(colors);
+            var n = 30;
+            for (var k = 0; k < n; k++){
+              var a = k / n * TAU + rand(-0.1, 0.1), v = rand(50, 120);
+              sparks.push({ x: bx, y: by, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, max: rand(1.1, 1.6), col: col });
+            }
+          }
+          for (var i = sparks.length - 1; i >= 0; i--){
+            var s = sparks[i];
+            s.life += dt;
+            if (s.life > s.max){ sparks.splice(i, 1); continue; }
+            s.vx *= 1 - dt * 1.2; s.vy = s.vy * (1 - dt * 1.2) + 40 * dt;
+            s.x += s.vx * dt; s.y += s.vy * dt;
+            c.globalAlpha = 1 - s.life / s.max;
+            c.fillStyle = s.col;
+            c.beginPath();
+            c.arc(s.x, s.y, 1.8, 0, TAU);
+            c.fill();
+          }
+        };
+        return cfg;
+      }
+
+      // ---------- Februari: snö och några rosa hjärtan ----------
+      function snowAndHearts(){
+        return snowMix(0.15, function(env, anywhere){
+          var p = faller(env, anywhere, 14, 32, 7, 13);
+          p.kind = 'heart';
+          p.hue = rand(335, 350);
+          p.light = rand(62, 74);
+          return p;
+        }, function(c, p, env){
+          var s = p.size;
+          c.translate(p.x, p.y);
+          c.rotate(Math.sin(p.sw) * 0.35);
+          c.scale(p.flip || 0.06, 1);
+          depthLook(c, p);
+          var grad = c.createLinearGradient(0, -s, 0, s);
+          grad.addColorStop(0, 'hsl(' + p.hue + ',85%,' + (p.light + 10) + '%)');
+          grad.addColorStop(1, 'hsl(' + p.hue + ',75%,' + (p.light - 10) + '%)');
+          c.fillStyle = grad;
+          c.beginPath();
+          c.moveTo(0, s * 0.8);
+          c.bezierCurveTo(-s * 1.3, -s * 0.1, -s * 0.6, -s * 1.1, 0, -s * 0.35);
+          c.bezierCurveTo(s * 0.6, -s * 1.1, s * 1.3, -s * 0.1, 0, s * 0.8);
+          c.fill();
+        });
+      }
+
+      // ---------- Mars: solstrålar, smältdroppar och sista snön ----------
+      function lateWinter(){
+        var cfg = snowMix(0.7, function(env, anywhere){
+          var p = faller(env, anywhere, 45, 110, 2.5, 5);
+          p.kind = 'drop';
+          p.swA *= 0.15;
+          return p;
+        }, function(c, p, env){
+          var s = p.size;
+          c.translate(p.x, p.y);
+          c.globalAlpha = 0.45 + p.depth * 0.4;
+          c.fillStyle = env.dark ? 'hsla(200,80%,78%,.75)' : 'hsla(205,65%,52%,.6)';
+          c.beginPath();
+          c.moveTo(0, -s * 1.6);
+          c.bezierCurveTo(s * 0.9, -s * 0.2, s * 0.9, s, 0, s);
+          c.bezierCurveTo(-s * 0.9, s, -s * 0.9, -s * 0.2, 0, -s * 1.6);
+          c.fill();
+          c.fillStyle = 'rgba(255,255,255,.8)';
+          c.beginPath();
+          c.arc(-s * 0.25, s * 0.15, s * 0.22, 0, TAU);
+          c.fill();
+        }, function(w){ return Math.max(14, Math.min(30, Math.round(w / 40))); });
+
+        var rays = [];
+        for (var i = 0; i < 7; i++){
+          rays.push({ a: Math.PI * 0.55 + i * 0.12 + rand(-0.03, 0.03), wd: rand(0.03, 0.07), ph: rand(0, TAU), f: rand(0.15, 0.35) });
+        }
+        cfg.before = function(c, env){
+          var ox = env.w * 0.88, oy = -40;
+          var len = Math.max(env.w, env.h) * 1.1;
+          var k = env.dark ? 0.5 : 1;
+          var glow = c.createRadialGradient(ox, oy, 0, ox, oy, 260);
+          glow.addColorStop(0, 'rgba(255,228,150,' + 0.35 * k + ')');
+          glow.addColorStop(1, 'rgba(255,228,150,0)');
+          c.fillStyle = glow;
+          c.fillRect(0, 0, env.w, env.h);
+          for (var j = 0; j < rays.length; j++){
+            var r = rays[j];
+            var a = r.a + Math.sin(env.t * 0.08 + r.ph) * 0.04;
+            var alpha = (0.07 + 0.05 * Math.sin(env.t * r.f + r.ph)) * k;
+            var grad = c.createLinearGradient(ox, oy, ox + Math.cos(a) * len, oy + Math.sin(a) * len);
+            grad.addColorStop(0, 'rgba(255,225,150,' + alpha + ')');
+            grad.addColorStop(1, 'rgba(255,225,150,0)');
+            c.fillStyle = grad;
+            c.beginPath();
+            c.moveTo(ox, oy);
+            c.lineTo(ox + Math.cos(a - r.wd) * len, oy + Math.sin(a - r.wd) * len);
+            c.lineTo(ox + Math.cos(a + r.wd) * len, oy + Math.sin(a + r.wd) * len);
+            c.closePath();
+            c.fill();
+          }
+        };
+        return cfg;
+      }
+
+      // ---------- April: pastellfjädrar och påskägg ----------
+      function easter(){
+        var HUES = [50, 330, 150, 270, 200, 25];
+        return {
+          count: function(w){ return Math.max(14, Math.min(28, Math.round(w / 45))); },
+          make: function(env, anywhere){
+            var egg = Math.random() < 0.22;
+            var p = egg ? faller(env, anywhere, 14, 30, 6, 10) : faller(env, anywhere, 8, 22, 10, 20);
+            p.kind = egg ? 'egg' : 'feather';
+            p.hue = pick(HUES);
+            p.hue2 = pick(HUES);
+            p.tilt = rand(-0.6, 0.6);
+            if (!egg) p.swA *= 1.4;
+            return p;
+          },
+          update: stepFaller,
+          draw: function(c, p, env){
+            var s = p.size;
+            var light = env.dark ? 76 : 68;
+            c.translate(p.x, p.y);
+            c.rotate(p.tilt + Math.sin(p.sw) * 0.6);
+            depthLook(c, p);
+            if (p.kind === 'feather'){
+              c.scale(p.flip || 0.06, 1);
+              c.fillStyle = 'hsl(' + p.hue + ',75%,' + light + '%)';
+              c.beginPath();
+              c.moveTo(0, -s);
+              c.bezierCurveTo(s * 0.42, -s * 0.6, s * 0.38, s * 0.3, 0, s * 0.6);
+              c.bezierCurveTo(-s * 0.38, s * 0.3, -s * 0.42, -s * 0.6, 0, -s);
+              c.fill();
+              c.strokeStyle = 'hsla(' + p.hue + ',45%,' + (light - 28) + '%,.45)';
+              c.lineWidth = Math.max(0.5, s * 0.03);
+              c.beginPath();
+              for (var k = 1; k <= 3; k++){
+                var y = -s * 0.6 + k * s * 0.28;
+                c.moveTo(0, y); c.lineTo(s * 0.3, y - s * 0.22);
+                c.moveTo(0, y); c.lineTo(-s * 0.3, y - s * 0.22);
+              }
+              c.stroke();
+              c.strokeStyle = 'hsla(' + p.hue + ',40%,' + (light - 30) + '%,.7)';
+              c.lineWidth = Math.max(0.6, s * 0.05);
+              c.beginPath();
+              c.moveTo(0, -s * 0.9);
+              c.lineTo(0, s);
+              c.stroke();
+            } else {
+              c.beginPath();
+              c.moveTo(0, -s * 1.2);
+              c.bezierCurveTo(s * 0.9, -s * 1.2, s * 0.95, s * 0.9, 0, s * 0.9);
+              c.bezierCurveTo(-s * 0.95, s * 0.9, -s * 0.9, -s * 1.2, 0, -s * 1.2);
+              c.fillStyle = 'hsl(' + p.hue + ',70%,' + light + '%)';
+              c.fill();
+              c.clip();
+              c.strokeStyle = 'hsl(' + p.hue2 + ',80%,' + (light + 14) + '%)';
+              c.lineWidth = s * 0.22;
+              c.beginPath();
+              for (var z = -5; z <= 5; z++) c.lineTo(z * s * 0.22, (z % 2 ? -1 : 1) * s * 0.14);
+              c.stroke();
+            }
+          }
+        };
+      }
+
+      // ---------- Maj: körsbärsblad och små vårblommor ----------
+      function springBlossom(){
+        return {
+          count: function(w){ return Math.max(16, Math.min(34, Math.round(w / 40))); },
+          make: function(env, anywhere){
+            var flower = Math.random() < 0.3;
+            var p = faller(env, anywhere, 12, 32, flower ? 6 : 6, flower ? 11 : 12);
+            p.kind = flower ? 'flower' : 'petal';
+            p.light = rand(78, 90);
+            p.white = flower && Math.random() < 0.5;
+            return p;
+          },
+          update: stepFaller,
+          draw: function(c, p, env){
+            var s = p.size;
+            var light = env.dark ? p.light : p.light - 8;
+            c.translate(p.x, p.y);
+            c.rotate(p.angle);
+            depthLook(c, p);
+            if (p.kind === 'flower'){
+              c.rotate(p.angle * 0.3);
+              drawFlower(c, s, 5, p.white ? (env.dark ? '#ffffff' : '#fbf6f8') : 'hsl(340,75%,' + light + '%)', '#f4c430');
+              return;
+            }
+            c.scale(p.flip || 0.06, 1);
+            var grad = c.createLinearGradient(0, -s, 0, s);
+            grad.addColorStop(0, 'hsl(345,85%,' + Math.min(96, light + 8) + '%)');
+            grad.addColorStop(1, 'hsl(340,70%,' + (light - 10) + '%)');
+            c.fillStyle = grad;
+            c.beginPath();
+            c.moveTo(0, -s * 0.75);
+            c.quadraticCurveTo(s * 0.2, -s * 1.05, s * 0.45, -s * 0.85);
+            c.bezierCurveTo(s * 0.8, -s * 0.2, s * 0.4, s * 0.7, 0, s);
+            c.bezierCurveTo(-s * 0.4, s * 0.7, -s * 0.8, -s * 0.2, -s * 0.45, -s * 0.85);
+            c.quadraticCurveTo(-s * 0.2, -s * 1.05, 0, -s * 0.75);
+            c.fill();
+          }
+        };
+      }
+
+      // ---------- Juni: midsommarblommor och fjärilar ----------
+      function midsummer(){
+        function makeButterfly(env, anywhere){
+          var fromLeft = Math.random() < 0.5;
+          var d = Math.random();
+          return {
+            kind: 'butterfly',
+            depth: d,
+            x: anywhere ? rand(0, env.w) : (fromLeft ? -30 : env.w + 30),
+            y: rand(env.h * 0.1, env.h * 0.85),
+            heading: (fromLeft ? 0 : Math.PI) + rand(-0.5, 0.5),
+            speed: rand(30, 55),
+            size: 7 + d * 6,
+            flap: rand(0, TAU),
+            flapF: rand(9, 13),
+            seed: rand(0, 100),
+            hue: Math.random() < 0.5 ? 215 : 48
+          };
+        }
+        return {
+          count: function(w){ return Math.max(16, Math.min(30, Math.round(w / 45))); },
+          make: function(env, anywhere){
+            if (Math.random() < 0.2) return makeButterfly(env, anywhere);
+            var p = faller(env, anywhere, 12, 30, 6, 11);
+            p.kind = pick(['daisy', 'daisy', 'cornflower', 'buttercup']);
+            return p;
+          },
+          update: function(p, dt, env){
+            if (p.kind !== 'butterfly') return stepFaller(p, dt, env);
+            p.heading += Math.sin(env.t * 0.9 + p.seed) * dt * 1.6;
+            p.x += Math.cos(p.heading) * p.speed * dt;
+            p.y += Math.sin(p.heading) * p.speed * dt * 0.6 + Math.sin(p.flap * 0.5) * 0.3;
+            p.flap += p.flapF * dt;
+            return p.x > -80 && p.x < env.w + 80 && p.y > -80 && p.y < env.h + 80;
+          },
+          draw: function(c, p, env){
+            var s = p.size;
+            c.translate(p.x, p.y);
+            if (p.kind === 'butterfly'){
+              c.rotate(p.heading + Math.PI / 2);
+              c.globalAlpha = 0.65 + p.depth * 0.3;
+              var open = 0.2 + 0.8 * Math.abs(Math.sin(p.flap));
+              var l = env.dark ? 65 : 55;
+              for (var side = -1; side <= 1; side += 2){
+                c.save();
+                c.scale(side * open, 1);
+                c.fillStyle = 'hsl(' + p.hue + ',85%,' + l + '%)';
+                c.beginPath(); c.ellipse(s * 0.6, -s * 0.3, s * 0.62, s * 0.45, -0.5, 0, TAU); c.fill();
+                c.fillStyle = 'hsl(' + p.hue + ',75%,' + (l - 10) + '%)';
+                c.beginPath(); c.ellipse(s * 0.45, s * 0.35, s * 0.4, s * 0.33, 0.5, 0, TAU); c.fill();
+                c.restore();
+              }
+              c.fillStyle = env.dark ? '#cfc6b0' : '#3a3226';
+              c.beginPath(); c.ellipse(0, 0, s * 0.1, s * 0.6, 0, 0, TAU); c.fill();
+              return;
+            }
+            c.rotate(p.angle * 0.4);
+            depthLook(c, p);
+            if (!env.dark){ c.shadowColor = 'rgba(40,60,40,.35)'; c.shadowBlur = 2; }
+            if (p.kind === 'daisy') drawFlower(c, s, 11, '#ffffff', '#f4c430', 0.17);
+            else if (p.kind === 'cornflower') drawFlower(c, s, 8, env.dark ? '#5b8cff' : '#2f63d6', '#1d2c6b', 0.24);
+            else drawFlower(c, s * 0.85, 5, '#ffd21f', '#e0a800', 0.36);
+          }
+        };
+      }
+
+      // ---------- Juli: turkosa bubblor som stiger ----------
+      function highSummer(){
+        return {
+          count: function(w){ return Math.max(12, Math.min(26, Math.round(w / 50))); },
+          make: function(env, anywhere){
+            var d = Math.random();
+            return {
+              depth: d,
+              x: rand(0, env.w),
+              y: anywhere ? rand(0, env.h) : env.h + rand(10, 60),
+              vy: -(14 + d * 32),
+              r: 4 + d * 13,
+              ph: rand(0, TAU),
+              phF: rand(0.8, 1.6),
+              wob: rand(6, 16)
+            };
+          },
+          update: function(p, dt){
+            p.y += p.vy * dt;
+            p.ph += p.phF * dt;
+            return p.y > -p.r - 20;
+          },
+          draw: function(c, p, env){
+            var x = p.x + Math.sin(p.ph) * p.wob, y = p.y, r = p.r;
+            c.globalAlpha = 0.5 + p.depth * 0.4;
+            var fill = c.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
+            fill.addColorStop(0, env.dark ? 'rgba(160,240,235,.05)' : 'rgba(255,255,255,.15)');
+            fill.addColorStop(1, env.dark ? 'rgba(120,230,225,.22)' : 'rgba(40,170,170,.18)');
+            c.fillStyle = fill;
+            c.strokeStyle = env.dark ? 'hsla(178,70%,75%,.55)' : 'hsla(182,60%,38%,.5)';
+            c.lineWidth = Math.max(0.8, r * 0.08);
+            c.beginPath();
+            c.arc(x, y, r, 0, TAU);
+            c.fill();
+            c.stroke();
+            c.strokeStyle = 'rgba(255,255,255,.85)';
+            c.lineWidth = Math.max(0.8, r * 0.12);
+            c.lineCap = 'round';
+            c.beginPath();
+            c.arc(x, y, r * 0.65, Math.PI * 1.1, Math.PI * 1.45);
+            c.stroke();
+          }
+        };
+      }
+
+      // ---------- Augusti: stjärnhimmel med stjärnfall (perseiderna) ----------
+      function lateSummerNight(){
+        var shooting = [];
+        var nextShoot = rand(1, 3);
+        return {
+          count: function(w, h){ return Math.max(40, Math.min(140, Math.round(w * h / 9000))); },
+          make: function(){
+            var d = Math.random();
+            return { depth: d, fx: Math.random(), fy: Math.pow(Math.random(), 1.4) * 0.9, r: 0.6 + d * 1.6, tw: rand(0, TAU), twF: rand(0.6, 2.2) };
+          },
+          update: function(p, dt){ p.tw += p.twF * dt; return true; },
+          draw: function(c, p, env){
+            c.globalAlpha = (0.35 + 0.65 * Math.abs(Math.sin(p.tw))) * (env.dark ? 0.9 : 0.55);
+            c.fillStyle = env.dark ? '#fff4dc' : 'hsl(12,50%,42%)';
+            c.translate(p.fx * env.w, p.fy * env.h);
+            if (p.r > 1.7) sparkle(c, p.r * 2.2);
+            else { c.beginPath(); c.arc(0, 0, p.r, 0, TAU); c.fill(); }
+          },
+          after: function(c, env, dt){
+            nextShoot -= dt;
+            if (nextShoot <= 0){
+              nextShoot = rand(3, 8);
+              var a = rand(Math.PI * 0.62, Math.PI * 0.8);
+              shooting.push({ x: rand(env.w * 0.3, env.w * 1.05), y: rand(-20, env.h * 0.3), vx: Math.cos(a) * 520, vy: Math.sin(a) * 520, life: 0, max: rand(0.6, 1.0) });
+            }
+            for (var i = shooting.length - 1; i >= 0; i--){
+              var s = shooting[i];
+              s.life += dt;
+              if (s.life > s.max){ shooting.splice(i, 1); continue; }
+              s.x += s.vx * dt; s.y += s.vy * dt;
+              var fade = Math.sin(s.life / s.max * Math.PI);
+              var tx = s.x - s.vx * 0.18, ty = s.y - s.vy * 0.18;
+              var col = env.dark ? '255,244,220' : '160,60,40';
+              var grad = c.createLinearGradient(s.x, s.y, tx, ty);
+              grad.addColorStop(0, 'rgba(' + col + ',' + 0.9 * fade + ')');
+              grad.addColorStop(1, 'rgba(' + col + ',0)');
+              c.strokeStyle = grad;
+              c.lineWidth = 2;
+              c.lineCap = 'round';
+              c.beginPath();
+              c.moveTo(s.x, s.y);
+              c.lineTo(tx, ty);
+              c.stroke();
+            }
+          }
+        };
+      }
+
+      // ---------- September: fallande löv ----------
+      function fallingLeaves(){
+        var SHAPES = [
+          { path: pathOval, tip: 1, base: 1 },
+          { path: pathMaple, tip: 1.05, base: 0.62 },
+          { path: pathSlim, tip: 1.15, base: 1.15 }
+        ];
+
+        function randomAutumnColor(){
+          var r = Math.random();
+          if (r < 0.35) return { hue: rand(40, 55), sat: rand(60, 85), light: rand(42, 55) };
+          if (r < 0.65) return { hue: rand(20, 38), sat: rand(60, 85), light: rand(38, 50) };
+          if (r < 0.85) return { hue: rand(3, 15), sat: rand(55, 80), light: rand(34, 46) };
+          return { hue: rand(18, 28), sat: rand(25, 45), light: rand(24, 38) };
+        }
+
+        return {
+          count: function(w){ return Math.max(16, Math.min(32, Math.round(w / 45))); },
+          make: function(env, anywhere){
+            var p = faller(env, anywhere, 12, 36, 8, 19);
+            var col = randomAutumnColor();
+            p.hue = col.hue; p.sat = col.sat; p.light = col.light;
+            p.shapeDef = pick(SHAPES);
+            return p;
+          },
+          update: stepFaller,
+          draw: function(c, p){
+            c.translate(p.x, p.y);
+            c.rotate(p.angle);
+            c.scale(p.flip || 0.06, 1);
+            depthLook(c, p);
+            renderLeaf(c, p, p.flip < 0);
+          }
+        };
 
         function pathOval(c, s){
           c.moveTo(0, -s);
@@ -402,102 +926,55 @@
           c.stroke();
         }
       }
-      function initBats(){
-        var canvas = document.getElementById('seasonFx');
-        if (!canvas || !canvas.getContext) return;
-        var ctx = canvas.getContext('2d');
-        var dpr = Math.min(window.devicePixelRatio || 1, 2);
-        var w = 0, h = 0;
 
-        function resize(){
-          w = window.innerWidth; h = window.innerHeight;
-          canvas.width = Math.round(w * dpr);
-          canvas.height = Math.round(h * dpr);
-          canvas.style.width = w + 'px';
-          canvas.style.height = h + 'px';
-          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        }
-        window.addEventListener('resize', resize);
-        resize();
-
-        function rand(a, b){ return a + Math.random() * (b - a); }
-
-        function makeBat(spawnAnywhere){
-          var depth = Math.random();
-          var dir = Math.random() < 0.5 ? 1 : -1;
-          return {
-            depth: depth,
-            dir: dir,
-            x: spawnAnywhere ? rand(0, w) : (dir > 0 ? rand(-260, -40) : w + rand(40, 260)),
-            baseY: rand(h * 0.05, h * 0.85),
-            vx: dir * (55 + depth * 90),
-            size: 9 + depth * 13,
-            bobPhase: rand(0, Math.PI * 2),
-            bobFreq: rand(0.6, 1.4),
-            bobAmp: rand(14, 40),
-            flapPhase: rand(0, Math.PI * 2),
-            flapFreq: rand(7, 10) * (1.25 - depth * 0.4),
-            // fladdermöss flaxar ryckigt: ibland glider de en stund
-            glide: 0
-          };
-        }
-
-        var count = Math.max(5, Math.min(10, Math.round(w / 140)));
-        var bats = [];
-        for (var i = 0; i < count; i++) bats.push(makeBat(true));
-
-        var last = performance.now();
-        var rafId = null;
-
-        function frame(now){
-          var dt = Math.min((now - last) / 1000, 0.05);
-          last = now;
-          var dark = window.NordhammerTheme && NordhammerTheme.isDark();
-
-          ctx.clearRect(0, 0, w, h);
-          for (var j = 0; j < bats.length; j++){
-            var B = bats[j];
+      // ---------- Oktober: fladdermöss ----------
+      function bats(){
+        return {
+          count: function(w){ return Math.max(5, Math.min(10, Math.round(w / 140))); },
+          make: function(env, anywhere){
+            var d = Math.random();
+            var dir = Math.random() < 0.5 ? 1 : -1;
+            return {
+              depth: d,
+              dir: dir,
+              x: anywhere ? rand(0, env.w) : (dir > 0 ? rand(-260, -40) : env.w + rand(40, 260)),
+              baseY: rand(env.h * 0.05, env.h * 0.85),
+              y: 0,
+              vx: dir * (55 + d * 90),
+              size: 9 + d * 13,
+              bobPhase: rand(0, TAU),
+              bobFreq: rand(0.6, 1.4),
+              bobAmp: rand(14, 40),
+              flapPhase: rand(0, TAU),
+              flapFreq: rand(7, 10) * (1.25 - d * 0.4),
+              // fladdermöss flaxar ryckigt: ibland glider de en stund
+              glide: 0
+            };
+          },
+          update: function(B, dt){
             B.x += B.vx * dt;
             B.bobPhase += B.bobFreq * dt;
             if (B.glide > 0) B.glide -= dt;
             else {
-              B.flapPhase += B.flapFreq * dt * Math.PI * 2;
+              B.flapPhase += B.flapFreq * dt * TAU;
               if (Math.random() < dt * 0.25) B.glide = rand(0.3, 0.9);
             }
-            var y = B.baseY + Math.sin(B.bobPhase) * B.bobAmp + Math.sin(B.flapPhase) * B.size * 0.12;
-
-            if ((B.dir > 0 && B.x > w + 60) || (B.dir < 0 && B.x < -60)){
-              bats[j] = makeBat(false);
-              continue;
-            }
-
+            B.y = B.baseY + Math.sin(B.bobPhase) * B.bobAmp + Math.sin(B.flapPhase) * B.size * 0.12;
+            return !((B.dir > 0 && B.x > window.innerWidth + 60) || (B.dir < 0 && B.x < -60));
+          },
+          draw: function(c, B, env){
             var flap = B.glide > 0 ? 0.15 : Math.sin(B.flapPhase);
-            ctx.save();
-            ctx.translate(B.x, y);
-            ctx.rotate(Math.sin(B.bobPhase) * 0.12 * B.dir);
-            if (B.depth < 0.3) ctx.filter = 'blur(1px)';
-            ctx.globalAlpha = 0.5 + B.depth * 0.4;
-            if (dark){
-              ctx.shadowColor = 'rgba(255,140,40,.7)';
-              ctx.shadowBlur = 6 + B.depth * 6;
+            c.translate(B.x, B.y);
+            c.rotate(Math.sin(B.bobPhase) * 0.12 * B.dir);
+            if (B.depth < 0.3) c.filter = 'blur(1px)';
+            c.globalAlpha = 0.5 + B.depth * 0.4;
+            if (env.dark){
+              c.shadowColor = 'rgba(255,140,40,.7)';
+              c.shadowBlur = 6 + B.depth * 6;
             }
-            drawBat(ctx, B.size, flap, dark ? '#54446f' : '#1d1626');
-            ctx.restore();
+            drawBat(c, B.size, flap, env.dark ? '#54446f' : '#1d1626');
           }
-          rafId = requestAnimationFrame(frame);
-        }
-
-        document.addEventListener('visibilitychange', function(){
-          if (document.hidden){
-            if (rafId) cancelAnimationFrame(rafId);
-            rafId = null;
-          } else if (!rafId){
-            last = performance.now();
-            rafId = requestAnimationFrame(frame);
-          }
-        });
-
-        rafId = requestAnimationFrame(frame);
+        };
 
         // f: vingläge, 1 = uppslag, -1 = nedslag
         function drawBat(c, s, f, color){
@@ -513,16 +990,87 @@
             c.fill();
           }
           c.beginPath();
-          c.ellipse(0, s * 0.05, s * 0.2, s * 0.36, 0, 0, Math.PI * 2);
+          c.ellipse(0, s * 0.05, s * 0.2, s * 0.36, 0, 0, TAU);
           c.fill();
           c.beginPath();
-          c.arc(0, -s * 0.3, s * 0.16, 0, Math.PI * 2);
+          c.arc(0, -s * 0.3, s * 0.16, 0, TAU);
           c.fill();
           c.beginPath();
           c.moveTo(-s * 0.15, -s * 0.36); c.lineTo(-s * 0.12, -s * 0.6); c.lineTo(-s * 0.02, -s * 0.42);
           c.moveTo(s * 0.15, -s * 0.36); c.lineTo(s * 0.12, -s * 0.6); c.lineTo(s * 0.02, -s * 0.42);
           c.fill();
         }
+      }
+
+      // ---------- November: varma ljuspunkter i mörkret (allhelgona) ----------
+      function lightsInDark(){
+        return {
+          count: function(w){ return Math.max(14, Math.min(30, Math.round(w / 45))); },
+          make: function(env, anywhere){
+            var d = Math.random();
+            return {
+              depth: d,
+              x: rand(0, env.w),
+              y: anywhere ? rand(0, env.h) : env.h + rand(10, 80),
+              vy: -(5 + d * 13),
+              r: 2 + d * 4,
+              sway: rand(0, TAU),
+              swayF: rand(0.2, 0.5),
+              fl: rand(0, TAU),
+              flF: rand(5, 9)
+            };
+          },
+          update: function(p, dt){
+            p.y += p.vy * dt;
+            p.sway += p.swayF * dt;
+            p.fl += p.flF * dt;
+            return p.y > -40;
+          },
+          draw: function(c, p, env){
+            var x = p.x + Math.sin(p.sway) * 18, y = p.y;
+            var flicker = 0.75 + 0.15 * Math.sin(p.fl) + 0.1 * Math.sin(p.fl * 2.3 + 1);
+            var a = (0.45 + p.depth * 0.5) * flicker;
+            var R = p.r * 5;
+            var glow = c.createRadialGradient(x, y, 0, x, y, R);
+            if (env.dark){
+              glow.addColorStop(0, 'rgba(255,205,120,' + a + ')');
+              glow.addColorStop(0.3, 'rgba(255,160,60,' + a * 0.35 + ')');
+              glow.addColorStop(1, 'rgba(255,140,40,0)');
+            } else {
+              glow.addColorStop(0, 'rgba(240,140,30,' + a + ')');
+              glow.addColorStop(0.3, 'rgba(230,120,30,' + a * 0.3 + ')');
+              glow.addColorStop(1, 'rgba(230,120,30,0)');
+            }
+            c.fillStyle = glow;
+            c.beginPath();
+            c.arc(x, y, R, 0, TAU);
+            c.fill();
+            c.globalAlpha = a;
+            c.fillStyle = env.dark ? '#fff2d6' : '#ffb347';
+            c.beginPath();
+            c.arc(x, y, p.r * 0.45, 0, TAU);
+            c.fill();
+          }
+        };
+      }
+
+      // ---------- December: snö och gyllene stjärnor ----------
+      function christmas(){
+        return snowMix(0.12, function(env, anywhere){
+          var p = faller(env, anywhere, 10, 24, 6, 11);
+          p.kind = 'star';
+          p.tw = rand(0, TAU);
+          p.rotSpeed *= 0.3;
+          return p;
+        }, function(c, p, env){
+          c.translate(p.x, p.y);
+          c.rotate(p.angle);
+          c.globalAlpha = (0.6 + 0.4 * Math.sin(env.t * 3 + p.tw)) * (0.6 + 0.4 * p.depth);
+          c.fillStyle = env.dark ? '#ffd86b' : '#d9a520';
+          c.shadowColor = env.dark ? 'rgba(255,215,110,.9)' : 'rgba(150,100,0,.4)';
+          c.shadowBlur = env.dark ? 8 : 3;
+          star5(c, p.size);
+        });
       }
     })();
 
