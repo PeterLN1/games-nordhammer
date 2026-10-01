@@ -209,9 +209,13 @@
     // ---------- Säsongstema baserat på månad ----------
     (function(){
       var SEASON_EFFECTS = {
-        8: initFallingLeaves // september (0-indexerad månad)
+        8: initFallingLeaves, // september (0-indexerad månad)
+        9: initBats           // oktober
       };
-      var effect = SEASON_EFFECTS[new Date().getMonth()];
+      // ?month=1-12 i URL:en förhandsgranskar en månads tema
+      var forced = parseInt(new URLSearchParams(location.search).get('month'), 10);
+      var month = forced >= 1 && forced <= 12 ? forced - 1 : new Date().getMonth();
+      var effect = SEASON_EFFECTS[month];
       if (!effect) return;
       if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       effect();
@@ -396,6 +400,128 @@
           c.moveTo(0, s * sd.base);
           c.lineTo(0, s * sd.base + s * 0.3);
           c.stroke();
+        }
+      }
+      function initBats(){
+        var canvas = document.getElementById('seasonFx');
+        if (!canvas || !canvas.getContext) return;
+        var ctx = canvas.getContext('2d');
+        var dpr = Math.min(window.devicePixelRatio || 1, 2);
+        var w = 0, h = 0;
+
+        function resize(){
+          w = window.innerWidth; h = window.innerHeight;
+          canvas.width = Math.round(w * dpr);
+          canvas.height = Math.round(h * dpr);
+          canvas.style.width = w + 'px';
+          canvas.style.height = h + 'px';
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        function rand(a, b){ return a + Math.random() * (b - a); }
+
+        function makeBat(spawnAnywhere){
+          var depth = Math.random();
+          var dir = Math.random() < 0.5 ? 1 : -1;
+          return {
+            depth: depth,
+            dir: dir,
+            x: spawnAnywhere ? rand(0, w) : (dir > 0 ? rand(-260, -40) : w + rand(40, 260)),
+            baseY: rand(h * 0.05, h * 0.85),
+            vx: dir * (55 + depth * 90),
+            size: 9 + depth * 13,
+            bobPhase: rand(0, Math.PI * 2),
+            bobFreq: rand(0.6, 1.4),
+            bobAmp: rand(14, 40),
+            flapPhase: rand(0, Math.PI * 2),
+            flapFreq: rand(7, 10) * (1.25 - depth * 0.4),
+            // fladdermöss flaxar ryckigt: ibland glider de en stund
+            glide: 0
+          };
+        }
+
+        var count = Math.max(5, Math.min(10, Math.round(w / 140)));
+        var bats = [];
+        for (var i = 0; i < count; i++) bats.push(makeBat(true));
+
+        var last = performance.now();
+        var rafId = null;
+
+        function frame(now){
+          var dt = Math.min((now - last) / 1000, 0.05);
+          last = now;
+          var dark = window.NordhammerTheme && NordhammerTheme.isDark();
+
+          ctx.clearRect(0, 0, w, h);
+          for (var j = 0; j < bats.length; j++){
+            var B = bats[j];
+            B.x += B.vx * dt;
+            B.bobPhase += B.bobFreq * dt;
+            if (B.glide > 0) B.glide -= dt;
+            else {
+              B.flapPhase += B.flapFreq * dt * Math.PI * 2;
+              if (Math.random() < dt * 0.25) B.glide = rand(0.3, 0.9);
+            }
+            var y = B.baseY + Math.sin(B.bobPhase) * B.bobAmp + Math.sin(B.flapPhase) * B.size * 0.12;
+
+            if ((B.dir > 0 && B.x > w + 60) || (B.dir < 0 && B.x < -60)){
+              bats[j] = makeBat(false);
+              continue;
+            }
+
+            var flap = B.glide > 0 ? 0.15 : Math.sin(B.flapPhase);
+            ctx.save();
+            ctx.translate(B.x, y);
+            ctx.rotate(Math.sin(B.bobPhase) * 0.12 * B.dir);
+            if (B.depth < 0.3) ctx.filter = 'blur(1px)';
+            ctx.globalAlpha = 0.5 + B.depth * 0.4;
+            if (dark){
+              ctx.shadowColor = 'rgba(255,140,40,.7)';
+              ctx.shadowBlur = 6 + B.depth * 6;
+            }
+            drawBat(ctx, B.size, flap, dark ? '#54446f' : '#1d1626');
+            ctx.restore();
+          }
+          rafId = requestAnimationFrame(frame);
+        }
+
+        document.addEventListener('visibilitychange', function(){
+          if (document.hidden){
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = null;
+          } else if (!rafId){
+            last = performance.now();
+            rafId = requestAnimationFrame(frame);
+          }
+        });
+
+        rafId = requestAnimationFrame(frame);
+
+        // f: vingläge, 1 = uppslag, -1 = nedslag
+        function drawBat(c, s, f, color){
+          c.fillStyle = color;
+          for (var side = -1; side <= 1; side += 2){
+            c.beginPath();
+            c.moveTo(side * s * 0.12, -s * 0.12);
+            c.quadraticCurveTo(side * s * 0.9, -s * 0.3 - s * 0.6 * f, side * s * 1.7, -s * 0.1 - s * 0.8 * f);
+            c.quadraticCurveTo(side * s * 1.35, -s * 0.05 - s * 0.55 * f, side * s * 1.25, s * 0.22 - s * 0.5 * f);
+            c.quadraticCurveTo(side * s * 1.0, s * 0.02 - s * 0.32 * f, side * s * 0.72, s * 0.28 - s * 0.28 * f);
+            c.quadraticCurveTo(side * s * 0.45, s * 0.08 - s * 0.1 * f, side * s * 0.15, s * 0.22);
+            c.closePath();
+            c.fill();
+          }
+          c.beginPath();
+          c.ellipse(0, s * 0.05, s * 0.2, s * 0.36, 0, 0, Math.PI * 2);
+          c.fill();
+          c.beginPath();
+          c.arc(0, -s * 0.3, s * 0.16, 0, Math.PI * 2);
+          c.fill();
+          c.beginPath();
+          c.moveTo(-s * 0.15, -s * 0.36); c.lineTo(-s * 0.12, -s * 0.6); c.lineTo(-s * 0.02, -s * 0.42);
+          c.moveTo(s * 0.15, -s * 0.36); c.lineTo(s * 0.12, -s * 0.6); c.lineTo(s * 0.02, -s * 0.42);
+          c.fill();
         }
       }
     })();
