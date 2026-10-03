@@ -418,6 +418,12 @@
       return min;
     }
 
+    // Grannländer (delar landgräns) visas som 0 km, se STREETVIEW_LAND_BORDERS.
+    var neighborPairs = new Set(window.STREETVIEW_LAND_BORDERS.map(function(p){ return p[0] + '|' + p[1]; }));
+    function isNeighbor(a, b){
+      return neighborPairs.has(a + '|' + b) || neighborPairs.has(b + '|' + a);
+    }
+
     function flagEmoji(code){
       var a2 = alpha3ToAlpha2[code];
       if (!a2 || a2.length !== 2) return '🏳️';
@@ -541,7 +547,8 @@
     // inte provat, utan ett facit över vad man redan gissat.
     function recordWrongGuess(code){
       var geometry = countryGeometries[code];
-      var km = geometry ? distanceToCountryKm(currentTarget.lat, currentTarget.lng, geometry) : Infinity;
+      var km = isNeighbor(code, currentTarget.code) ? 0
+        : geometry ? distanceToCountryKm(currentTarget.lat, currentTarget.lng, geometry) : Infinity;
       roundGuesses.push({ code: code, name: window.STREETVIEW_COUNTRY_NAMES_SV[code] || code, km: km });
       roundGuesses.sort(function(a, b){ return a.km - b.km; });
       renderGuessList();

@@ -114,6 +114,12 @@ landets faktiska gräns (`distanceToCountryKm()`), inte till landets
 mittpunkt — annars kan ett stort grannland (t.ex. Ryssland eller Kanada)
 visa flera hundra mil trots att gränsen ligger precis intill.
 
+Gissar man ett **grannland** (delar landgräns med rätt svar) visas alltid
+**0 km**, oavsett var i landet bilden är tagen. Grannparen är hårdkodade
+i `STREETVIEW_LAND_BORDERS` i `countries.js` — genererade en gång ur
+GeoJSON-filen (länder vars polygoner delar minst en gränspunkt). Byts
+GeoJSON-filen ut behöver listan genereras om.
+
 ## Topplista
 
 Använder samma delade Railway/Supabase-backend (`server/index.js`) som
@@ -130,7 +136,7 @@ profil innan första rundan om ingen är vald än.
 streetview/
 ├── index.html               # Spelet (Street View + jordglob + topplista)
 ├── config.js                # Google Maps API-nyckel
-├── countries.js              # Frö-koordinater, landnamn, alpha2->alpha3
+├── countries.js              # Frö-koordinater, landnamn, alpha2->alpha3, grannländer
 ├── world-countries.geo.json  # Klickbara landgränser (globe.gl, gratis)
 └── README.md
 ```

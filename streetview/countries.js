@@ -215,3 +215,63 @@ window.STREETVIEW_ALPHA2_TO_ALPHA3 = {
   UY: "URY", US: "USA", UZ: "UZB", VE: "VEN", VN: "VNM", VU: "VUT", YE: "YEM", ZA: "ZAF",
   ZM: "ZMB", ZW: "ZWE"
 };
+
+// Länder som delar landgräns (par av samma koder som ovan). Genererad en
+// gång ur world-countries.geo.json — två länder räknas som grannar om
+// deras polygoner delar minst en gränspunkt. Gissar man ett grannland
+// till rätt svar visas 0 km i gissningslistan (punkten kan ju ligga långt
+// in i landet, men landen gränsar ändå till varandra).
+window.STREETVIEW_LAND_BORDERS = [
+  ["AFG", "CHN"], ["AFG", "IRN"], ["AFG", "PAK"], ["AFG", "TJK"], ["AFG", "TKM"], ["AFG", "UZB"],
+  ["AGO", "COD"], ["AGO", "COG"], ["AGO", "NAM"], ["AGO", "ZMB"], ["ALB", "CS-KM"], ["ALB", "GRC"],
+  ["ALB", "MKD"], ["ALB", "MNE"], ["ARE", "OMN"], ["ARE", "SAU"], ["ARG", "BOL"], ["ARG", "BRA"],
+  ["ARG", "CHL"], ["ARG", "PRY"], ["ARG", "URY"], ["ARM", "AZE"], ["ARM", "GEO"], ["ARM", "IRN"],
+  ["ARM", "TUR"], ["AUT", "CHE"], ["AUT", "CZE"], ["AUT", "DEU"], ["AUT", "HUN"], ["AUT", "ITA"],
+  ["AUT", "SVK"], ["AUT", "SVN"], ["AZE", "GEO"], ["AZE", "IRN"], ["AZE", "RUS"], ["AZE", "TUR"],
+  ["BDI", "COD"], ["BDI", "RWA"], ["BDI", "TZA"], ["BEL", "DEU"], ["BEL", "FRA"], ["BEL", "LUX"],
+  ["BEL", "NLD"], ["BEN", "BFA"], ["BEN", "NER"], ["BEN", "NGA"], ["BEN", "TGO"], ["BFA", "CIV"],
+  ["BFA", "GHA"], ["BFA", "MLI"], ["BFA", "NER"], ["BFA", "TGO"], ["BGD", "IND"], ["BGD", "MMR"],
+  ["BGR", "GRC"], ["BGR", "MKD"], ["BGR", "ROU"], ["BGR", "SRB"], ["BGR", "TUR"], ["BIH", "HRV"],
+  ["BIH", "MNE"], ["BIH", "SRB"], ["BLR", "LTU"], ["BLR", "LVA"], ["BLR", "POL"], ["BLR", "RUS"],
+  ["BLR", "UKR"], ["BLZ", "GTM"], ["BLZ", "MEX"], ["BOL", "BRA"], ["BOL", "CHL"], ["BOL", "PER"],
+  ["BOL", "PRY"], ["BRA", "COL"], ["BRA", "GUF"], ["BRA", "GUY"], ["BRA", "PER"], ["BRA", "PRY"],
+  ["BRA", "SUR"], ["BRA", "URY"], ["BRA", "VEN"], ["BRN", "MYS"], ["BTN", "CHN"], ["BTN", "IND"],
+  ["BWA", "NAM"], ["BWA", "ZAF"], ["BWA", "ZMB"], ["BWA", "ZWE"], ["CAF", "CMR"], ["CAF", "COD"],
+  ["CAF", "COG"], ["CAF", "SDN"], ["CAF", "SSD"], ["CAF", "TCD"], ["CAN", "USA"], ["CHE", "DEU"],
+  ["CHE", "FRA"], ["CHE", "ITA"], ["CHL", "PER"], ["CHN", "IND"], ["CHN", "KAZ"], ["CHN", "KGZ"],
+  ["CHN", "LAO"], ["CHN", "MMR"], ["CHN", "MNG"], ["CHN", "NPL"], ["CHN", "PAK"], ["CHN", "PRK"],
+  ["CHN", "RUS"], ["CHN", "TJK"], ["CHN", "VNM"], ["CIV", "GHA"], ["CIV", "GIN"], ["CIV", "LBR"],
+  ["CIV", "MLI"], ["CMR", "COG"], ["CMR", "GAB"], ["CMR", "GNQ"], ["CMR", "NER"], ["CMR", "NGA"],
+  ["CMR", "TCD"], ["COD", "COG"], ["COD", "RWA"], ["COD", "SSD"], ["COD", "TZA"], ["COD", "UGA"],
+  ["COD", "ZMB"], ["COG", "GAB"], ["COL", "ECU"], ["COL", "PAN"], ["COL", "PER"], ["COL", "VEN"],
+  ["CRI", "NIC"], ["CRI", "PAN"], ["CS-KM", "MKD"], ["CS-KM", "MNE"], ["CS-KM", "SRB"], ["CZE", "DEU"],
+  ["CZE", "POL"], ["CZE", "SVK"], ["DEU", "DNK"], ["DEU", "FRA"], ["DEU", "LUX"], ["DEU", "NLD"],
+  ["DEU", "POL"], ["DJI", "ERI"], ["DJI", "ETH"], ["DJI", "SOM"], ["DOM", "HTI"], ["DZA", "ESH"],
+  ["DZA", "LBY"], ["DZA", "MAR"], ["DZA", "MLI"], ["DZA", "MRT"], ["DZA", "NER"], ["DZA", "TUN"],
+  ["ECU", "PER"], ["EGY", "ISR"], ["EGY", "JOR"], ["EGY", "LBY"], ["EGY", "SDN"], ["ERI", "ETH"],
+  ["ERI", "SDN"], ["ESH", "MAR"], ["ESH", "MRT"], ["ESP", "FRA"], ["ESP", "PRT"], ["EST", "LVA"],
+  ["EST", "RUS"], ["ETH", "KEN"], ["ETH", "SDN"], ["ETH", "SOM"], ["ETH", "SSD"], ["FIN", "NOR"],
+  ["FIN", "RUS"], ["FIN", "SWE"], ["FRA", "ITA"], ["FRA", "LUX"], ["GAB", "GNQ"], ["GBR", "IRL"],
+  ["GEO", "RUS"], ["GEO", "TUR"], ["GHA", "TGO"], ["GIN", "GNB"], ["GIN", "LBR"], ["GIN", "MLI"],
+  ["GIN", "SEN"], ["GIN", "SLE"], ["GMB", "SEN"], ["GNB", "SEN"], ["GRC", "MKD"], ["GRC", "TUR"],
+  ["GTM", "HND"], ["GTM", "MEX"], ["GTM", "SLV"], ["GUF", "SUR"], ["GUY", "SUR"], ["GUY", "VEN"],
+  ["HND", "NIC"], ["HND", "SLV"], ["HRV", "HUN"], ["HRV", "MNE"], ["HRV", "SRB"], ["HRV", "SVN"],
+  ["HUN", "ROU"], ["HUN", "SRB"], ["HUN", "SVK"], ["HUN", "SVN"], ["HUN", "UKR"], ["IDN", "MYS"],
+  ["IDN", "PNG"], ["IDN", "TLS"], ["IND", "MMR"], ["IND", "NPL"], ["IND", "PAK"], ["IRN", "IRQ"],
+  ["IRN", "PAK"], ["IRN", "TKM"], ["IRN", "TUR"], ["IRQ", "JOR"], ["IRQ", "KWT"], ["IRQ", "SAU"],
+  ["IRQ", "SYR"], ["IRQ", "TUR"], ["ISR", "JOR"], ["ISR", "LBN"], ["ISR", "PSE"], ["ISR", "SYR"],
+  ["ITA", "SVN"], ["JOR", "PSE"], ["JOR", "SAU"], ["JOR", "SYR"], ["KAZ", "KGZ"], ["KAZ", "RUS"],
+  ["KAZ", "TKM"], ["KAZ", "UZB"], ["KEN", "SOM"], ["KEN", "SSD"], ["KEN", "TZA"], ["KEN", "UGA"],
+  ["KGZ", "TJK"], ["KGZ", "UZB"], ["KHM", "LAO"], ["KHM", "THA"], ["KHM", "VNM"], ["KOR", "PRK"],
+  ["KWT", "SAU"], ["LAO", "MMR"], ["LAO", "THA"], ["LAO", "VNM"], ["LBN", "SYR"], ["LBR", "SLE"],
+  ["LBY", "NER"], ["LBY", "SDN"], ["LBY", "TCD"], ["LBY", "TUN"], ["LSO", "ZAF"], ["LTU", "LVA"],
+  ["LTU", "POL"], ["LTU", "RUS"], ["LVA", "RUS"], ["MDA", "ROU"], ["MDA", "UKR"], ["MEX", "USA"],
+  ["MKD", "SRB"], ["MLI", "MRT"], ["MLI", "NER"], ["MLI", "SEN"], ["MMR", "THA"], ["MNE", "SRB"],
+  ["MNG", "RUS"], ["MOZ", "MWI"], ["MOZ", "SWZ"], ["MOZ", "TZA"], ["MOZ", "ZAF"], ["MOZ", "ZMB"],
+  ["MOZ", "ZWE"], ["MRT", "SEN"], ["MWI", "TZA"], ["MWI", "ZMB"], ["MYS", "THA"], ["NAM", "ZAF"],
+  ["NAM", "ZMB"], ["NER", "NGA"], ["NER", "TCD"], ["NOR", "RUS"], ["NOR", "SWE"], ["OMN", "SAU"],
+  ["OMN", "YEM"], ["POL", "RUS"], ["POL", "SVK"], ["POL", "UKR"], ["PRK", "RUS"], ["QAT", "SAU"],
+  ["ROU", "SRB"], ["ROU", "UKR"], ["RUS", "UKR"], ["RWA", "TZA"], ["RWA", "UGA"], ["SAU", "YEM"],
+  ["SDN", "SSD"], ["SDN", "TCD"], ["SSD", "UGA"], ["SVK", "UKR"], ["SWZ", "ZAF"], ["SYR", "TUR"],
+  ["TJK", "UZB"], ["TKM", "UZB"], ["TZA", "UGA"], ["TZA", "ZMB"], ["ZAF", "ZWE"], ["ZMB", "ZWE"]
+];
