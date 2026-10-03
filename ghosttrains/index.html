@@ -227,6 +227,31 @@
     width: 100%; padding: 10px; border: none; border-radius: 10px; font-weight: 600; font-size: 14px;
     cursor: pointer; background: transparent; color: var(--muted); margin-top: 4px;
   }
+  /* ---------- Spelstatus-banner & slutresultat ---------- */
+  #statusBanner {
+    display: none; align-items: center; gap: 10px; padding: 9px 14px; font-size: 13.5px; font-weight: 700;
+    background: linear-gradient(90deg, #4a1b6b, #9c4ade); color: #fff;
+  }
+  #statusBanner.show { display: flex; }
+  #statusBanner.finished { background: linear-gradient(90deg, #7a5200, #e0a300); color: #241800; }
+  #statusBanner span { flex: 1; }
+  #statusBanner button {
+    border: none; border-radius: 999px; padding: 6px 12px; font-weight: 800; font-size: 13px;
+    background: rgba(255,255,255,.9); color: #111; cursor: pointer;
+  }
+  #resultsOverlay { z-index: 1500; }
+  .results-winner { text-align: center; margin: 4px 0 14px; }
+  .results-winner .trophy { font-size: 52px; line-height: 1; }
+  .results-winner h2 { margin: 8px 0 2px; font-size: 21px; }
+  .result-row {
+    border: 1px solid var(--card-border); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
+  }
+  .result-row.first { border: 2px solid var(--accent); background: rgba(255,179,0,.1); }
+  .result-head { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 15px; }
+  .result-head .place { width: 28px; text-align: center; font-size: 20px; }
+  .result-head .name { flex: 1; }
+  .result-head .total { font-size: 18px; }
+  .result-detail { font-size: 12.5px; color: var(--muted); margin: 6px 0 0 38px; line-height: 1.6; }
   .toast {
     position: fixed; left: 50%; bottom: 20px; transform: translate(-50%, 20px);
     background: var(--panel-bg); color: var(--ink); padding: 10px 16px; border-radius: 10px;
@@ -256,6 +281,8 @@
     </div>
   </div>
 </main>
+
+<div id="statusBanner"><span id="statusBannerText"></span><button id="statusBannerBtn" hidden>Se resultatet</button></div>
 
 <div id="drawer">
   <button id="drawerHandle" class="drawer-handle" aria-expanded="false" aria-controls="drawerContent">
@@ -316,6 +343,19 @@
   <div id="storiesTapRight"></div>
 </div>
 
+<div class="overlay" id="resultsOverlay">
+  <div class="panel">
+    <div class="results-winner">
+      <div class="trophy">🏆</div>
+      <h2 id="resultsTitle">Spelet är slut!</h2>
+      <p class="muted" id="resultsSub" style="margin:0"></p>
+    </div>
+    <div id="resultsList"></div>
+    <button class="primary-btn" id="newGameBtn">🚂 Starta nytt spel</button>
+    <button class="ghost-btn" id="closeResultsBtn">Visa kartan</button>
+  </div>
+</div>
+
 <div class="overlay" id="helpOverlay">
   <div class="panel">
     <h2>Så funkar Ghost Trains</h2>
@@ -325,6 +365,9 @@
       <li>Dina claim hålls hemliga för de andra hela dagen.</li>
       <li>Vid midnatt löses dagens claim upp. Om två spelare claimar samma rutt blir det en krock — ingen får rutten, och båda omdirigeras till närmaste lediga rutt istället. Korten är ändå förbrukade.</li>
       <li>Vissa rutter har dubbelspår — då kan exakt två spelare claima samma sträcka samma dag utan krock (tidigast får spår A, senare spår B).</li>
+      <li>Varje dag får du 3 AP. Dra kort kostar 1 AP (joker från marknaden 2), claima en rutt 2 AP, dra biljetter 1 AP.</li>
+      <li>Biljetter ger pluspoäng om du binder ihop städerna med dina egna rutter — men minuspoäng om du inte hinner.</li>
+      <li>När någon har 2 eller färre tågvagnar kvar blir det en sista runda. Natten efter den räknas slutpoängen och vinnaren koras.</li>
     </ul>
     <button class="primary-btn" id="closeHelpBtn">Okej!</button>
   </div>
@@ -359,7 +402,7 @@
   var routesById = {};
   var state = {
     hand: [], built: [], pendingToday: [], apRemaining: 3, market: [],
-    trainCars: 35, score: 0, tickets: [], gameStatus: 'active', finalScores: null
+    trainCars: 35, score: 0, tickets: [], gameStatus: 'active', finalResults: null
   };
   var currentTicketOffer = null;
   var profilesById = {};
@@ -1035,7 +1078,7 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
         cards.push({
           className: 'story-collision', icon: '💥',
           title: 'Kollision!',
-          body: names.join(' och ') + ' försökte båda claima ' + routeLabel(e.route_id) + ' samma natt. Rutten är helt fri igen!'
+          body: joinNames(names) + (names.length > 2 ? ' försökte alla claima ' : ' försökte båda claima ') + routeLabel(e.route_id) + ' samma natt. Rutten är helt fri igen!'
         });
         group.forEach(function(g){
           if (g.kind === 'rerouted') {
@@ -1067,6 +1110,12 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
           title: 'Sista rundan!',
           body: whoName(e.profile_id, viewerId) + ' har bara ' + cars + ' tågvagnar kvar. Efter nästa natt räknas slutpoängen ut!'
         });
+      } else if (e.kind === 'new_game') {
+        cards.push({
+          className: 'story-welcome', icon: '🚂',
+          title: 'Nytt spel!',
+          body: whoName(e.profile_id, viewerId) + ' startade ett nytt spel. Kartan är tom igen — lycka till!'
+        });
       } else if (e.kind === 'game_over') {
         var d = e.details || {};
         var lines = (d.breakdown || []).map(function(b){
@@ -1079,7 +1128,118 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
         });
       }
     });
+    var finals = entries.filter(function(e){ return e.kind === 'game_over' && e.details; })
+      .map(function(e){ return { profileId: e.profile_id, total: e.details.total }; });
+    if (finals.length) {
+      var w = winnersOf(finals);
+      cards.push({
+        className: 'story-final', icon: '🏆',
+        title: winnerTitle(w, viewerId),
+        body: 'Grattis! Se hela resultatet och starta ett nytt spel från kartan.'
+      });
+    }
     return cards;
+  }
+
+  function joinNames(names){
+    if (names.length <= 1) return names.join('');
+    return names.slice(0, -1).join(', ') + ' och ' + names[names.length - 1];
+  }
+  function winnersOf(results){
+    if (!results.length) return [];
+    var top = Math.max.apply(null, results.map(function(r){ return r.total; }));
+    return results.filter(function(r){ return r.total === top; });
+  }
+  function winnerTitle(winners, viewerId){
+    if (!winners.length) return 'Spelet är slut!';
+    var names = winners.map(function(r){ return whoName(r.profileId, viewerId); });
+    if (winners.length > 1) return 'Delad vinst: ' + joinNames(names) + '!';
+    return names[0] === 'Du' ? 'Du vann! 🎉' : names[0] + ' vann!';
+  }
+
+  /* ---------- Slutresultat & nytt spel ---------- */
+  var RESULTS_SEEN_KEY = 'ghosttrains:resultsSeenGame:';
+  function escHtml(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  function renderResults(){
+    var profile = NordhammerProfile.current();
+    var viewerId = profile ? profile.id : null;
+    var results = state.finalResults || [];
+    var winners = winnersOf(results);
+    document.getElementById('resultsTitle').textContent = winnerTitle(winners, viewerId);
+    document.getElementById('resultsSub').textContent = winners.length
+      ? 'med ' + winners[0].total + ' poäng' : 'Inga poäng registrerades.';
+    var box = document.getElementById('resultsList');
+    box.innerHTML = '';
+    var medals = ['🥇', '🥈', '🥉'];
+    var place = 0, prevTotal = null;
+    results.forEach(function(r, i){
+      if (r.total !== prevTotal) { place = i; prevTotal = r.total; }
+      var p = profilesById[r.profileId];
+      var row = document.createElement('div');
+      row.className = 'result-row' + (place === 0 ? ' first' : '');
+      var tickets = (r.breakdown || []).map(function(b){
+        return (b.success ? '✅ ' : '❌ ') + escHtml(cityName(b.cityA) + '–' + cityName(b.cityB)) +
+          ' (' + (b.success ? '+' : '−') + b.points + 'p)';
+      }).join('<br>');
+      var delta = r.ticketDelta || 0;
+      row.innerHTML =
+        '<div class="result-head">' +
+          '<span class="place">' + (medals[place] || (place + 1) + '.') + '</span>' +
+          '<span class="name">' + escHtml((p ? p.avatar + ' ' : '') + whoName(r.profileId, viewerId)) + '</span>' +
+          '<span class="total">' + r.total + 'p</span>' +
+        '</div>' +
+        '<div class="result-detail">Rutter ' + (r.routeScore || 0) + 'p · biljetter ' +
+          (delta >= 0 ? '+' : '−') + Math.abs(delta) + 'p' + (tickets ? '<br>' + tickets : '') + '</div>';
+      box.appendChild(row);
+    });
+  }
+  function openResults(){
+    renderResults();
+    document.getElementById('resultsOverlay').classList.add('show');
+    var profile = NordhammerProfile.current();
+    try { if (profile) localStorage.setItem(RESULTS_SEEN_KEY + profile.id, String(state.gameNo || 1)); } catch(e){}
+  }
+  document.getElementById('closeResultsBtn').onclick = function(){
+    document.getElementById('resultsOverlay').classList.remove('show');
+  };
+  document.getElementById('statusBannerBtn').onclick = openResults;
+  document.getElementById('newGameBtn').onclick = function(){
+    var profile = NordhammerProfile.current();
+    if (!profile) return;
+    if (!confirm('Starta ett nytt spel för hela familjen? Kartan, händerna och biljetterna nollställs.')) return;
+    api('/api/ghosttrains/new-game', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: profile.id })
+    }).then(function(){
+      document.getElementById('resultsOverlay').classList.remove('show');
+      toast('Nytt spel startat! 🚂');
+      loadState();
+    }).catch(function(e){
+      // Någon annan hann före — ladda bara om.
+      document.getElementById('resultsOverlay').classList.remove('show');
+      toast(e.message === 'spelet ar inte slut an' ? 'Ett nytt spel är redan igång!' : e.message);
+      loadState();
+    });
+  };
+
+  function renderStatusBanner(){
+    var banner = document.getElementById('statusBanner');
+    var text = document.getElementById('statusBannerText');
+    var btn = document.getElementById('statusBannerBtn');
+    banner.classList.remove('show', 'finished');
+    btn.hidden = true;
+    if (state.gameStatus === 'final_round') {
+      banner.classList.add('show');
+      text.textContent = '⏳ Sista rundan! ' + (state.finalDay
+        ? 'Slutpoängen räknas natten efter ' + formatSwedishDate(state.finalDay) + '.'
+        : 'Slutpoängen räknas snart.');
+    } else if (state.gameStatus === 'finished') {
+      banner.classList.add('show', 'finished');
+      var profile = NordhammerProfile.current();
+      text.textContent = '🏆 ' + winnerTitle(winnersOf(state.finalResults || []), profile ? profile.id : null);
+      btn.hidden = false;
+    }
   }
 
   function renderStoryCard(){
@@ -1169,7 +1329,14 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       renderCarsScore();
       renderTickets();
       renderMap();
-      if (state.ticketOffer) openTicketOffer(state.ticketOffer);
+      renderStatusBanner();
+      if (state.gameStatus === 'finished') {
+        // Visas automatiskt en gång per spel och profil (under ev.
+        // nattrapport, som ligger överst). Banner-knappen visar igen.
+        var seen = null;
+        try { seen = localStorage.getItem(RESULTS_SEEN_KEY + profile.id); } catch(e){}
+        if (seen !== String(state.gameNo || 1)) openResults();
+      } else if (state.ticketOffer) openTicketOffer(state.ticketOffer);
       checkDigest(profile.id);
     }).catch(function(e){ toast(e.message); });
   }

@@ -190,9 +190,31 @@ En spelares tågvagnar ≤2 efter en upplösning sätter spelstatus till
 `final_round` och pekar ut NÄSTA dag som sista dagen. När den dagen
 upplösts: slutpoäng räknas ut för alla spelare med biljetter
 (ackumulerad ruttpoäng ± biljettpoäng), status blir `finished`.
-**När `finished`: nya `/claim`, `/draw`, `/market/draw` och
-`/tickets/draw` avvisas** (en tillagd regel, inte uttryckligen
-specificerad men uppenbart nödvändig).
+**När `finished`: nya `/claim`, `/draw`, `/market/draw`,
+`/tickets/draw` och `/tickets/choose` avvisas** (en tillagd regel,
+inte uttryckligen specificerad men uppenbart nödvändig).
+
+Slutresultatet (sorterat, högst först, med biljett-breakdown) sparas i
+`ghosttrains_game_state.final_results` och skickas som `finalResults`
+i `/state`. Profiler utan biljetter OCH utan rutter räknas inte som
+deltagare. Spel som avslutades innan kolumnen fanns återskapas ur
+`game_over`-raderna i loggen (`finalResultsFor`).
+
+Klienten visar en resultatskärm (vinnare, placering, biljetter)
+automatiskt EN gång per spel och profil (`localStorage`
+`ghosttrains:resultsSeenGame:<profileId>` = `gameNo`), plus en banner
+ovanför lådan med "Se resultatet". Under `final_round` visas en
+lila "Sista rundan"-banner.
+
+### Nytt spel
+`POST /new-game` (bara när status är `finished`, annars 409) nollställer
+händer, kortlek, marknad, byggda rutter, spelare, biljetter, biljett-
+lek och oupplösta claims, och räknar upp `game_no`. **Loggen och
+`ghosttrains_resolved_days` behålls** — historik för nattrapporten och
+idempotensen för upplösningen. Postgres-versionen låser game_state-
+raden (`FOR UPDATE`) så två samtidiga klick inte startar två spel.
+En `new_game`-rad loggas så att nästa morgons nattrapport berättar
+vem som startade det nya spelet.
 
 ### Morgondigest ("Stories")
 `GET /digest/day?day=YYYY-MM-DD` (default: igår) returnerar HELA
@@ -217,6 +239,7 @@ begäran oavsett flagga.
 | `/claim` | POST | `{profileId, routeId, cards}` — skapar en PENDING-rad. `fromCity` väljs automatiskt server-sidan (se nedan), inte av klienten. |
 | `/tickets/draw` | POST | `{profileId}` — 1 AP, skapar en biljett-offer. |
 | `/tickets/choose` | POST | `{profileId, keepIds}` — löser en öppen offer. |
+| `/new-game` | POST | `{profileId}` — startar ett nytt spel när det förra är `finished`. |
 | `/resolve` | POST | Hemlig header `x-resolve-secret` (miljövariabel `GHOSTTRAINS_RESOLVE_SECRET`, se `server/.env.example`). Kör upplösning för en dag (default igår), idempotent. |
 | `/digest/day?day=` | GET | Hela familjens loggrader för en dag (default igår). |
 
@@ -272,6 +295,7 @@ root-`README.md`). Deploy sker automatiskt vid push till `main`.
 - Automatiserade tester för kartans designprinciper (artikulations-
   punkter, färgbalans, etc.) — kontrollerades manuellt med engångs-
   skript under utvecklingen, se ovan.
-- Admin-UI för att t.ex. nollställa spelet eller justera kartan utan
-  kodändring — allt görs idag genom att redigera `CITIES`/`ROUTES`/
+- Admin-UI för att t.ex. nollställa ett pågående spel eller justera
+  kartan utan kodändring (ett AVSLUTAT spel kan startas om via
+  `/new-game`) — allt görs idag genom att redigera `CITIES`/`ROUTES`/
   `TICKETS` direkt i `server/ghosttrains.js` och pusha.

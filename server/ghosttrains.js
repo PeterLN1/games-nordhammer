@@ -408,6 +408,7 @@ async function checkFinalRoundAndGameOver(store, day, results) {
     });
 
     const allPlayers = await store.allPlayers();
+    const finalResults = [];
     for (const p of allPlayers) {
       const ownedRouteIds = ownedByProfile.get(p.profileId) || new Set();
       const ticketIds = ticketsByProfile.get(p.profileId) || [];
@@ -421,14 +422,33 @@ async function checkFinalRoundAndGameOver(store, day, results) {
         breakdown.push({ ticketId, cityA: ticket.cityA, cityB: ticket.cityB, points: ticket.points, success: ok });
       });
       const total = p.score + ticketDelta;
+      // Profiler som bara tittat in (inga biljetter, inga rutter) räknas
+      // inte som deltagare i slutresultatet.
+      if (!ticketIds.length && !ownedRouteIds.size) continue;
+      finalResults.push({ profileId: p.profileId, routeScore: p.score, ticketDelta, total, breakdown });
       await store.insertLog({
         gameDay: day, profileId: p.profileId, kind: 'game_over',
         routeId: null, altRouteId: null, otherPlayers: [],
         details: { routeScore: p.score, ticketDelta, total, breakdown }
       });
     }
-    await store.setGameState('finished', gameState.finalDay);
+    finalResults.sort((a, b) => b.total - a.total);
+    await store.setGameState('finished', gameState.finalDay, finalResults);
   }
+}
+
+// Slutresultat för /state. Spel som avslutades innan final_results
+// sparades i game_state återskapas ur game_over-raderna i loggen.
+async function finalResultsFor(store, gameState) {
+  if (Array.isArray(gameState.finalResults)) return gameState.finalResults;
+  if (!gameState.finalDay) return [];
+  let entries = [];
+  for (let day = gameState.finalDay, i = 0; i < 7 && !entries.length; day = nextDay(day), i++) {
+    entries = (await store.logForDay(day)).filter(e => e.kind === 'game_over');
+  }
+  return entries
+    .map(e => ({ profileId: e.profile_id, ...(e.details || {}) }))
+    .sort((a, b) => (b.total || 0) - (a.total || 0));
 }
 
 /* ---------- Lagring (Postgres eller minne, samma dubbla mönster som server/index.js) ---------- */
@@ -517,6 +537,9 @@ async function initSchema(pool) {
     status text not null default 'active',
     final_day text
   );`);
+  // Slutresultat sparas vid spelslut; game_no räknas upp vid nytt spel.
+  await pool.query(`alter table ghosttrains_game_state add column if not exists final_results jsonb;`);
+  await pool.query(`alter table ghosttrains_game_state add column if not exists game_no int not null default 1;`);
   // Samma öppna förtroendemodell som scores/profiles (se server/index.js):
   // RLS på utan policies stänger Supabases publika REST-API helt.
   for (const t of [
@@ -676,16 +699,41 @@ function pgStore(pool) {
       await pool.query('delete from ghosttrains_ticket_offers where profile_id=$1', [profileId]);
     },
     async getGameState() {
-      const r = await pool.query('select status, final_day from ghosttrains_game_state where id=1');
-      if (!r.rows[0]) return { status: 'active', finalDay: null };
-      return { status: r.rows[0].status, finalDay: r.rows[0].final_day };
+      const r = await pool.query('select status, final_day, final_results, game_no from ghosttrains_game_state where id=1');
+      if (!r.rows[0]) return { status: 'active', finalDay: null, finalResults: null, gameNo: 1 };
+      const row = r.rows[0];
+      return { status: row.status, finalDay: row.final_day, finalResults: row.final_results, gameNo: row.game_no };
     },
-    async setGameState(status, finalDay) {
+    async setGameState(status, finalDay, finalResults = null) {
       await pool.query(
-        `insert into ghosttrains_game_state (id, status, final_day) values (1,$1,$2)
-         on conflict (id) do update set status=$1, final_day=$2`,
-        [status, finalDay || null]
+        `insert into ghosttrains_game_state (id, status, final_day, final_results) values (1,$1,$2,$3)
+         on conflict (id) do update set status=$1, final_day=$2, final_results=$3`,
+        [status, finalDay || null, finalResults ? JSON.stringify(finalResults) : null]
       );
+    },
+    // Nollställer brädet för ett nytt spel — bara om det förra är slut.
+    // Låser game_state-raden så att två samtidiga klick inte kan starta
+    // två spel. Loggen och resolved_days behålls (historik + idempotens).
+    async resetGame() {
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        const r = await client.query('select status, game_no from ghosttrains_game_state where id=1 for update');
+        if (!r.rows[0] || r.rows[0].status !== 'finished') { await client.query('rollback'); return null; }
+        for (const t of ['ghosttrains_hands', 'ghosttrains_deck', 'ghosttrains_routes', 'ghosttrains_market',
+          'ghosttrains_players', 'ghosttrains_player_tickets', 'ghosttrains_ticket_offers', 'ghosttrains_ticket_deck']) {
+          await client.query(`delete from ${t}`);
+        }
+        await client.query('delete from ghosttrains_pending_moves where resolved=false');
+        const gameNo = r.rows[0].game_no + 1;
+        await client.query(
+          `update ghosttrains_game_state set status='active', final_day=null, final_results=null, game_no=$1 where id=1`,
+          [gameNo]
+        );
+        await client.query('commit');
+        return gameNo;
+      } catch (e) { await client.query('rollback'); throw e; }
+      finally { client.release(); }
     },
     // Delad, cirkulerande biljettlek — samma FOR UPDATE-transaktionsmönster
     // som kortmarknaden i Pass 1 (delad, muterbar state, samma racerisk).
@@ -825,8 +873,8 @@ function pgStore(pool) {
 function memStore() {
   const hands = new Map();
   let deck = null;
-  const routes = [];
-  const pending = [];
+  let routes = [];
+  let pending = [];
   const resolvedDays = new Set();
   const log = [];
   const apState = new Map();
@@ -835,7 +883,7 @@ function memStore() {
   const playerTickets = new Map();
   const ticketOffers = new Map();
   let ticketDeck = null;
-  let gameState = { status: 'active', finalDay: null };
+  let gameState = { status: 'active', finalDay: null, finalResults: null, gameNo: 1 };
   let nextPendingId = 1, nextLogId = 1;
   function drawOneMem() { if (!deck || deck.length === 0) deck = freshDeck(); return deck.pop(); }
   function getPlayerMem(profileId) {
@@ -903,7 +951,17 @@ function memStore() {
     async setTicketOffer(profileId, ticketIds, minKeep) { ticketOffers.set(profileId, { ticketIds, minKeep }); },
     async clearTicketOffer(profileId) { ticketOffers.delete(profileId); },
     async getGameState() { return gameState; },
-    async setGameState(status, finalDay) { gameState = { status, finalDay: finalDay || null }; },
+    async setGameState(status, finalDay, finalResults = null) {
+      gameState = { ...gameState, status, finalDay: finalDay || null, finalResults: finalResults || null };
+    },
+    async resetGame() {
+      if (gameState.status !== 'finished') return null;
+      hands.clear(); deck = null; routes = []; market = null;
+      players.clear(); playerTickets.clear(); ticketOffers.clear(); ticketDeck = null;
+      pending = pending.filter(p => p.resolved);
+      gameState = { status: 'active', finalDay: null, finalResults: null, gameNo: gameState.gameNo + 1 };
+      return gameState.gameNo;
+    },
     async dealTickets(count) {
       const d = ensureTicketDeck();
       const dealt = [];
@@ -989,11 +1047,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
         }
       }
 
-      let finalScores = null;
-      if (gameState.status === 'finished') {
-        const all = await store.allPlayers();
-        finalScores = all.map(p => ({ profileId: p.profileId, score: p.score }));
-      }
+      const finalResults = gameState.status === 'finished' ? await finalResultsFor(store, gameState) : null;
 
       res.json({
         gameDay: day,
@@ -1007,7 +1061,9 @@ function createGhostTrainsRouter(store, resolveSecret) {
         tickets: ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean),
         ticketOffer: ticketOffer ? { tickets: ticketOffer.ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean), minKeep: ticketOffer.minKeep } : null,
         gameStatus: gameState.status,
-        finalScores
+        finalDay: gameState.finalDay,
+        gameNo: gameState.gameNo || 1,
+        finalResults
       });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
@@ -1103,6 +1159,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     const keepIds = Array.isArray(b.keepIds) ? b.keepIds : [];
     try {
+      if ((await store.getGameState()).status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
       const offer = await store.getTicketOffer(profileId);
       if (!offer) return res.status(400).json({ error: 'ingen biljett-offer att svara pa' });
       const offeredSet = new Set(offer.ticketIds);
@@ -1116,6 +1173,22 @@ function createGhostTrainsRouter(store, resolveSecret) {
       await store.clearTicketOffer(profileId);
       const ticketIds = await store.getPlayerTickets(profileId);
       res.json({ ok: true, tickets: ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean) });
+    } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
+  });
+
+  // Startar ett nytt spel när det förra är slut. Vem som helst i
+  // familjen får trycka — samma öppna förtroendemodell som resten.
+  router.post('/new-game', async (req, res) => {
+    const profileId = (req.body || {}).profileId;
+    if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
+    try {
+      const gameNo = await store.resetGame();
+      if (gameNo == null) return res.status(409).json({ error: 'spelet ar inte slut an' });
+      await store.insertLog({
+        gameDay: gameDay(), profileId, kind: 'new_game',
+        routeId: null, altRouteId: null, otherPlayers: [], details: { gameNo }
+      });
+      res.json({ ok: true, gameNo });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 
