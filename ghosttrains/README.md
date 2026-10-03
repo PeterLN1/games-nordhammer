@@ -57,7 +57,13 @@ vid omstart). **Ändrar du en store-metod måste du ändra båda
 implementationerna.**
 
 **Delad, muterbar state hanteras annorlunda än allt annat**: handen,
-tågvagnar, poäng etc. är alltid scopade till EN profil (inga races).
+tågvagnar, poäng etc. är alltid scopade till EN profil. **Men även en
+profil kan racea med sig själv** (dubbeltryck på mobil): handen
+uppdateras därför atomärt — `addToHand` (`hand || $2` i SQL) vid drag,
+och `replaceHandIf` (compare-and-swap) vid claim, som ger 409 om
+handen hann ändras. Använd aldrig `getHand` + `saveHand` för att
+mutera en hand. (Hittades vid Postgres-test: 90 samtidiga drag
+tappade 83 kort.)
 Men kortmarknaden och biljettleken är delade resurser flera spelare
 kan träffa samtidigt. Dessa skyddas i Postgres med en riktig
 transaktion (`BEGIN; SELECT ... FOR UPDATE; ...; COMMIT;` via en

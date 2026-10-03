@@ -698,6 +698,27 @@ function pgStore(pool) {
       const r = await pool.query('select hand from ghosttrains_hands where profile_id=$1', [profileId]);
       return r.rows[0] ? r.rows[0].hand : [];
     },
+    // Atomär påfyllning av handen: två samtidiga drag (t.ex. dubbeltryck)
+    // kan annars läsa samma hand och skriva över varandras kort.
+    async addToHand(profileId, cards) {
+      const r = await pool.query(
+        `insert into ghosttrains_hands (profile_id, hand, updated_at) values ($1,$2,now())
+         on conflict (profile_id) do update set hand = ghosttrains_hands.hand || $2::jsonb, updated_at=now()
+         returning hand`,
+        [profileId, JSON.stringify(cards)]
+      );
+      return r.rows[0].hand;
+    },
+    // Compare-and-swap: sparar bara om handen fortfarande är exakt den
+    // som lästes (annars har ett samtidigt drag hunnit ändra den).
+    async replaceHandIf(profileId, oldHand, newHand) {
+      const r = await pool.query(
+        `update ghosttrains_hands set hand=$3, updated_at=now()
+         where profile_id=$1 and hand=$2::jsonb returning profile_id`,
+        [profileId, JSON.stringify(oldHand), JSON.stringify(newHand)]
+      );
+      return r.rows.length > 0;
+    },
     async saveHand(profileId, hand) {
       await pool.query(
         `insert into ghosttrains_hands (profile_id, hand, updated_at) values ($1,$2,now())
@@ -1058,6 +1079,12 @@ function memStore() {
   return {
     async getHand(profileId) { return hands.get(profileId) || []; },
     async saveHand(profileId, hand) { hands.set(profileId, hand); },
+    async addToHand(profileId, cards) { const h = (hands.get(profileId) || []).concat(cards); hands.set(profileId, h); return h; },
+    async replaceHandIf(profileId, oldHand, newHand) {
+      if (JSON.stringify(hands.get(profileId) || []) !== JSON.stringify(oldHand)) return false;
+      hands.set(profileId, newHand);
+      return true;
+    },
     async drawFromDeck(count) { const out = []; for (let i = 0; i < count; i++) out.push(drawOneMem()); return out; },
     async discardCards(cards) { deckState.discard.push(...cards); },
     async builtRoutes() { return routes.map(r => ({ route_id: r.routeId, track: r.track, owner_profile_id: r.ownerProfileId })); },
@@ -1213,8 +1240,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
 
       // Startgiv: 4 tågkort, lat vid profilens första /state (som biljetterna).
       if (player.joined && gameState.status !== 'finished' && await store.claimInitialCards(profileId)) {
-        hand = hand.concat(await store.drawFromDeck(STARTING_HAND_SIZE));
-        await store.saveHand(profileId, hand);
+        hand = await store.addToHand(profileId, await store.drawFromDeck(STARTING_HAND_SIZE));
       }
 
       // Gratis startbiljetter (1 lång + 1 medium + 1 kort) delas ut lat,
@@ -1282,8 +1308,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
       const apRemaining = await store.spendAP(profileId, day, 1);
       if (apRemaining == null) return res.status(402).json({ error: 'inte tillrackligt med AP' });
       const [card] = await store.drawFromDeck(1);
-      const hand = (await store.getHand(profileId)).concat([card]);
-      await store.saveHand(profileId, hand);
+      const hand = await store.addToHand(profileId, [card]);
       res.json({ ok: true, drawn: [card], hand, apRemaining });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
@@ -1301,8 +1326,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
       const result = await store.drawMarketCard(profileId, day, index);
       if (result.error === 'ap') return res.status(402).json({ error: 'inte tillrackligt med AP' });
       if (result.error) return res.status(400).json({ error: result.error });
-      const hand = (await store.getHand(profileId)).concat([result.drawnCard]);
-      await store.saveHand(profileId, hand);
+      const hand = await store.addToHand(profileId, [result.drawnCard]);
       res.json({ ok: true, drawn: result.drawnCard, hand, apRemaining: result.apRemaining, market: result.market });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
@@ -1329,11 +1353,17 @@ function createGhostTrainsRouter(store, resolveSecret) {
       if (!newHand) return res.status(400).json({ error: 'du har inte de korten' });
       const fromCity = pickOriginCity(route, profileId, built);
       const day = gameDay();
-      // AP spenderas sist — misslyckas det har varken hand eller PENDING
-      // muterats än (kortvalideringen ovan är ren läsning).
+      // Handen tas atomärt (compare-and-swap) innan AP spenderas — ett
+      // samtidigt drag/dubbeltryck ger 409 istället för att tappa kort.
+      // Misslyckas AP:t läggs korten tillbaka på handen.
+      if (!(await store.replaceHandIf(profileId, hand, newHand))) {
+        return res.status(409).json({ error: 'handen andrades samtidigt - forsok igen' });
+      }
       const apRemaining = await store.spendAP(profileId, day, 2);
-      if (apRemaining == null) return res.status(402).json({ error: 'inte tillrackligt med AP' });
-      await store.saveHand(profileId, newHand);
+      if (apRemaining == null) {
+        await store.addToHand(profileId, b.cards);
+        return res.status(402).json({ error: 'inte tillrackligt med AP' });
+      }
       await store.discardCards(b.cards); // spenderade kort till kasthögen
       const id = await store.insertPending({ profileId, routeId: route.id, fromCity, cards: b.cards, gameDay: day });
       res.json({ ok: true, id, hand: newHand, apRemaining });
