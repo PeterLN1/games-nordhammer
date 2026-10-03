@@ -145,6 +145,49 @@
     padding: 7px 2px; border-bottom: 1px solid rgba(255,255,255,.12);
   }
   .guessrow:last-child { border-bottom: none; }
+
+  /* Flaggstolpar på jordgloben för redan gissade länder. globe.gl
+     centrerar elementet på koordinaten, så själva stolpen + flaggan
+     ligger i övre halvan och stolpfoten hamnar precis på landet. */
+  .globeflag { width: 34px; height: 64px; pointer-events: none; }
+  /* Animationen ligger på ett inre element — globe.gl skriver över
+     transform på det yttre för att placera det. */
+  .globeflag .inner {
+    position: relative; width: 100%; height: 100%;
+    animation: flagRaise .35s ease-out;
+  }
+  .globeflag .pole {
+    position: absolute; left: 6px; top: 2px; width: 2px; height: 30px;
+    background: linear-gradient(90deg, #d8dbe2, #8a8f9c);
+    border-radius: 1px;
+    box-shadow: 0 0 2px rgba(0,0,0,.6);
+  }
+  .globeflag .pole::before {
+    content: ""; position: absolute; left: -1.5px; top: -3px;
+    width: 5px; height: 5px; border-radius: 50%; background: #f2c14e;
+  }
+  .globeflag .pole::after {
+    content: ""; position: absolute; left: -3px; bottom: -1px;
+    width: 8px; height: 2px; border-radius: 1px; background: rgba(0,0,0,.55);
+  }
+  .globeflag img {
+    position: absolute; left: 8px; top: 3px; width: 22px; height: 15px;
+    object-fit: cover; border-radius: 1px 2px 2px 1px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.55);
+    transform-origin: 0 50%;
+    animation: flagWave 2.4s ease-in-out infinite;
+  }
+  @keyframes flagWave {
+    0%, 100% { transform: perspective(60px) rotateY(0deg) skewY(0deg); }
+    50% { transform: perspective(60px) rotateY(-14deg) skewY(-3deg); }
+  }
+  @keyframes flagRaise {
+    from { opacity: 0; transform: translateY(6px) scale(.6); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .globeflag .inner, .globeflag img { animation: none; }
+  }
   .guessrow .flag { font-size: 18px; flex: 0 0 auto; line-height: 1; }
   .guessrow .gname { flex: 1; font-weight: 700; }
   .guessrow .gdist { color: rgba(255,255,255,.7); font-size: 12px; flex: 0 0 auto; }
@@ -501,10 +544,84 @@
             .polygonAltitude(polygonHeight)
             .polygonLabel(function(){ return ''; })
             .polygonsTransitionDuration(150)
-            .onPolygonClick(onCountryTap);
+            .onPolygonClick(onCountryTap)
+            .htmlElementsData([])
+            .htmlLat('lat')
+            .htmlLng('lng')
+            .htmlAltitude(0.012)
+            .htmlElement(flagPoleElement);
           resizeGlobe();
           globeInstance.pointOfView({ lat: 15, lng: 10, altitude: 2.3 }, 0);
         });
+    }
+
+    // En punkt som garanterat ligger inne i landet (och en bit från
+    // kusten) att ställa flaggstolpen på: rutnätssök i landets största
+    // polygon efter den punkt som ligger längst från närmaste kant.
+    // Mittpunkten duger inte — den hamnar utanför för t.ex. Chile/Norge.
+    var flagPointCache = {};
+    function pointInRing(x, y, ring){
+      var inside = false;
+      for (var i = 0, j = ring.length - 1; i < ring.length; j = i++){
+        var xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+        if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+      }
+      return inside;
+    }
+    function flagPointForCountry(code){
+      if (flagPointCache[code]) return flagPointCache[code];
+      var geometry = countryGeometries[code];
+      if (!geometry) return null;
+      var parts = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+      var best = null, bestArea = -1;
+      parts.forEach(function(rings){
+        var a = Math.abs(ringSignedArea(rings[0]));
+        if (a > bestArea){ bestArea = a; best = rings[0]; }
+      });
+      var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      best.forEach(function(p){
+        minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]);
+        minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]);
+      });
+      var N = 24, pick = { lng: best[0][0], lat: best[0][1] }, pickD = -1;
+      for (var i = 0; i <= N; i++){
+        for (var j = 0; j <= N; j++){
+          var x = minX + (maxX - minX) * i / N, y = minY + (maxY - minY) * j / N;
+          if (!pointInRing(x, y, best)) continue;
+          var d = distanceToCountryKm(y, x, { type: 'Polygon', coordinates: [best] });
+          if (d > pickD){ pickD = d; pick = { lng: x, lat: y }; }
+        }
+      }
+      flagPointCache[code] = pick;
+      return pick;
+    }
+
+    function flagPoleElement(d){
+      var el = document.createElement('div');
+      el.className = 'globeflag';
+      var inner = document.createElement('div');
+      inner.className = 'inner';
+      el.appendChild(inner);
+      var pole = document.createElement('div');
+      pole.className = 'pole';
+      var img = document.createElement('img');
+      var a2 = alpha3ToAlpha2[d.code];
+      img.src = 'https://flagcdn.com/w40/' + (a2 || '').toLowerCase() + '.png';
+      img.alt = '';
+      img.onerror = function(){ el.style.display = 'none'; };
+      inner.appendChild(pole);
+      inner.appendChild(img);
+      return el;
+    }
+
+    function refreshGlobeFlags(){
+      if (!globeInstance) return;
+      var data = [];
+      roundGuesses.forEach(function(g){
+        var p = flagPointForCountry(g.code);
+        if (p) data.push({ code: g.code, lat: p.lat, lng: p.lng });
+      });
+      globeInstance.htmlElementsData(data);
     }
 
     function onCountryTap(feature){
@@ -552,6 +669,7 @@
       roundGuesses.push({ code: code, name: window.STREETVIEW_COUNTRY_NAMES_SV[code] || code, km: km });
       roundGuesses.sort(function(a, b){ return a.km - b.km; });
       renderGuessList();
+      refreshGlobeFlags();
     }
 
     function resetMapForRound(){
@@ -561,6 +679,7 @@
       confirmBar.classList.add('hidden');
       renderGuessList();
       refreshGlobeColors();
+      refreshGlobeFlags();
       if (globeInstance) globeInstance.pointOfView({ lat: 15, lng: 10, altitude: 2.3 }, 300);
     }
 

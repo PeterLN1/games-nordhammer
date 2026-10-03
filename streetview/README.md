@@ -11,6 +11,9 @@ drag, zooma med scroll/pinch).
   toast bekräftar felet). Landet läggs till i en lista längst upp —
   sorterad efter avstånd till rätt svar, närmast överst, och växer för
   varje gissning (som i spelet Globle). Varje rad har landets flagga.
+- Varje felgissat land får en liten vajande flagga på en flaggstolpe på
+  jordgloben (bilder från flagcdn.com, placerad långt in i landets
+  största yta — se `flagPointForCountry()`).
 - Max **10 gissningar per runda** — når du taket avslöjas rätt land och
   räknas som 10, och spelet går vidare.
 - Varje land du pekar på (rätt eller fel) visar sitt namn direkt, så man
