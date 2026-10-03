@@ -177,6 +177,21 @@
     transform-origin: 0 50%;
     animation: flagWave 2.4s ease-in-out infinite;
   }
+  .globeflag.correct .pole { height: 36px; top: -4px; background: linear-gradient(90deg, #ffe08a, #c99a2e); }
+  .globeflag.correct img {
+    width: 28px; height: 19px; top: -3px;
+    box-shadow: 0 0 0 1.5px #4caf6e, 0 0 10px rgba(76,175,110,.9);
+  }
+  .globepin { width: 14px; height: 14px; pointer-events: none; }
+  .globepin .dot {
+    width: 100%; height: 100%; border-radius: 50%;
+    background: #c94b4b; border: 2px solid #fff; box-sizing: border-box;
+    box-shadow: 0 0 0 0 rgba(201,75,75,.7);
+    animation: pinPulse 1.4s ease-out infinite;
+  }
+  @keyframes pinPulse {
+    to { box-shadow: 0 0 0 12px rgba(201,75,75,0); }
+  }
   @keyframes flagWave {
     0%, 100% { transform: perspective(60px) rotateY(0deg) skewY(0deg); }
     50% { transform: perspective(60px) rotateY(-14deg) skewY(-3deg); }
@@ -186,7 +201,7 @@
     to { opacity: 1; transform: none; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .globeflag .inner, .globeflag img { animation: none; }
+    .globeflag .inner, .globeflag img, .globepin .dot { animation: none; }
   }
   .guessrow .flag { font-size: 18px; flex: 0 0 auto; line-height: 1; }
   .guessrow .gname { flex: 1; font-weight: 700; }
@@ -346,7 +361,7 @@
     var MAX_GUESSES_PER_ROUND = 10;
 
     var results = []; // { code, nameSv, guesses, solved }
-    var usedSeedIndexes = new Set();
+    var usedCountries = new Set(); // länder som redan varit rätt svar i det här spelet
     var currentRound = 0;
     var currentTarget = null; // { lat, lng, pano, code, nameSv }
     var panorama = null;
@@ -361,6 +376,7 @@
     var gameStartedAt = null;
     var gameFinishedAt = null;
     var submitted = false;
+    var revealCode = null; // rätt land, visas på globen när rundan är slut
 
     var loadingOverlay = document.getElementById('loadingOverlay');
     var loadingSpinner = document.getElementById('loadingSpinner');
@@ -479,6 +495,7 @@
     // ---- Jordglob (globe.gl + GeoJSON, ingen Google-nyckel behövs) ----
     function polygonColor(feature){
       var code = codeForFeature(feature);
+      if (code && code === revealCode) return 'rgba(76,175,110,.9)';
       if (code && code === pendingCode) return 'rgba(255,179,0,.85)';
       if (code && wrongCodesThisRound[code]) return 'rgba(58,63,82,.75)';
       return 'rgba(74,111,165,.75)';
@@ -598,7 +615,12 @@
 
     function flagPoleElement(d){
       var el = document.createElement('div');
-      el.className = 'globeflag';
+      if (d.kind === 'pin'){
+        el.className = 'globepin';
+        el.innerHTML = '<div class="dot"></div>';
+        return el;
+      }
+      el.className = 'globeflag' + (d.kind === 'correct' ? ' correct' : '');
       var inner = document.createElement('div');
       inner.className = 'inner';
       el.appendChild(inner);
@@ -619,14 +641,19 @@
       var data = [];
       roundGuesses.forEach(function(g){
         var p = flagPointForCountry(g.code);
-        if (p) data.push({ code: g.code, lat: p.lat, lng: p.lng });
+        if (p) data.push({ kind: 'wrong', code: g.code, lat: p.lat, lng: p.lng });
       });
+      if (revealCode){
+        var rp = flagPointForCountry(revealCode);
+        if (rp) data.push({ kind: 'correct', code: revealCode, lat: rp.lat, lng: rp.lng });
+        data.push({ kind: 'pin', lat: currentTarget.lat, lng: currentTarget.lng });
+      }
       globeInstance.htmlElementsData(data);
     }
 
     function onCountryTap(feature){
       var code = codeForFeature(feature);
-      if (!code || wrongCodesThisRound[code]) return;
+      if (!code || wrongCodesThisRound[code] || revealCode) return;
       pendingCode = code;
       refreshGlobeColors();
       confirmName.textContent = nameForFeature(feature);
@@ -675,6 +702,7 @@
     function resetMapForRound(){
       wrongCodesThisRound = {};
       pendingCode = null;
+      revealCode = null;
       roundGuesses = [];
       confirmBar.classList.add('hidden');
       renderGuessList();
@@ -757,7 +785,7 @@
     async function findRoundLocation(){
       var indexes = [];
       for (var i = 0; i < window.STREETVIEW_SEED_LOCATIONS.length; i++){
-        if (!usedSeedIndexes.has(i)) indexes.push(i);
+        if (!usedCountries.has(window.STREETVIEW_SEED_LOCATIONS[i].code)) indexes.push(i);
       }
       shuffle(indexes);
       var attempts = Math.min(6, indexes.length);
@@ -769,8 +797,9 @@
         if (!res.ok) res = await resolvePanorama(jittered, 150000);
         if (res.ok){
           var code = await reverseGeocodeCountryCode(res.lat, res.lng);
-          if (code && window.STREETVIEW_COUNTRY_NAMES_SV[code]){
-            usedSeedIndexes.add(idx);
+          if (code && window.STREETVIEW_COUNTRY_NAMES_SV[code] && !usedCountries.has(code)){
+            usedCountries.add(code);
+            usedCountries.add(seed.code);
             return { lat: res.lat, lng: res.lng, pano: res.pano, code: code, nameSv: window.STREETVIEW_COUNTRY_NAMES_SV[code] };
           }
         }
@@ -847,9 +876,18 @@
       showToast('Fel! Försök igen.');
     }
 
+    // Visar rätt land på globen (grönt, med egen flagga + röd prick där
+    // bilden togs) en stund innan resultatrutan kommer upp, så man ser
+    // hur långt ifrån ens gissningar var.
     function finishRound(solved){
       results.push({ code: currentTarget.code, nameSv: currentTarget.nameSv, guesses: attemptsThisRound, solved: solved });
-      showRoundResult(results[results.length - 1]);
+      revealCode = currentTarget.code;
+      refreshGlobeColors();
+      refreshGlobeFlags();
+      setMapVisible(true);
+      if (globeInstance) globeInstance.pointOfView({ lat: currentTarget.lat, lng: currentTarget.lng, altitude: 1.4 }, 900);
+      var r = results[results.length - 1];
+      setTimeout(function(){ showRoundResult(r); }, 2200);
     }
 
     function showRoundResult(r){
@@ -907,7 +945,7 @@
 
     document.getElementById('playAgainBtn').addEventListener('click', function(){
       results = [];
-      usedSeedIndexes = new Set();
+      usedCountries = new Set();
       currentRound = 0;
       submitted = false;
       finalOverlay.classList.add('hidden');
@@ -963,8 +1001,10 @@
       }
       if (submitted){ showList(); return; }
       submitted = true;
+      area.innerHTML = '<div class="lb-title">🏆 Topplista</div><div class="lb-list">Sparar…</div>';
+      // Hämta listan först när resultatet är sparat (även vid fel), så
+      // den egna nya placeringen syns direkt.
       lbSubmit({ name: getName(), mode: 'streetview', tiles: TOTAL_ROUNDS, seconds: seconds, moves: totalGuesses }, showList);
-      showList();
     }
 
     // ---- Profil ("Vem spelar?") ----

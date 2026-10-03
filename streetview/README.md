@@ -6,7 +6,9 @@ förflytta dig, men du kan snurra runt och zooma. Gissa vilket **land**
 bilden är tagen i genom att peka på en klickbar jordglob (rotera med
 drag, zooma med scroll/pinch).
 
-- Rätt land direkt = rundan klar.
+- Rätt land direkt = rundan klar. När rundan är slut visas rätt land på
+  jordgloben (grönt, med egen flagga och en röd prick där bilden togs) en
+  kort stund innan resultatrutan kommer upp.
 - Fel land: landet markeras grått och du får peka på ett nytt (en
   toast bekräftar felet). Landet läggs till i en lista längst upp —
   sorterad efter avstånd till rätt svar, närmast överst, och växer för
@@ -96,9 +98,12 @@ varvriktningen för alla polygoner vid inläsning (`normalizeWinding()`)
 — rör inte den funktionen utan att förstå varför den finns.
 
 `countries.js` innehåller:
-- `STREETVIEW_SEED_LOCATIONS` — ungefärliga mittpunkter för ~106 länder
-  (bara de som faktiskt finns som egen yta i 180-landsdatasetet). Spelet
-  slumpar ett av dessa, förskjuter punkten slumpmässigt upp till 250 km
+- `STREETVIEW_SEED_LOCATIONS` — ~160 frö-koordinater för ~114 länder
+  (bara länder med Google Street View som faktiskt finns som egen yta i
+  180-landsdatasetet). Stora länder med mycket Street View (USA, Ryssland,
+  Brasilien, Kanada, Australien m.fl.) har flera frön, så de slumpas
+  oftare och bilden kan hamna i fler delar av landet. Samma land kommer
+  aldrig två gånger i ett spel. Spelet slumpar ett frö, förskjuter punkten slumpmässigt upp till 250 km
   åt valfritt håll, och letar upp närmaste Street View-panorama därifrån
   — bilden hamnar alltså var som helst i (eller nära) landet, inte bara
   i huvudstaden.
@@ -146,8 +151,6 @@ streetview/
 
 ## Vidareutveckling (idéer)
 
-- Fler frö-koordinater i `STREETVIEW_SEED_LOCATIONS` för jämnare global
-  spridning.
 - Svårighetsnivåer (t.ex. bara Europa).
 - Ljusare/mer detaljerad globtextur (just nu `earth-dark.jpg` — små
   länder kan vara svåra att träffa exakt mot den mörka bakgrunden).

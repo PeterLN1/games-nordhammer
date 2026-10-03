@@ -123,7 +123,71 @@ window.STREETVIEW_SEED_LOCATIONS = [
   { code: "AZE", lat: 40.1, lng: 47.6 },
 
   { code: "AUS", lat: -25.3, lng: 133.8 },
-  { code: "NZL", lat: -41.0, lng: 174.0 }
+  { code: "NZL", lat: -41.0, lng: 174.0 },
+
+  // Länder med Street View som tidigare saknades.
+  { code: "RUS", lat: 55.5, lng: 37.5 },
+  { code: "GRL", lat: 64.2, lng: -51.7 },
+  { code: "BTN", lat: 27.4, lng: 90.4 },
+  { code: "KGZ", lat: 42.0, lng: 75.0 },
+  { code: "LBN", lat: 33.9, lng: 35.8 },
+  { code: "PSE", lat: 31.9, lng: 35.2 },
+  { code: "FLK", lat: -51.7, lng: -58.5 },
+  { code: "BMU", lat: 32.3, lng: -64.8 },
+
+  // Extra frön för stora länder med mycket Street View, så de slumpas
+  // oftare (varje frö är en lott) och bilden kan hamna i fler delar av
+  // landet än runt en enda mittpunkt. Samma land kommer ändå aldrig två
+  // gånger i samma spel, se findRoundLocation() i index.html.
+  { code: "RUS", lat: 59.5, lng: 31.0 },
+  { code: "RUS", lat: 54.5, lng: 49.0 },
+  { code: "RUS", lat: 56.8, lng: 60.6 },
+  { code: "RUS", lat: 55.0, lng: 83.0 },
+  { code: "RUS", lat: 44.5, lng: 133.0 },
+  { code: "RUS", lat: 45.0, lng: 39.5 },
+  { code: "USA", lat: 34.0, lng: -112.0 },
+  { code: "USA", lat: 33.0, lng: -85.0 },
+  { code: "USA", lat: 43.0, lng: -74.5 },
+  { code: "USA", lat: 46.0, lng: -120.0 },
+  { code: "USA", lat: 31.0, lng: -98.0 },
+  { code: "USA", lat: 37.0, lng: -120.0 },
+  { code: "CAN", lat: 51.0, lng: -112.0 },
+  { code: "CAN", lat: 46.5, lng: -72.5 },
+  { code: "CAN", lat: 44.5, lng: -79.5 },
+  { code: "CAN", lat: 50.5, lng: -121.0 },
+  { code: "BRA", lat: -22.5, lng: -46.5 },
+  { code: "BRA", lat: -9.0, lng: -38.5 },
+  { code: "BRA", lat: -27.5, lng: -51.5 },
+  { code: "BRA", lat: -18.5, lng: -44.0 },
+  { code: "AUS", lat: -33.0, lng: 147.0 },
+  { code: "AUS", lat: -31.5, lng: 117.0 },
+  { code: "AUS", lat: -21.0, lng: 147.0 },
+  { code: "AUS", lat: -37.0, lng: 144.0 },
+  { code: "ARG", lat: -27.0, lng: -65.0 },
+  { code: "ARG", lat: -42.0, lng: -71.0 },
+  { code: "MEX", lat: 19.5, lng: -99.5 },
+  { code: "MEX", lat: 28.5, lng: -106.0 },
+  { code: "ZAF", lat: -26.0, lng: 28.0 },
+  { code: "ZAF", lat: -33.5, lng: 19.5 },
+  { code: "IDN", lat: -7.5, lng: 110.0 },
+  { code: "IDN", lat: 0.5, lng: 101.5 },
+  { code: "IND", lat: 26.5, lng: 80.0 },
+  { code: "IND", lat: 13.0, lng: 77.5 },
+  { code: "JPN", lat: 43.2, lng: 142.5 },
+  { code: "JPN", lat: 33.0, lng: 131.0 },
+  { code: "FRA", lat: 44.0, lng: 5.5 },
+  { code: "ESP", lat: 37.5, lng: -4.5 },
+  { code: "ITA", lat: 45.5, lng: 9.5 },
+  { code: "GBR", lat: 57.0, lng: -4.0 },
+  { code: "NOR", lat: 69.0, lng: 19.0 },
+  { code: "SWE", lat: 57.5, lng: 14.0 },
+  { code: "TUR", lat: 38.5, lng: 30.0 },
+  { code: "CHL", lat: -37.5, lng: -72.5 },
+  { code: "PER", lat: -13.5, lng: -72.0 },
+  { code: "COL", lat: 6.5, lng: -75.5 },
+  { code: "THA", lat: 18.5, lng: 99.0 },
+  { code: "NZL", lat: -37.5, lng: 175.5 },
+  { code: "KAZ", lat: 43.3, lng: 76.9 }
 ];
 
 // Svenska namn för alla 180 länder i world-countries.geo.json (nyckel =
