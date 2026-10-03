@@ -243,6 +243,7 @@
   }
   #statusBanner.show { display: flex; }
   #statusBanner.finished { background: linear-gradient(90deg, #7a5200, #e0a300); color: #241800; }
+  #statusBanner.spectator { background: linear-gradient(90deg, #1b2138, #3a4a7a); color: #fff; }
   #statusBanner span { flex: 1; }
   #statusBanner button {
     border: none; border-radius: 999px; padding: 6px 12px; font-weight: 800; font-size: 13px;
@@ -291,7 +292,7 @@
   </div>
 </main>
 
-<div id="statusBanner"><span id="statusBannerText"></span><button id="statusBannerBtn" hidden>Se resultatet</button></div>
+<div id="statusBanner"><span id="statusBannerText"></span><button id="statusBannerBtn" hidden>Se resultatet</button><button id="joinBtn" hidden>🚂 Gå med i spelet</button></div>
 
 <div id="drawer">
   <button id="drawerHandle" class="drawer-handle" aria-expanded="false" aria-controls="drawerContent">
@@ -380,6 +381,7 @@
       <li>Vissa rutter har dubbelspår — då kan exakt två spelare claima samma sträcka samma dag utan krock (tidigast får spår A, senare spår B).</li>
       <li>Varje dag får du 3 AP. Dra kort kostar 1 AP (joker från marknaden 2), claima en rutt 2 AP, dra biljetter 1 AP.</li>
       <li>Biljetter ger pluspoäng om du binder ihop städerna med dina egna rutter — men minuspoäng om du inte hinner.</li>
+      <li>Tryck "Gå med i spelet" för att vara med — fram till dess tittar du bara. Under sista rundan går det inte att gå med.</li>
       <li>Alla börjar med 4 tågkort på handen.</li>
       <li>På en dubbelspårsrutt får du bara äga det ena spåret.</li>
       <li>När någon har 2 eller färre tågvagnar kvar blir det en sista runda. Natten efter den räknas slutpoängen och vinnaren koras.</li>
@@ -818,11 +820,14 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     });
   }
 
+  // Får den här profilen göra drag just nu? (med i spelet + inte slut)
+  function canAct(){ return !!state.joined && state.gameStatus !== 'finished'; }
+
   function renderAP(){
     document.getElementById('apBadge').textContent = 'AP: ' + state.apRemaining + '/3';
-    var gameOver = state.gameStatus === 'finished';
-    document.getElementById('drawBtn').disabled = state.apRemaining < 1 || gameOver;
-    document.getElementById('drawTicketsBtn').disabled = state.apRemaining < 1 || gameOver;
+    var blocked = !canAct();
+    document.getElementById('drawBtn').disabled = state.apRemaining < 1 || blocked;
+    document.getElementById('drawTicketsBtn').disabled = state.apRemaining < 1 || blocked;
   }
 
   function cityName(id){ return citiesById[id] ? citiesById[id].name : id; }
@@ -871,7 +876,7 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
   function renderMarket(){
     var box = document.getElementById('marketChips');
     box.innerHTML = '';
-    var gameOver = state.gameStatus === 'finished';
+    var gameOver = !canAct();
     (state.market || []).forEach(function(color, idx){
       var cost = color === 'wild' ? 2 : 1;
       var el = document.createElement('div');
@@ -896,6 +901,7 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
   function openClaim(route){
     var slots = trackSlotsFor(route).filter(function(t){ return !trackOwner(route.id, t); });
     if (!slots.length) { toast('Rutten är redan helt byggd.'); return; }
+    if (!state.joined) { toast(state.gameStatus === 'active' ? 'Gå med i spelet först (knappen ovanför lådan).' : 'Du är inte med i det här spelet.'); return; }
     var me = NordhammerProfile.current();
     if (me && route.doubleTrack && trackSlotsFor(route).some(function(t){ return trackOwner(route.id, t) === me.id; })) {
       toast('Du äger redan ena spåret här — det andra är till någon annan.');
@@ -1280,13 +1286,19 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     var banner = document.getElementById('statusBanner');
     var text = document.getElementById('statusBannerText');
     var btn = document.getElementById('statusBannerBtn');
-    banner.classList.remove('show', 'finished');
+    var joinBtn = document.getElementById('joinBtn');
+    banner.classList.remove('show', 'finished', 'spectator');
     btn.hidden = true;
+    joinBtn.hidden = true;
     if (state.gameStatus === 'final_round') {
       banner.classList.add('show');
       text.textContent = '⏳ Sista rundan! ' + (state.finalDay
         ? 'Slutpoängen räknas natten efter ' + formatSwedishDate(state.finalDay) + '.'
-        : 'Slutpoängen räknas snart.');
+        : 'Slutpoängen räknas snart.') + (state.joined ? '' : ' Du kan gå med i nästa spel.');
+    } else if (state.gameStatus === 'active' && !state.joined) {
+      banner.classList.add('show', 'spectator');
+      text.textContent = '👀 Du tittar bara just nu.';
+      joinBtn.hidden = false;
     } else if (state.gameStatus === 'finished') {
       banner.classList.add('show', 'finished');
       var profile = NordhammerProfile.current();
@@ -1294,6 +1306,21 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       btn.hidden = false;
     }
   }
+
+  document.getElementById('joinBtn').onclick = function(){
+    var profile = NordhammerProfile.current();
+    if (!profile) return;
+    api('/api/ghosttrains/join', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: profile.id })
+    }).then(function(){
+      toast('Välkommen ombord! 🚂 Du får 4 kort och dina startbiljetter.');
+      loadState();
+    }).catch(function(e){
+      toast(e.message === 'sista rundan pagar - ga med i nasta spel' ? 'Sista rundan pågår — du kan gå med i nästa spel.' : e.message);
+      loadState();
+    });
+  };
 
   function renderStoryCard(){
     var seg = document.getElementById('storiesProgress');

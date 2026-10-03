@@ -131,8 +131,21 @@ inte ett enkelt "läs, mutera i JS, skriv tillbaka".**
   blir en Total Crash. En omdirigerad spelare betalar inga extra kort
   för ersättningsrutten.
 
+### Gå med i spelet
+- En profil är **åskådare** tills den trycker "Gå med i spelet"
+  (`POST /join`, sätter `ghosttrains_players.joined`). Åskådare ser
+  karta, ställning och nattrapport men får inga kort/biljetter, och
+  alla drag (`/draw`, `/market/draw`, `/claim`, `/tickets/draw`,
+  `/tickets/choose`) avvisas med 403 via `actionBlocked`.
+- `/join` avvisas under `final_round` (och `finished`) — man hinner
+  ändå inget och skulle bara få minuspoäng på biljetterna.
+- `/new-game` nollställer alla spelare, så alla måste gå med igen —
+  utom den som startade spelet, som går med automatiskt.
+- Vid migreringen räknades befintliga spelare (fått startbiljetter,
+  har poäng eller byggt) som med.
+
 ### Startgiv
-- 4 tågkort delas ut lat vid profilens första `/state` (atomär flagga
+- 4 tågkort delas ut lat vid profilens första `/state` efter `/join` (atomär flagga
   `initial_cards_dealt` via `claimInitialCards`, så dubbla anrop aldrig
   ger dubbla kort). Spelare som fanns när kolumnen lades till räknas
   som klara. Inget startgiv när spelet är `finished`.
@@ -265,6 +278,7 @@ begäran oavsett flagga.
 | `/claim` | POST | `{profileId, routeId, cards}` — skapar en PENDING-rad. `fromCity` väljs automatiskt server-sidan (se nedan), inte av klienten. |
 | `/tickets/draw` | POST | `{profileId}` — 1 AP, skapar en biljett-offer. |
 | `/tickets/choose` | POST | `{profileId, keepIds}` — löser en öppen offer. |
+| `/join` | POST | `{profileId}` — gå med i pågående spel (ej under sista rundan). |
 | `/new-game` | POST | `{profileId}` — startar ett nytt spel när det förra är `finished`. |
 | `/resolve` | POST | Hemlig header `x-resolve-secret` (miljövariabel `GHOSTTRAINS_RESOLVE_SECRET`, se `server/.env.example`). Kör upplösning för en dag (default igår), idempotent. |
 | `/digest/day?day=` | GET | Hela familjens loggrader för en dag (default igår). |

@@ -611,6 +611,15 @@ async function initSchema(pool) {
   // Slutresultat sparas vid spelslut; game_no räknas upp vid nytt spel.
   await pool.query(`alter table ghosttrains_game_state add column if not exists final_results jsonb;`);
   await pool.query(`alter table ghosttrains_game_state add column if not exists game_no int not null default 1;`);
+  // Explicit "Gå med i spelet". Spelare som redan fått sin startgiv när
+  // kolumnen läggs till räknas som med.
+  await pool.query(`do $$ begin
+    if not exists (select 1 from information_schema.columns where table_name='ghosttrains_players' and column_name='joined') then
+      alter table ghosttrains_players add column joined boolean not null default false;
+      update ghosttrains_players set joined = true
+        where initial_tickets_dealt or score > 0 or train_cars < ${STARTING_TRAIN_CARS};
+    end if;
+  end $$;`);
   // Startgiv av tågkort. Befintliga spelare (som redan spelat) räknas
   // som klara — bara nya spelare/nya spel får de 4 startkorten.
   await pool.query(`do $$ begin
@@ -720,14 +729,14 @@ function pgStore(pool) {
       return r.rows;
     },
     async getPlayer(profileId) {
-      const r = await pool.query('select train_cars, score, initial_tickets_dealt from ghosttrains_players where profile_id=$1', [profileId]);
-      if (r.rows[0]) return { trainCars: r.rows[0].train_cars, score: r.rows[0].score, initialTicketsDealt: r.rows[0].initial_tickets_dealt };
+      const r = await pool.query('select train_cars, score, initial_tickets_dealt, joined from ghosttrains_players where profile_id=$1', [profileId]);
+      if (r.rows[0]) return { trainCars: r.rows[0].train_cars, score: r.rows[0].score, initialTicketsDealt: r.rows[0].initial_tickets_dealt, joined: r.rows[0].joined };
       await pool.query('insert into ghosttrains_players (profile_id) values ($1) on conflict (profile_id) do nothing', [profileId]);
-      return { trainCars: STARTING_TRAIN_CARS, score: 0, initialTicketsDealt: false };
+      return { trainCars: STARTING_TRAIN_CARS, score: 0, initialTicketsDealt: false, joined: false };
     },
     async allPlayers() {
-      const r = await pool.query('select profile_id, train_cars, score from ghosttrains_players');
-      return r.rows.map(row => ({ profileId: row.profile_id, trainCars: row.train_cars, score: row.score }));
+      const r = await pool.query('select profile_id, train_cars, score, joined from ghosttrains_players');
+      return r.rows.map(row => ({ profileId: row.profile_id, trainCars: row.train_cars, score: row.score, joined: row.joined }));
     },
     async deductTrainCars(profileId, amount) {
       await pool.query(
@@ -741,6 +750,13 @@ function pgStore(pool) {
         `insert into ghosttrains_players (profile_id, score) values ($1, $2)
          on conflict (profile_id) do update set score = ghosttrains_players.score + $2`,
         [profileId, amount]
+      );
+    },
+    async joinGame(profileId) {
+      await pool.query(
+        `insert into ghosttrains_players (profile_id, joined) values ($1, true)
+         on conflict (profile_id) do update set joined = true`,
+        [profileId]
       );
     },
     // Atomär: true bara för det anrop som faktiskt vänder flaggan, så två
@@ -979,7 +995,7 @@ function memStore() {
   function drawOneMem() { if (!deck || deck.length === 0) deck = freshDeck(); return deck.pop(); }
   function getPlayerMem(profileId) {
     let p = players.get(profileId);
-    if (!p) { p = { trainCars: STARTING_TRAIN_CARS, score: 0, initialTicketsDealt: false, initialCardsDealt: false }; players.set(profileId, p); }
+    if (!p) { p = { trainCars: STARTING_TRAIN_CARS, score: 0, initialTicketsDealt: false, initialCardsDealt: false, joined: false }; players.set(profileId, p); }
     return p;
   }
   function ensureTicketDeck() { if (!ticketDeck) ticketDeck = shuffle(TICKETS.map(t => t.id)); return ticketDeck; }
@@ -1022,8 +1038,9 @@ function memStore() {
       return log.filter(e => e.gameDay === day)
         .map(e => ({ id: e.id, game_day: e.gameDay, profile_id: e.profileId, kind: e.kind, route_id: e.routeId, alt_route_id: e.altRouteId, other_players: e.otherPlayers, details: e.details, created_at: e.createdAt }));
     },
-    async getPlayer(profileId) { const p = getPlayerMem(profileId); return { trainCars: p.trainCars, score: p.score, initialTicketsDealt: p.initialTicketsDealt }; },
-    async allPlayers() { return Array.from(players.entries()).map(([profileId, p]) => ({ profileId, trainCars: p.trainCars, score: p.score })); },
+    async getPlayer(profileId) { const p = getPlayerMem(profileId); return { trainCars: p.trainCars, score: p.score, initialTicketsDealt: p.initialTicketsDealt, joined: p.joined }; },
+    async allPlayers() { return Array.from(players.entries()).map(([profileId, p]) => ({ profileId, trainCars: p.trainCars, score: p.score, joined: p.joined })); },
+    async joinGame(profileId) { getPlayerMem(profileId).joined = true; },
     async deductTrainCars(profileId, amount) { getPlayerMem(profileId).trainCars -= amount; },
     async addScore(profileId, amount) { getPlayerMem(profileId).score += amount; },
     async setInitialTicketsDealt(profileId) { getPlayerMem(profileId).initialTicketsDealt = true; },
@@ -1114,6 +1131,14 @@ function memStore() {
 /* ---------- Router ---------- */
 function validProfileId(id) { return typeof id === 'string' && /^[a-z0-9]{4,64}$/i.test(id); }
 
+// Gemensam spärr för alla drag: spelet får inte vara slut, och profilen
+// måste ha tryckt "Gå med i spelet" (POST /join).
+async function actionBlocked(store, profileId) {
+  if ((await store.getGameState()).status === 'finished') return { status: 409, error: 'spelet ar slut' };
+  if (!(await store.getPlayer(profileId)).joined) return { status: 403, error: 'du har inte gatt med i spelet' };
+  return null;
+}
+
 function createGhostTrainsRouter(store, resolveSecret) {
   const router = express.Router();
 
@@ -1133,7 +1158,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
       ]);
 
       // Startgiv: 4 tågkort, lat vid profilens första /state (som biljetterna).
-      if (gameState.status !== 'finished' && await store.claimInitialCards(profileId)) {
+      if (player.joined && gameState.status !== 'finished' && await store.claimInitialCards(profileId)) {
         for (let i = 0; i < STARTING_HAND_SIZE; i++) hand = hand.concat([await drawOneFromDeck(store)]);
         await store.saveHand(profileId, hand);
       }
@@ -1141,7 +1166,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
       // Gratis startbiljetter (1 lång + 1 medium + 1 kort) delas ut lat,
       // första gången någon läser /state för profilen — se .claude/plans.
       let ticketOffer = await store.getTicketOffer(profileId);
-      if (!ticketOffer && !player.initialTicketsDealt) {
+      if (player.joined && !ticketOffer && !player.initialTicketsDealt) {
         const dealt = await store.dealTicketsByTier(['long', 'medium', 'short']);
         if (dealt.length) {
           await store.setTicketOffer(profileId, dealt, 2);
@@ -1162,8 +1187,8 @@ function createGhostTrainsRouter(store, resolveSecret) {
       const ticketCount = new Map();
       allTickets.forEach(t => ticketCount.set(t.profileId, (ticketCount.get(t.profileId) || 0) + 1));
       const players = allPlayers
-        .map(p => ({ profileId: p.profileId, trainCars: p.trainCars, score: p.score, ticketCount: ticketCount.get(p.profileId) || 0 }))
-        .filter(p => p.profileId === profileId || p.ticketCount > 0 || p.score > 0 || p.trainCars < STARTING_TRAIN_CARS)
+        .map(p => ({ profileId: p.profileId, joined: !!p.joined, trainCars: p.trainCars, score: p.score, ticketCount: ticketCount.get(p.profileId) || 0 }))
+        .filter(p => p.joined || p.ticketCount > 0 || p.score > 0 || p.trainCars < STARTING_TRAIN_CARS)
         .sort((a, b) => b.score - a.score);
 
       res.json({
@@ -1179,6 +1204,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
           .map(t => ({ ...t, completed: isConnectedForProfile(ownRouteIds, t.cityA, t.cityB) })),
         players,
         ticketOffer: ticketOffer ? { tickets: ticketOffer.ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean), minKeep: ticketOffer.minKeep } : null,
+        joined: !!player.joined,
         gameStatus: gameState.status,
         finalDay: gameState.finalDay,
         gameNo: gameState.gameNo || 1,
@@ -1196,7 +1222,8 @@ function createGhostTrainsRouter(store, resolveSecret) {
     const profileId = (req.body || {}).profileId;
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     try {
-      if ((await store.getGameState()).status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
+      const blocked = await actionBlocked(store, profileId);
+      if (blocked) return res.status(blocked.status).json({ error: blocked.error });
       const day = gameDay();
       const apRemaining = await store.spendAP(profileId, day, 1);
       if (apRemaining == null) return res.status(402).json({ error: 'inte tillrackligt med AP' });
@@ -1214,7 +1241,8 @@ function createGhostTrainsRouter(store, resolveSecret) {
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     if (!(index >= 0 && index <= 4)) return res.status(400).json({ error: 'ogiltigt kortval' });
     try {
-      if ((await store.getGameState()).status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
+      const blocked = await actionBlocked(store, profileId);
+      if (blocked) return res.status(blocked.status).json({ error: blocked.error });
       const day = gameDay();
       const result = await store.drawMarketCard(profileId, day, index);
       if (result.error === 'ap') return res.status(402).json({ error: 'inte tillrackligt med AP' });
@@ -1233,7 +1261,8 @@ function createGhostTrainsRouter(store, resolveSecret) {
     if (!route) return res.status(400).json({ error: 'okand rutt' });
     if (!validateClaimCards(route, b.cards)) return res.status(400).json({ error: 'ogiltiga kort for denna rutt' });
     try {
-      if ((await store.getGameState()).status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
+      const blocked = await actionBlocked(store, profileId);
+      if (blocked) return res.status(blocked.status).json({ error: blocked.error });
       const built = await store.builtRoutes();
       const builtSet = new Set(built.map(r => r.route_id + '|' + r.track));
       const freeSlots = trackSlots(route).filter(t => !builtSet.has(route.id + '|' + t));
@@ -1260,7 +1289,8 @@ function createGhostTrainsRouter(store, resolveSecret) {
     const profileId = (req.body || {}).profileId;
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     try {
-      if ((await store.getGameState()).status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
+      const blocked = await actionBlocked(store, profileId);
+      if (blocked) return res.status(blocked.status).json({ error: blocked.error });
       const existing = await store.getTicketOffer(profileId);
       if (existing) return res.status(409).json({ error: 'du har redan olästa biljetter att välja bland' });
       const day = gameDay();
@@ -1279,7 +1309,8 @@ function createGhostTrainsRouter(store, resolveSecret) {
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     const keepIds = Array.isArray(b.keepIds) ? b.keepIds : [];
     try {
-      if ((await store.getGameState()).status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
+      const blocked = await actionBlocked(store, profileId);
+      if (blocked) return res.status(blocked.status).json({ error: blocked.error });
       const offer = await store.getTicketOffer(profileId);
       if (!offer) return res.status(400).json({ error: 'ingen biljett-offer att svara pa' });
       const offeredSet = new Set(offer.ticketIds);
@@ -1299,6 +1330,21 @@ function createGhostTrainsRouter(store, resolveSecret) {
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 
+  // "Gå med i spelet" — bara medan spelet är aktivt (inte under sista
+  // rundan, då hinner man ändå inget). Startgiven delas sedan ut lat
+  // vid nästa /state, samma väg som tidigare.
+  router.post('/join', async (req, res) => {
+    const profileId = (req.body || {}).profileId;
+    if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
+    try {
+      const status = (await store.getGameState()).status;
+      if (status === 'final_round') return res.status(409).json({ error: 'sista rundan pagar - ga med i nasta spel' });
+      if (status === 'finished') return res.status(409).json({ error: 'spelet ar slut' });
+      await store.joinGame(profileId);
+      res.json({ ok: true });
+    } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
+  });
+
   // Startar ett nytt spel när det förra är slut. Vem som helst i
   // familjen får trycka — samma öppna förtroendemodell som resten.
   router.post('/new-game', async (req, res) => {
@@ -1307,6 +1353,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
     try {
       const gameNo = await store.resetGame();
       if (gameNo == null) return res.status(409).json({ error: 'spelet ar inte slut an' });
+      await store.joinGame(profileId); // den som startar är självklart med
       await store.insertLog({
         gameDay: gameDay(), profileId, kind: 'new_game',
         routeId: null, altRouteId: null, otherPlayers: [], details: { gameNo }
