@@ -124,7 +124,14 @@ inte ett enkelt "läs, mutera i JS, skriv tillbaka".**
 - 126 kort: 14 per färg (8 färger) + 14 lokomotiv/joker.
 - Delad, synlig marknad med 5 kort. Tas ett kort fylls platsen direkt
   på från leken. Innehåller marknaden 3+ lokomotiv vid något tillfälle
-  kastas alla 5 och 5 nya dras.
+  kastas alla 5 (till kasthögen) och 5 nya dras — högst 3 gånger i
+  rad (`refillMarket`).
+- **Kasthög**: spenderade kort (vid `/claim`) och utkastade
+  marknadskort läggs i `ghosttrains_deck.discard`. Tar leken slut
+  blandas kasthögen till en ny lek (`deckDrawer`). Är ÄVEN kasthögen
+  tom (alla kort på händer/marknad) skapas en ny lek som nödventil, så
+  ett asynkront spel aldrig låser sig. Blinddrag (`drawFromDeck`) går i
+  en `FOR UPDATE`-transaktion som marknaden.
 - Claima en rutt kostar exakt `route.length` kort av ruttens färg
   (jokrar går alltid). **Kort dras vid INSKICKET, inte vid
   upplösningen** — konsumeras även om claimet senare krockar eller
@@ -201,8 +208,14 @@ just den spelaren — extremt ovanligt i normalt spel.
   längd 1→1p, 2→2p, 3→4p, 4→7p, 5→10p, 6→15p.
 
 ### Destinationsbiljetter
-- 15 biljetter totalt (`TICKETS`), delad cirkulerande lek (samma
-  transaktionsmönster som kortmarknaden).
+- 30 biljetter totalt (`TICKETS`), delad cirkulerande lek (samma
+  transaktionsmönster som kortmarknaden). Prissättning: poäng =
+  kortaste vägen på kartan (summa ruttlängder), över 13 avtrubbat till
+  13 + (avstånd−13)/3. t16–t30 valdes så att varje stad finns i 2–4
+  biljetter. 6 långa biljetter ⇒ 6 spelare kan få full startdeal.
+- Läggs biljetter till i `TICKETS` under ett pågående spel fyller
+  `topUpTicketDeck` (körs vid serverstart) på den sparade leken med
+  de som saknas.
 - Gratis startdeal: 1 lång (12–15p) + 1 medium (7–9p) + 1 kort (3–5p),
   behåll minst 2. Delas ut lat vid en profils FÖRSTA `/state`-anrop.
 - Dra fler när som helst för 1 AP: 3 nya, behåll minst 1, resten
