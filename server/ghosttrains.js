@@ -42,6 +42,8 @@ function ticketTier(points) { return points >= 12 ? 'long' : points >= 7 ? 'medi
 const ROUTE_POINTS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 10, 6: 15 };
 const STARTING_TRAIN_CARS = 35;
 const FINAL_ROUND_THRESHOLD = 2;
+const STARTING_HAND_SIZE = 4;       // som i Ticket to Ride: 4 tågkort i startgiv
+const LONGEST_PATH_BONUS = 10;      // bonus för längsta sammanhängande tåg
 
 export const CITIES = [
   // Koordinater beräknade från städernas verkliga lat/long (enkel
@@ -164,6 +166,12 @@ const ADJACENCY = buildAdjacency();
 
 function trackSlots(route) { return route.doubleTrack ? ['A', 'B'] : ['single']; }
 
+// Som i Ticket to Ride: en spelare får aldrig äga båda spåren på en
+// dubbelspårsrutt. Gäller både vanliga claims och omdirigering.
+function ownsTrackOn(routeId, profileId, builtRoutesList) {
+  return builtRoutesList.some(b => b.route_id === routeId && b.owner_profile_id === profileId);
+}
+
 // Origin-stad för ett claim väljs automatiskt (ingen prompt i UI):
 // äger spelaren redan en rutt som rör vid EN av ändstäderna, blir den
 // staden origin (för omdirigerings-BFS:en vid krock). Rör spelaren
@@ -228,8 +236,8 @@ function nextDay(dateStr) { return new Date(Date.parse(dateStr + 'T00:00:00Z') +
    och faller — om det lokala området redan är fullt — tillbaka på
    närmaste lediga rutt var som helst på kartan. En spelare lämnas
    alltså bara helt utan spår (Total Crash) om HELA kartan är fullbyggd. */
-function findNearestFreeRoute(startCity, excludeRouteId, builtSet, maxAffordableLength) {
-  const affordable = r => r.length <= maxAffordableLength;
+function findNearestFreeRoute(startCity, excludeRouteId, builtSet, maxAffordableLength, ownedRouteIds = new Set()) {
+  const affordable = r => r.length <= maxAffordableLength && !ownedRouteIds.has(r.id);
   const visitedCities = new Set([startCity]);
   let frontier = [startCity];
   const seenRoutes = new Set();
@@ -276,6 +284,14 @@ export async function resolveDay(store, day) {
   const claims = await store.unresolvedForDay(day);
   const built = await store.builtRoutes();
   const builtSet = new Set(built.map(b => b.route_id + '|' + b.track));
+  // Rutter (route_id) varje spelare redan äger ett spår på — uppdateras
+  // under körningen så en omdirigering aldrig ger andra spåret.
+  const ownedBy = new Map();
+  const markOwned = (profileId, routeId) => {
+    if (!ownedBy.has(profileId)) ownedBy.set(profileId, new Set());
+    ownedBy.get(profileId).add(routeId);
+  };
+  built.forEach(b => markOwned(b.owner_profile_id, b.route_id));
 
   const byRoute = new Map();
   claims.forEach(c => {
@@ -301,6 +317,7 @@ export async function resolveDay(store, day) {
         const kind = (n === 2 && route.doubleTrack) ? 'double_track' : 'success';
         results.push({ profileId: claim.profile_id, kind, routeId, track, length: route.length, submittedAt: claim.submitted_at });
         builtSet.add(routeId + '|' + track);
+        markOwned(claim.profile_id, routeId);
       });
     } else {
       const names = group.map(g => g.profile_id);
@@ -319,10 +336,11 @@ export async function resolveDay(store, day) {
     // (kvarvarande tågvagnar) — annars Total Crash (se .claude/plans,
     // Pass 2: "reroute constraints").
     const player = await store.getPlayer(c.profileId);
-    const alt = findNearestFreeRoute(c.fromCity, c.routeId, builtSet, player.trainCars);
+    const alt = findNearestFreeRoute(c.fromCity, c.routeId, builtSet, player.trainCars, ownedBy.get(c.profileId));
     if (alt) {
       const track = trackSlots(alt).filter(t => !builtSet.has(alt.id + '|' + t))[0];
       builtSet.add(alt.id + '|' + track);
+      markOwned(c.profileId, alt.id);
       results.push({ profileId: c.profileId, kind: 'rerouted', routeId: c.routeId, altRouteId: alt.id, track, length: alt.length, otherPlayers: c.others });
     } else {
       results.push({ profileId: c.profileId, kind: 'total_crash', routeId: c.routeId, otherPlayers: c.others });
@@ -369,6 +387,45 @@ function isConnectedForProfile(ownedRouteIds, cityA, cityB) {
   return seen.has(cityB);
 }
 
+// Längsta sammanhängande tåg för EN spelare: längsta "trail" (varje
+// byggt spår används högst en gång, städer får passeras flera gånger)
+// viktad med ruttlängd — samma definition som Ticket to Rides bonus.
+// Uttömmande DFS; en spelare äger högst ~20 rutter så det går snabbt.
+export function longestPathLength(ownedBuilt) {
+  const edges = ownedBuilt.map((b, i) => {
+    const r = ROUTES_BY_ID.get(b.route_id);
+    return r ? { i, a: r.cityA, b: r.cityB, len: r.length } : null;
+  }).filter(Boolean);
+  const adj = new Map();
+  edges.forEach(e => {
+    if (!adj.has(e.a)) adj.set(e.a, []);
+    if (!adj.has(e.b)) adj.set(e.b, []);
+    adj.get(e.a).push(e);
+    adj.get(e.b).push(e);
+  });
+  const used = new Set();
+  let best = 0;
+  function dfs(city, sum) {
+    if (sum > best) best = sum;
+    for (const e of adj.get(city) || []) {
+      if (used.has(e.i)) continue;
+      used.add(e.i);
+      dfs(e.a === city ? e.b : e.a, sum + e.len);
+      used.delete(e.i);
+    }
+  }
+  for (const city of adj.keys()) dfs(city, 0);
+  return best;
+}
+
+// Sorteringsordning för slutresultat: totalpoäng, sedan flest klarade
+// biljetter, sedan längsta tåg (Ticket to Rides tiebreak-regler).
+function compareFinal(a, b) {
+  return (b.total - a.total)
+    || ((b.ticketsCompleted || 0) - (a.ticketsCompleted || 0))
+    || ((b.longestPath || 0) - (a.longestPath || 0));
+}
+
 // Efter varje upplösning: kolla om någon spelares tågvagnar gått i
 // botten (utlöser en sista spelrunda), och — om den sista rundans dag
 // just upplöstes — räkna ut slutpoäng (ruttpoäng + biljetter) och
@@ -395,9 +452,12 @@ async function checkFinalRoundAndGameOver(store, day, results) {
   if (gameState.status === 'final_round' && gameState.finalDay && day >= gameState.finalDay) {
     const built = await store.builtRoutes();
     const ownedByProfile = new Map();
+    const builtByProfile = new Map();
     built.forEach(b => {
       if (!ownedByProfile.has(b.owner_profile_id)) ownedByProfile.set(b.owner_profile_id, new Set());
       ownedByProfile.get(b.owner_profile_id).add(b.route_id);
+      if (!builtByProfile.has(b.owner_profile_id)) builtByProfile.set(b.owner_profile_id, []);
+      builtByProfile.get(b.owner_profile_id).push(b);
     });
 
     const allTickets = await store.allPlayerTickets();
@@ -421,18 +481,29 @@ async function checkFinalRoundAndGameOver(store, day, results) {
         ticketDelta += ok ? ticket.points : -ticket.points;
         breakdown.push({ ticketId, cityA: ticket.cityA, cityB: ticket.cityB, points: ticket.points, success: ok });
       });
-      const total = p.score + ticketDelta;
       // Profiler som bara tittat in (inga biljetter, inga rutter) räknas
       // inte som deltagare i slutresultatet.
       if (!ticketIds.length && !ownedRouteIds.size) continue;
-      finalResults.push({ profileId: p.profileId, routeScore: p.score, ticketDelta, total, breakdown });
-      await store.insertLog({
-        gameDay: day, profileId: p.profileId, kind: 'game_over',
-        routeId: null, altRouteId: null, otherPlayers: [],
-        details: { routeScore: p.score, ticketDelta, total, breakdown }
+      finalResults.push({
+        profileId: p.profileId, routeScore: p.score, ticketDelta, breakdown,
+        ticketsCompleted: breakdown.filter(b => b.success).length,
+        longestPath: longestPathLength(builtByProfile.get(p.profileId) || [])
       });
     }
-    finalResults.sort((a, b) => b.total - a.total);
+    // Längsta tåg-bonusen går till alla som delar det längsta (> 0).
+    const maxPath = Math.max(0, ...finalResults.map(r => r.longestPath));
+    finalResults.forEach(r => {
+      r.longestBonus = maxPath > 0 && r.longestPath === maxPath ? LONGEST_PATH_BONUS : 0;
+      r.total = r.routeScore + r.ticketDelta + r.longestBonus;
+    });
+    for (const r of finalResults) {
+      const { profileId, ...details } = r;
+      await store.insertLog({
+        gameDay: day, profileId, kind: 'game_over',
+        routeId: null, altRouteId: null, otherPlayers: [], details
+      });
+    }
+    finalResults.sort(compareFinal);
     await store.setGameState('finished', gameState.finalDay, finalResults);
   }
 }
@@ -448,7 +519,7 @@ async function finalResultsFor(store, gameState) {
   }
   return entries
     .map(e => ({ profileId: e.profile_id, ...(e.details || {}) }))
-    .sort((a, b) => (b.total || 0) - (a.total || 0));
+    .sort(compareFinal);
 }
 
 /* ---------- Lagring (Postgres eller minne, samma dubbla mönster som server/index.js) ---------- */
@@ -540,6 +611,14 @@ async function initSchema(pool) {
   // Slutresultat sparas vid spelslut; game_no räknas upp vid nytt spel.
   await pool.query(`alter table ghosttrains_game_state add column if not exists final_results jsonb;`);
   await pool.query(`alter table ghosttrains_game_state add column if not exists game_no int not null default 1;`);
+  // Startgiv av tågkort. Befintliga spelare (som redan spelat) räknas
+  // som klara — bara nya spelare/nya spel får de 4 startkorten.
+  await pool.query(`do $$ begin
+    if not exists (select 1 from information_schema.columns where table_name='ghosttrains_players' and column_name='initial_cards_dealt') then
+      alter table ghosttrains_players add column initial_cards_dealt boolean not null default false;
+      update ghosttrains_players set initial_cards_dealt = true;
+    end if;
+  end $$;`);
   // Samma öppna förtroendemodell som scores/profiles (se server/index.js):
   // RLS på utan policies stänger Supabases publika REST-API helt.
   for (const t of [
@@ -663,6 +742,18 @@ function pgStore(pool) {
          on conflict (profile_id) do update set score = ghosttrains_players.score + $2`,
         [profileId, amount]
       );
+    },
+    // Atomär: true bara för det anrop som faktiskt vänder flaggan, så två
+    // samtidiga /state-anrop aldrig kan ge dubbla startkort.
+    async claimInitialCards(profileId) {
+      const r = await pool.query(
+        `insert into ghosttrains_players (profile_id, initial_cards_dealt) values ($1, true)
+         on conflict (profile_id) do update set initial_cards_dealt = true
+         where ghosttrains_players.initial_cards_dealt = false
+         returning profile_id`,
+        [profileId]
+      );
+      return r.rows.length > 0;
     },
     async setInitialTicketsDealt(profileId) {
       await pool.query(
@@ -888,7 +979,7 @@ function memStore() {
   function drawOneMem() { if (!deck || deck.length === 0) deck = freshDeck(); return deck.pop(); }
   function getPlayerMem(profileId) {
     let p = players.get(profileId);
-    if (!p) { p = { trainCars: STARTING_TRAIN_CARS, score: 0, initialTicketsDealt: false }; players.set(profileId, p); }
+    if (!p) { p = { trainCars: STARTING_TRAIN_CARS, score: 0, initialTicketsDealt: false, initialCardsDealt: false }; players.set(profileId, p); }
     return p;
   }
   function ensureTicketDeck() { if (!ticketDeck) ticketDeck = shuffle(TICKETS.map(t => t.id)); return ticketDeck; }
@@ -936,6 +1027,12 @@ function memStore() {
     async deductTrainCars(profileId, amount) { getPlayerMem(profileId).trainCars -= amount; },
     async addScore(profileId, amount) { getPlayerMem(profileId).score += amount; },
     async setInitialTicketsDealt(profileId) { getPlayerMem(profileId).initialTicketsDealt = true; },
+    async claimInitialCards(profileId) {
+      const p = getPlayerMem(profileId);
+      if (p.initialCardsDealt) return false;
+      p.initialCardsDealt = true;
+      return true;
+    },
     async getPlayerTickets(profileId) { return Array.from(playerTickets.get(profileId) || []); },
     async allPlayerTickets() {
       const out = [];
@@ -1029,11 +1126,17 @@ function createGhostTrainsRouter(store, resolveSecret) {
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
     try {
       const day = gameDay();
-      const [hand, built, pendingMine, apRemaining, market, player, ticketIds, gameState] = await Promise.all([
+      let [hand, built, pendingMine, apRemaining, market, player, ticketIds, gameState] = await Promise.all([
         store.getHand(profileId), store.builtRoutes(), store.pendingForProfileToday(profileId, day),
         store.spendAP(profileId, day, 0), store.getMarketSnapshot(), store.getPlayer(profileId),
         store.getPlayerTickets(profileId), store.getGameState()
       ]);
+
+      // Startgiv: 4 tågkort, lat vid profilens första /state (som biljetterna).
+      if (gameState.status !== 'finished' && await store.claimInitialCards(profileId)) {
+        for (let i = 0; i < STARTING_HAND_SIZE; i++) hand = hand.concat([await drawOneFromDeck(store)]);
+        await store.saveHand(profileId, hand);
+      }
 
       // Gratis startbiljetter (1 lång + 1 medium + 1 kort) delas ut lat,
       // första gången någon läser /state för profilen — se .claude/plans.
@@ -1049,6 +1152,20 @@ function createGhostTrainsRouter(store, resolveSecret) {
 
       const finalResults = gameState.status === 'finished' ? await finalResultsFor(store, gameState) : null;
 
+      // Biljettstatus (privat — bara den egna profilens biljetter) räknas
+      // löpande så spelaren ser vilka som redan är klara.
+      const ownRouteIds = new Set(built.filter(b => b.owner_profile_id === profileId).map(b => b.route_id));
+
+      // Offentlig ställning: tågvagnar, ruttpoäng och antal biljetter per
+      // spelare (i Ticket to Ride ligger allt detta öppet på bordet).
+      const [allPlayers, allTickets] = await Promise.all([store.allPlayers(), store.allPlayerTickets()]);
+      const ticketCount = new Map();
+      allTickets.forEach(t => ticketCount.set(t.profileId, (ticketCount.get(t.profileId) || 0) + 1));
+      const players = allPlayers
+        .map(p => ({ profileId: p.profileId, trainCars: p.trainCars, score: p.score, ticketCount: ticketCount.get(p.profileId) || 0 }))
+        .filter(p => p.profileId === profileId || p.ticketCount > 0 || p.score > 0 || p.trainCars < STARTING_TRAIN_CARS)
+        .sort((a, b) => b.score - a.score);
+
       res.json({
         gameDay: day,
         hand,
@@ -1058,7 +1175,9 @@ function createGhostTrainsRouter(store, resolveSecret) {
         market,
         trainCars: player.trainCars,
         score: player.score,
-        tickets: ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean),
+        tickets: ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean)
+          .map(t => ({ ...t, completed: isConnectedForProfile(ownRouteIds, t.cityA, t.cityB) })),
+        players,
         ticketOffer: ticketOffer ? { tickets: ticketOffer.ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean), minKeep: ticketOffer.minKeep } : null,
         gameStatus: gameState.status,
         finalDay: gameState.finalDay,
@@ -1119,6 +1238,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
       const builtSet = new Set(built.map(r => r.route_id + '|' + r.track));
       const freeSlots = trackSlots(route).filter(t => !builtSet.has(route.id + '|' + t));
       if (freeSlots.length === 0) return res.status(409).json({ error: 'rutten ar redan helt byggd' });
+      if (ownsTrackOn(route.id, profileId, built)) return res.status(409).json({ error: 'du ager redan ena sparet pa denna rutt' });
       const player = await store.getPlayer(profileId);
       if (player.trainCars < route.length) return res.status(400).json({ error: 'inte tillrackligt med tagvagnar kvar' });
       const hand = await store.getHand(profileId);
@@ -1172,7 +1292,10 @@ function createGhostTrainsRouter(store, resolveSecret) {
       await store.returnTicketsToDeck(discard);
       await store.clearTicketOffer(profileId);
       const ticketIds = await store.getPlayerTickets(profileId);
-      res.json({ ok: true, tickets: ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean) });
+      const built = await store.builtRoutes();
+      const ownRouteIds = new Set(built.filter(r => r.owner_profile_id === profileId).map(r => r.route_id));
+      res.json({ ok: true, tickets: ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean)
+        .map(t => ({ ...t, completed: isConnectedForProfile(ownRouteIds, t.cityA, t.cityB) })) });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 

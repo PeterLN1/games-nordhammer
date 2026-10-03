@@ -131,6 +131,19 @@ inte ett enkelt "läs, mutera i JS, skriv tillbaka".**
   blir en Total Crash. En omdirigerad spelare betalar inga extra kort
   för ersättningsrutten.
 
+### Startgiv
+- 4 tågkort delas ut lat vid profilens första `/state` (atomär flagga
+  `initial_cards_dealt` via `claimInitialCards`, så dubbla anrop aldrig
+  ger dubbla kort). Spelare som fanns när kolumnen lades till räknas
+  som klara. Inget startgiv när spelet är `finished`.
+
+### Dubbelspår: ett spår per spelare
+En spelare får aldrig äga båda spåren på samma dubbelspårsrutt (som i
+Ticket to Ride). `/claim` avvisar med 409, och omdirigeringen i
+`resolveDay` hoppar över rutter spelaren redan har ett spår på.
+Ticket to Rides regel "bara ett spår används vid 2–3 spelare" är
+MEDVETET inte införd — den skulle krocka med dubbelspårsdelningen.
+
 ### Claim → PENDING → nattlig upplösning
 `POST /claim` validerar (kort, tågvagnar, AP) och skapar en hemlig
 `PENDING`-rad — bygger INGET direkt. `resolveDay()` (körs av
@@ -183,13 +196,26 @@ just den spelaren — extremt ovanligt i normalt spel.
   tillbaka till lekens botten.
 - En biljett är uppfylld om dess två städer hänger ihop via ENDAST
   spelarens EGNA byggda rutter (BFS, se `isConnectedForProfile`) —
-  räknas ut FÖRST vid spelslut, inte löpande.
+  räknas för poäng FÖRST vid spelslut. `/state` (och `/tickets/choose`)
+  markerar dock varje egen biljett med `completed` så spelaren ser sina
+  klara biljetter löpande (privat — bara egna biljetter skickas).
+
+### Ställning
+`/state` innehåller `players`: tågvagnar, ruttpoäng och antal biljetter
+för alla deltagare (öppen info i Ticket to Ride). Visas överst i lådan.
 
 ### Spelslut
 En spelares tågvagnar ≤2 efter en upplösning sätter spelstatus till
 `final_round` och pekar ut NÄSTA dag som sista dagen. När den dagen
 upplösts: slutpoäng räknas ut för alla spelare med biljetter
-(ackumulerad ruttpoäng ± biljettpoäng), status blir `finished`.
+(ackumulerad ruttpoäng ± biljettpoäng + längsta tåg-bonus), status
+blir `finished`.
+
+**Längsta tåg**: `longestPathLength` (exporterad) räknar längsta
+"trail" över spelarens byggda spår — varje spår högst en gång, städer
+får passeras flera gånger, viktat med ruttlängd. +10p till ALLA som
+delar det längsta (> 0). **Tiebreak** (`compareFinal`, samma i klient
+och server): totalpoäng → flest klarade biljetter → längsta tåg.
 **När `finished`: nya `/claim`, `/draw`, `/market/draw`,
 `/tickets/draw` och `/tickets/choose` avvisas** (en tillagd regel,
 inte uttryckligen specificerad men uppenbart nödvändig).
