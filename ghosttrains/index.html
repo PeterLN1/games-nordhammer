@@ -297,7 +297,7 @@
 <div id="drawer">
   <button id="drawerHandle" class="drawer-handle" aria-expanded="false" aria-controls="drawerContent">
     <span class="ap-badge" id="apBadge">AP: 3/3</span>
-    <span class="ap-badge" id="carsBadge" title="Tågvagnar kvar">🚂 35</span>
+    <span class="ap-badge" id="carsBadge" title="Tågvagnar kvar">🚂 20</span>
     <span class="ap-badge" id="scoreBadge" title="Poäng">⭐ 0</span>
     <span class="drawer-hint">Ställning · Marknad · Biljetter · Hand</span>
     <span class="drawer-chevron">▾</span>
@@ -384,7 +384,7 @@
       <li>Tryck "Gå med i spelet" för att vara med — fram till dess tittar du bara. Under sista rundan går det inte att gå med.</li>
       <li>Alla börjar med 4 tågkort på handen.</li>
       <li>På en dubbelspårsrutt får du bara äga det ena spåret.</li>
-      <li>När någon har 2 eller färre tågvagnar kvar blir det en sista runda. Natten efter den räknas slutpoängen och vinnaren koras.</li>
+      <li>Alla har 20 tågvagnar. När någon har 2 eller färre kvar — eller när ingen kan bygga fler rutter — blir det en sista runda. Natten efter den räknas slutpoängen och vinnaren koras.</li>
       <li>Den som har det längsta sammanhängande tåget får +10 bonuspoäng. Blir det lika vinner den som klarat flest biljetter.</li>
     </ul>
     <button class="primary-btn" id="closeHelpBtn">Okej!</button>
@@ -420,7 +420,7 @@
   var routesById = {};
   var state = {
     hand: [], built: [], pendingToday: [], apRemaining: 3, market: [],
-    trainCars: 35, score: 0, tickets: [], gameStatus: 'active', finalResults: null
+    trainCars: 20, score: 0, tickets: [], gameStatus: 'active', finalResults: null
   };
   var currentTicketOffer = null;
   var profilesById = {};
@@ -1152,10 +1152,13 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
         });
       } else if (e.kind === 'final_round_triggered') {
         var cars = e.details ? e.details.trainCars : '?';
+        var mapFull = e.details && e.details.reason === 'map_full';
         cards.push({
           className: 'story-final', icon: '⏳',
           title: 'Sista rundan!',
-          body: whoName(e.profile_id, viewerId) + ' har bara ' + cars + ' tågvagnar kvar. Efter nästa natt räknas slutpoängen ut!'
+          body: (mapFull ? 'Kartan är full — ingen kan bygga fler rutter.'
+            : whoName(e.profile_id, viewerId) + ' har bara ' + cars + ' tågvagnar kvar.') +
+            ' Efter nästa natt räknas slutpoängen ut!'
         });
       } else if (e.kind === 'new_game') {
         cards.push({

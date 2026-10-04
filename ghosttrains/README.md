@@ -205,7 +205,12 @@ om HELA kartan är fullbyggd eller ingen ledig rutt är prisvärd för
 just den spelaren — extremt ovanligt i normalt spel.
 
 ### Tågvagnar & poäng
-- 35 tågvagnar per spelare. `/claim` avvisas direkt om spelaren inte
+- 20 tågvagnar per spelare (`STARTING_TRAIN_CARS`). **Inte** Ticket to
+  Rides 45: kartan har bara 110 vagnar spår totalt (dubbelspår
+  inräknade). Med 35 blev kartan full innan någon nådde slutgränsen
+  redan vid 4 spelare — spelet tog aldrig slut. Simulerat med botar
+  mot riktiga koden: 20 vagnar ⇒ ~12–13 dagar för 2–6 spelare.
+  **Lägger du till städer/rutter eller ändrar antalet: simulera om.** `/claim` avvisas direkt om spelaren inte
   har råd med ruttens längd (ren kontroll, ingen mutation).
 - Vid lyckad upplösning (vanlig, dubbelspår, ELLER omdirigering) dras
   tågvagnar av och poäng läggs på — båda baserat på den FAKTISKT
@@ -238,7 +243,12 @@ för alla deltagare (öppen info i Ticket to Ride). Visas överst i lådan.
 
 ### Spelslut
 En spelares tågvagnar ≤2 efter en upplösning sätter spelstatus till
-`final_round` och pekar ut NÄSTA dag som sista dagen. När den dagen
+`final_round` och pekar ut NÄSTA dag som sista dagen. **Andra
+slutvillkoret**: kan ingen spelare som gått med bygga någon ledig rutt
+längre (kartan full, resten för långt eller andra spåret på en egen
+dubbelspårsrutt) blir det också `final_round` — loggas med
+`profile_id='system'` och `details.reason='map_full'`. Kräver minst en
+spelare som gått med, så ett nytt tomt spel inte avslutas direkt. När den dagen
 upplösts: slutpoäng räknas ut för alla spelare med biljetter
 (ackumulerad ruttpoäng ± biljettpoäng + längsta tåg-bonus), status
 blir `finished`.

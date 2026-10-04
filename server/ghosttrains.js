@@ -59,7 +59,11 @@ function ticketTier(points) { return points >= 12 ? 'long' : points >= 7 ? 'medi
 
 // Officiell Ticket to Ride-poängtabell för ruttlängd.
 const ROUTE_POINTS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 10, 6: 15 };
-const STARTING_TRAIN_CARS = 35;
+// 20 (inte Ticket to Rides 45/35): kartan har bara 110 vagnar spår
+// totalt. Med 35 blev kartan full innan någon nådde slutgränsen redan
+// vid 4 spelare (simulerat) — med 20 tar ett spel ~2 veckor för 2–6
+// spelare och slutar nästan alltid på tågvagnar, inte full karta.
+const STARTING_TRAIN_CARS = 20;
 const FINAL_ROUND_THRESHOLD = 2;
 const STARTING_HAND_SIZE = 4;       // som i Ticket to Ride: 4 tågkort i startgiv
 const LONGEST_PATH_BONUS = 10;      // bonus för längsta sammanhängande tåg
@@ -487,6 +491,28 @@ async function checkFinalRoundAndGameOver(store, day, results) {
     }
   }
 
+  // Andra slutvillkoret: ingen spelare kan bygga någon ledig rutt längre
+  // (kartan full, eller allt som är kvar är för långt / andra spåret på
+  // en egen dubbelspårsrutt). Utan detta kunde spelet stå still för
+  // evigt med många spelare — se STARTING_TRAIN_CARS.
+  if (gameState.status === 'active') {
+    const built = await store.builtRoutes();
+    const joined = (await store.allPlayers()).filter(p => p.joined);
+    const canBuild = p => ROUTES.some(r =>
+      r.length <= p.trainCars
+      && trackSlots(r).some(t => !built.some(b => b.route_id === r.id && b.track === t))
+      && !ownsTrackOn(r.id, p.profileId, built));
+    if (joined.length && !joined.some(canBuild)) {
+      const finalDay = nextDay(day);
+      await store.setGameState('final_round', finalDay);
+      await store.insertLog({
+        gameDay: day, profileId: 'system', kind: 'final_round_triggered',
+        routeId: null, altRouteId: null, otherPlayers: [], details: { reason: 'map_full' }
+      });
+      gameState = { status: 'final_round', finalDay };
+    }
+  }
+
   if (gameState.status === 'final_round' && gameState.finalDay && day >= gameState.finalDay) {
     const built = await store.builtRoutes();
     const ownedByProfile = new Map();
@@ -651,6 +677,8 @@ async function initSchema(pool) {
   await pool.query(`alter table ghosttrains_game_state add column if not exists game_no int not null default 1;`);
   // Kasthög för spenderade kort (blandas om när leken tar slut).
   await pool.query(`alter table ghosttrains_deck add column if not exists discard jsonb not null default '[]';`);
+  // Kolumnens default sattes när tabellen skapades — följ konstanten.
+  await pool.query(`alter table ghosttrains_players alter column train_cars set default ${STARTING_TRAIN_CARS};`);
   // Explicit "Gå med i spelet". Spelare som redan fått sin startgiv när
   // kolumnen läggs till räknas som med.
   await pool.query(`do $$ begin
