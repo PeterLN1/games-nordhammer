@@ -132,6 +132,12 @@ inte ett enkelt "läs, mutera i JS, skriv tillbaka".**
   på från leken. Innehåller marknaden 3+ lokomotiv vid något tillfälle
   kastas alla 5 (till kasthögen) och 5 nya dras — högst 3 gånger i
   rad (`refillMarket`).
+- **Inaktuell marknad**: klienten skickar `expectedCard` (kortet
+  spelaren såg) till `/market/draw`. Ligger något annat där nu nekas
+  draget med 409 + aktuell `market`, utan AP-kostnad (kollas inuti
+  låset). Utelämnat fält = gamla beteendet. Klienten laddar dessutom om
+  `/state` när fliken/appen blir synlig igen (`refreshIfStale`, högst
+  var 5:e sekund, inte om en dialog är öppen).
 - **Kasthög**: spenderade kort (vid `/claim`) och utkastade
   marknadskort läggs i `ghosttrains_deck.discard`. Tar leken slut
   blandas kasthögen till en ny lek (`deckDrawer`). Är ÄVEN kasthögen

@@ -1045,7 +1045,10 @@ function pgStore(pool) {
     // avgörs av vilket kort som FAKTISKT ligger där just nu (inuti låset),
     // inte ett tidigare separat peek — annars kunde kostnaden bli fel om
     // någon annan hann ändra marknaden mellan koll och drag.
-    async drawMarketCard(profileId, day, index) {
+    // expectedCard (valfri): kortet klienten SÅG på platsen. Ligger något
+    // annat där nu (någon annan hann före) avbryts draget utan AP-kostnad
+    // och aktuell marknad returneras — kontrollen sker inuti låset.
+    async drawMarketCard(profileId, day, index, expectedCard) {
       const client = await pool.connect();
       try {
         await client.query('begin');
@@ -1054,6 +1057,7 @@ function pgStore(pool) {
         let cards = mres.rows[0] ? mres.rows[0].cards : null;
         if (!cards) cards = freshMarket(deckDrawer(st));
         if (!(index >= 0 && index < cards.length)) { await client.query('rollback'); return { error: 'ogiltigt kortval' }; }
+        if (expectedCard && cards[index] !== expectedCard) { await client.query('rollback'); return { error: 'stale', market: cards }; }
 
         const drawnCard = cards[index];
         const cost = drawnCard === WILD ? 2 : 1;
@@ -1221,9 +1225,10 @@ function memStore() {
       if (!market) market = freshMarket(drawOneMem);
       return market.slice();
     },
-    async drawMarketCard(profileId, day, index) {
+    async drawMarketCard(profileId, day, index, expectedCard) {
       if (!market) market = freshMarket(drawOneMem);
       if (!(index >= 0 && index < market.length)) return { error: 'ogiltigt kortval' };
+      if (expectedCard && market[index] !== expectedCard) return { error: 'stale', market: market.slice() };
       const drawnCard = market[index];
       const cost = drawnCard === WILD ? 2 : 1;
       let s = apState.get(profileId);
@@ -1351,7 +1356,9 @@ function createGhostTrainsRouter(store, resolveSecret) {
       const blocked = await actionBlocked(store, profileId);
       if (blocked) return res.status(blocked.status).json({ error: blocked.error });
       const day = gameDay();
-      const result = await store.drawMarketCard(profileId, day, index);
+      const expectedCard = typeof b.expectedCard === 'string' ? b.expectedCard : null;
+      const result = await store.drawMarketCard(profileId, day, index, expectedCard);
+      if (result.error === 'stale') return res.status(409).json({ error: 'kortet har redan tagits', market: result.market });
       if (result.error === 'ap') return res.status(402).json({ error: 'inte tillrackligt med AP' });
       if (result.error) return res.status(400).json({ error: result.error });
       const hand = await store.addToHand(profileId, [result.drawnCard]);

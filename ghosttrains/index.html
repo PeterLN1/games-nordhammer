@@ -400,7 +400,10 @@
   function apiBase(){ try { return (localStorage.getItem('nordhammer:api') || API_BASE || '').replace(/\/+$/, ''); } catch(e){ return API_BASE; } }
   function api(path, opts){
     return fetch(apiBase() + path, opts).then(function(r){
-      return r.json().then(function(d){ if(!r.ok) throw new Error(d.error || ('HTTP ' + r.status)); return d; });
+      return r.json().then(function(d){
+        if(!r.ok){ var err = new Error(d.error || ('HTTP ' + r.status)); err.data = d; throw err; }
+        return d;
+      });
     });
   }
 
@@ -887,7 +890,7 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       costBadge.className = 'cost';
       costBadge.textContent = cost;
       el.appendChild(costBadge);
-      el.onclick = function(){ if (state.apRemaining >= cost && !gameOver) drawFromMarket(idx); };
+      el.onclick = function(){ if (state.apRemaining >= cost && !gameOver) drawFromMarket(idx, color); };
       box.appendChild(el);
     });
   }
@@ -991,19 +994,27 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
   };
 
   /* ---------- Dra kort ---------- */
-  function drawFromMarket(index){
+  // expectedCard: kortet spelaren såg — servern nekar (utan AP-kostnad)
+  // om någon annan hann ta det, och skickar tillbaka aktuell marknad.
+  function drawFromMarket(index, expectedCard){
     var profile = NordhammerProfile.current();
     if (!profile) return;
     api('/api/ghosttrains/market/draw', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileId: profile.id, index: index })
+      body: JSON.stringify({ profileId: profile.id, index: index, expectedCard: expectedCard })
     }).then(function(res){
       state.hand = res.hand;
       state.apRemaining = res.apRemaining;
       state.market = res.market;
       renderHand(); renderAP(); renderMarket();
       toastCard(res.drawn);
-    }).catch(function(e){ toast(e.message); });
+    }).catch(function(e){
+      if (e.data && e.data.market) {
+        state.market = e.data.market;
+        renderMarket();
+        toast('Kortet hann tas av någon annan — här är den nya marknaden.');
+      } else toast(e.message);
+    });
   }
 
   /* ---------- Biljetter ---------- */
@@ -1402,6 +1413,7 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     var profile = NordhammerProfile.current();
     if (!profile) return;
     refreshProfilesIndex();
+    lastLoadAt = Date.now();
     api('/api/ghosttrains/state?profileId=' + encodeURIComponent(profile.id)).then(function(res){
       state = res;
       pendingRouteIds = {};
@@ -1424,6 +1436,19 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       checkDigest(profile.id);
     }).catch(function(e){ toast(e.message); });
   }
+
+  // Ladda om när man kommer tillbaka till fliken/appen — annars kan
+  // marknad, karta och AP (nollställs vid midnatt) visa gammal info.
+  // Hoppas över om en dialog är öppen så inget val nollställs mitt i.
+  var lastLoadAt = 0;
+  function refreshIfStale(){
+    if (document.visibilityState !== 'visible') return;
+    if (Date.now() - lastLoadAt < 5000) return;
+    if (document.querySelector('.overlay.show') || document.getElementById('storiesOverlay').classList.contains('show')) return;
+    loadState();
+  }
+  document.addEventListener('visibilitychange', refreshIfStale);
+  window.addEventListener('pageshow', function(e){ if (e.persisted) refreshIfStale(); });
 
   function loadMap(){
     return api('/api/ghosttrains/map').then(function(res){
