@@ -67,6 +67,14 @@ const STARTING_TRAIN_CARS = 20;
 const FINAL_ROUND_THRESHOLD = 2;
 const STARTING_HAND_SIZE = 4;       // som i Ticket to Ride: 4 tågkort i startgiv
 const LONGEST_PATH_BONUS = 10;      // bonus för längsta sammanhängande tåg
+// Antal spelfärger i klientens palett (PLAYER_COLORS i index.html).
+// Varje spelare som gått med får ett eget färgindex per spel —
+// profilfärgerna (shared/profile.js) kan krocka mellan enheter.
+const PLAYER_COLOR_COUNT = 8;
+function nextColorIdx(used) {
+  for (let i = 0; i < PLAYER_COLOR_COUNT; i++) if (!used.has(i)) return i;
+  return used.size % PLAYER_COLOR_COUNT; // fler spelare än färger: återanvänd
+}
 
 export const CITIES = [
   // Koordinater beräknade från städernas verkliga lat/long (enkel
@@ -677,6 +685,7 @@ async function initSchema(pool) {
   await pool.query(`alter table ghosttrains_game_state add column if not exists game_no int not null default 1;`);
   // Kasthög för spenderade kort (blandas om när leken tar slut).
   await pool.query(`alter table ghosttrains_deck add column if not exists discard jsonb not null default '[]';`);
+  await pool.query(`alter table ghosttrains_players add column if not exists color_idx int;`);
   // Kolumnens default sattes när tabellen skapades — följ konstanten.
   await pool.query(`alter table ghosttrains_players alter column train_cars set default ${STARTING_TRAIN_CARS};`);
   // Explicit "Gå med i spelet". Spelare som redan fått sin startgiv när
@@ -846,8 +855,28 @@ function pgStore(pool) {
       return { trainCars: STARTING_TRAIN_CARS, score: 0, initialTicketsDealt: false, joined: false };
     },
     async allPlayers() {
-      const r = await pool.query('select profile_id, train_cars, score, joined from ghosttrains_players');
-      return r.rows.map(row => ({ profileId: row.profile_id, trainCars: row.train_cars, score: row.score, joined: row.joined }));
+      const r = await pool.query('select profile_id, train_cars, score, joined, color_idx from ghosttrains_players');
+      return r.rows.map(row => ({ profileId: row.profile_id, trainCars: row.train_cars, score: row.score, joined: row.joined, colorIdx: row.color_idx }));
+    },
+    // Ger varje spelare som gått med (eller byggt) men saknar färg en
+    // ledig färg. Tabellås så två samtidiga anslutningar inte får samma.
+    async assignPlayerColors() {
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        await client.query('lock table ghosttrains_players in share row exclusive mode');
+        const r = await client.query(
+          `select profile_id, color_idx from ghosttrains_players
+           where joined or score > 0 or color_idx is not null order by profile_id`);
+        const used = new Set(r.rows.filter(x => x.color_idx != null).map(x => x.color_idx));
+        for (const row of r.rows.filter(x => x.color_idx == null)) {
+          const idx = nextColorIdx(used);
+          used.add(idx);
+          await client.query('update ghosttrains_players set color_idx=$2 where profile_id=$1', [row.profile_id, idx]);
+        }
+        await client.query('commit');
+      } catch (e) { await client.query('rollback'); throw e; }
+      finally { client.release(); }
     },
     async deductTrainCars(profileId, amount) {
       await pool.query(
@@ -1154,7 +1183,13 @@ function memStore() {
         .map(e => ({ id: e.id, game_day: e.gameDay, profile_id: e.profileId, kind: e.kind, route_id: e.routeId, alt_route_id: e.altRouteId, other_players: e.otherPlayers, details: e.details, created_at: e.createdAt }));
     },
     async getPlayer(profileId) { const p = getPlayerMem(profileId); return { trainCars: p.trainCars, score: p.score, initialTicketsDealt: p.initialTicketsDealt, joined: p.joined }; },
-    async allPlayers() { return Array.from(players.entries()).map(([profileId, p]) => ({ profileId, trainCars: p.trainCars, score: p.score, joined: p.joined })); },
+    async allPlayers() { return Array.from(players.entries()).map(([profileId, p]) => ({ profileId, trainCars: p.trainCars, score: p.score, joined: p.joined, colorIdx: p.colorIdx ?? null })); },
+    async assignPlayerColors() {
+      const list = Array.from(players.entries()).filter(([, p]) => p.joined || p.score > 0 || p.colorIdx != null)
+        .sort((a, b) => a[0].localeCompare(b[0]));
+      const used = new Set(list.filter(([, p]) => p.colorIdx != null).map(([, p]) => p.colorIdx));
+      list.filter(([, p]) => p.colorIdx == null).forEach(([, p]) => { p.colorIdx = nextColorIdx(used); used.add(p.colorIdx); });
+    },
     async joinGame(profileId) { getPlayerMem(profileId).joined = true; },
     async deductTrainCars(profileId, amount) { getPlayerMem(profileId).trainCars -= amount; },
     async addScore(profileId, amount) { getPlayerMem(profileId).score += amount; },
@@ -1296,11 +1331,16 @@ function createGhostTrainsRouter(store, resolveSecret) {
 
       // Offentlig ställning: tågvagnar, ruttpoäng och antal biljetter per
       // spelare (i Ticket to Ride ligger allt detta öppet på bordet).
-      const [allPlayers, allTickets] = await Promise.all([store.allPlayers(), store.allPlayerTickets()]);
+      let [allPlayers, allTickets] = await Promise.all([store.allPlayers(), store.allPlayerTickets()]);
+      // Lat färgtilldelning (täcker även spelare från före färgerna fanns).
+      if (allPlayers.some(p => (p.joined || p.score > 0) && p.colorIdx == null)) {
+        await store.assignPlayerColors();
+        allPlayers = await store.allPlayers();
+      }
       const ticketCount = new Map();
       allTickets.forEach(t => ticketCount.set(t.profileId, (ticketCount.get(t.profileId) || 0) + 1));
       const players = allPlayers
-        .map(p => ({ profileId: p.profileId, joined: !!p.joined, trainCars: p.trainCars, score: p.score, ticketCount: ticketCount.get(p.profileId) || 0 }))
+        .map(p => ({ profileId: p.profileId, joined: !!p.joined, colorIdx: p.colorIdx, trainCars: p.trainCars, score: p.score, ticketCount: ticketCount.get(p.profileId) || 0 }))
         .filter(p => p.joined || p.ticketCount > 0 || p.score > 0 || p.trainCars < STARTING_TRAIN_CARS)
         .sort((a, b) => b.score - a.score);
 

@@ -243,6 +243,17 @@ just den spelaren — extremt ovanligt i normalt spel.
   markerar dock varje egen biljett med `completed` så spelaren ser sina
   klara biljetter löpande (privat — bara egna biljetter skickas).
 
+### Spelfärger & kartvisning
+Byggda rutter ritas i spelarens **spelfärg**, inte profilfärgen —
+profilfärgerna (`shared/profile.js`) väljs per enhet efter antal lokala
+profiler och krockar därför ofta. Servern ger varje spelare som gått
+med (eller byggt) ett `color_idx` 0–7 (`assignPlayerColors`, tabellås i
+Postgres, lat vid `/state`), klienten mappar det mot `PLAYER_COLORS`.
+Obyggda rutter: tunna, streckade, nedtonade i kortfärgen. Byggda:
+heldragna med kant (`--city-stroke`); egna får ljussken (`#ownGlow`,
+`filterUnits="userSpaceOnUse"` — annars försvinner vågräta linjer).
+Tryck på en byggd rutt visar ägaren.
+
 ### Ställning
 `/state` innehåller `players`: tågvagnar, ruttpoäng och antal biljetter
 för alla deltagare (öppen info i Ticket to Ride). Visas överst i lådan.

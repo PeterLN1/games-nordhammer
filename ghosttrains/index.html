@@ -165,7 +165,8 @@
   .player-row {
     display: flex; align-items: center; gap: 10px; padding: 5px 2px; font-size: 13.5px; font-weight: 700;
   }
-  .player-row .pname { flex: 1; }
+  .player-row .pname { flex: 1; display: flex; align-items: center; gap: 8px; }
+  .pswatch { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; border: 2px solid var(--city-stroke); }
   .player-row .pstat { min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
   .player-row .pstat.low { color: #e5484d; }
   .player-row.me .pname { text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 2px; }
@@ -413,6 +414,13 @@
     wild: 'conic-gradient(#e5484d,#2f7ee0,#2f9e44,#e0b400,#f0883e,#9c6ade)'
   };
   function colorHex(c){ return COLOR_HEX[c] || '#888'; }
+  // Spelfärger: servern ger varje spelare ett eget index per spel
+  // (colorIdx i state.players) — profilfärgerna kan krocka mellan enheter.
+  var PLAYER_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#facc15', '#a855f7', '#06b6d4', '#ec4899', '#f8fafc'];
+  function playerColor(profileId){
+    var p = (state.players || []).find(function(x){ return x.profileId === profileId; });
+    return p && p.colorIdx != null ? PLAYER_COLORS[p.colorIdx % PLAYER_COLORS.length] : '#9aa0b4';
+  }
   var COLOR_NAME_SV = {
     red: 'rött', blue: 'blått', green: 'grönt', yellow: 'gult',
     orange: 'orange', purple: 'lila', black: 'svart', white: 'vitt'
@@ -752,7 +760,12 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
 
   function renderMap(){
     while (svg.firstChild) svg.removeChild(svg.firstChild);
-    svg.insertAdjacentHTML('afterbegin', SWEDEN_OUTLINE_SVG);
+    svg.insertAdjacentHTML('afterbegin', SWEDEN_OUTLINE_SVG +
+      // userSpaceOnUse: en vågrät/lodrät linje har höjd/bredd 0, och med
+      // standardregionen (objectBoundingBox) skulle den försvinna.
+      '<defs><filter id="ownGlow" filterUnits="userSpaceOnUse" x="0" y="0" width="' + BASE_W + '" height="' + BASE_H + '">' +
+      '<feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>');
+    var me = NordhammerProfile.current();
 
     map.routes.forEach(function(route){
       var a = citiesById[route.cityA], b = citiesById[route.cityB];
@@ -761,17 +774,32 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
         var offset = route.doubleTrack ? (i === 0 ? -5 : 5) : 0;
         var off = perpOffset(a, b, offset);
         var owner = trackOwner(route.id, track);
-        var ownerColor = owner && profilesById[owner] ? profilesById[owner].color : null;
+        var x1 = a.x + off.x, y1 = a.y + off.y, x2 = b.x + off.x, y2 = b.y + off.y;
 
-        var hit = svgEl('line', {
-          x1: a.x + off.x, y1: a.y + off.y, x2: b.x + off.x, y2: b.y + off.y,
-          stroke: ownerColor || colorHex(route.color), 'stroke-width': ownerColor ? 8 : 5,
-          'stroke-linecap': 'round',
-          opacity: ownerColor ? 1 : 'var(--route-unbuilt-opacity, .55)',
-          class: 'route-hit'
-        });
-        hit.dataset.routeId = route.id;
-        svg.appendChild(hit);
+        if (owner) {
+          // Byggd: heldragen, tjock, med kant — syns oavsett färg.
+          // Egna rutter får dessutom ett ljussken.
+          svg.appendChild(svgEl('line', {
+            x1: x1, y1: y1, x2: x2, y2: y2, stroke: 'var(--city-stroke)', 'stroke-width': 13,
+            'stroke-linecap': 'round', opacity: .9, class: 'route-hit'
+          }));
+          var built = svgEl('line', {
+            x1: x1, y1: y1, x2: x2, y2: y2, stroke: playerColor(owner), 'stroke-width': 8,
+            'stroke-linecap': 'round', class: 'route-hit'
+          });
+          if (me && owner === me.id) built.setAttribute('filter', 'url(#ownGlow)');
+          built.dataset.routeId = route.id;
+          svg.appendChild(built);
+        } else {
+          // Obyggd: tunn, streckad och nedtonad i ruttens kortfärg.
+          var hit = svgEl('line', {
+            x1: x1, y1: y1, x2: x2, y2: y2, stroke: colorHex(route.color), 'stroke-width': 5,
+            'stroke-linecap': 'round', 'stroke-dasharray': '10 7',
+            opacity: 'var(--route-unbuilt-opacity, .55)', class: 'route-hit'
+          });
+          hit.dataset.routeId = route.id;
+          svg.appendChild(hit);
+        }
 
         // bredare osynlig hit-yta, lättare att träffa på mobil — och man
         // kan nu även zooma in för ännu bättre precision (se panorera/zooma).
@@ -868,7 +896,8 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       var row = document.createElement('div');
       row.className = 'player-row' + (me && me.id === pl.profileId ? ' me' : '');
       row.innerHTML =
-        '<span class="pname">' + escHtml((p ? p.avatar + ' ' + p.name : 'Okänd spelare')) + '</span>' +
+        '<span class="pname"><span class="pswatch" style="background:' + playerColor(pl.profileId) + '"></span>' +
+          escHtml((p ? p.avatar + ' ' + p.name : 'Okänd spelare')) + '</span>' +
         '<span class="pstat' + (pl.trainCars <= 6 ? ' low' : '') + '" title="Tågvagnar kvar">🚂 ' + pl.trainCars + '</span>' +
         '<span class="pstat" title="Ruttpoäng">⭐ ' + pl.score + '</span>' +
         '<span class="pstat" title="Antal biljetter">🎫 ' + pl.ticketCount + '</span>';
@@ -903,17 +932,25 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
   /* ---------- Claim-dialog ---------- */
   function openClaim(route){
     var slots = trackSlotsFor(route).filter(function(t){ return !trackOwner(route.id, t); });
-    if (!slots.length) { toast('Rutten är redan helt byggd.'); return; }
-    if (!state.joined) { toast(state.gameStatus === 'active' ? 'Gå med i spelet först (knappen ovanför lådan).' : 'Du är inte med i det här spelet.'); return; }
     var me = NordhammerProfile.current();
-    if (me && route.doubleTrack && trackSlotsFor(route).some(function(t){ return trackOwner(route.id, t) === me.id; })) {
-      toast('Du äger redan ena spåret här — det andra är till någon annan.');
+    var owners = trackSlotsFor(route).map(function(t){ return trackOwner(route.id, t); }).filter(Boolean);
+    var ownerNames = owners.map(function(id){
+      if (me && id === me.id) return 'dig';
+      var p = profilesById[id];
+      return p ? p.name + ' ' + p.avatar : 'en annan spelare';
+    });
+    var routeName = citiesById[route.cityA].name + '–' + citiesById[route.cityB].name;
+    if (!slots.length) { toast(routeName + ': byggd av ' + joinNames(ownerNames) + '.'); return; }
+    if (!state.joined) { toast(state.gameStatus === 'active' ? 'Gå med i spelet först (knappen ovanför lådan).' : 'Du är inte med i det här spelet.'); return; }
+    if (me && owners.indexOf(me.id) >= 0) {
+      toast(routeName + ': du äger redan ena spåret — det andra är till någon annan.');
       return;
     }
     currentClaim = { route: route, selectedCards: [] };
     document.getElementById('claimTitle').textContent = citiesById[route.cityA].name + ' – ' + citiesById[route.cityB].name;
     document.getElementById('claimSub').textContent =
-      'Längd ' + route.length + ' · kräver ' + route.length + ' kort i färgen ' + route.color + ' (jokrar går alltid bra).';
+      'Längd ' + route.length + ' · kräver ' + route.length + ' kort i färgen ' + (COLOR_NAME_SV[route.color] || route.color) + ' (jokrar går alltid bra).' +
+      (owners.length ? ' Ena spåret är redan byggt av ' + ownerNames[0] + '.' : '');
 
     renderCardPicker();
     document.getElementById('cardNeed').textContent = route.length;
