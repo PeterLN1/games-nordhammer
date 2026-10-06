@@ -93,15 +93,28 @@
   // Misslyckas anropet behåller enheten ändå sin lokala ändring — nästa
   // lyckade sync från en enhet som fungerar blir den som vinner i
   // praktiken. Rimligt för en liten familjesajt utan konflikthantering.
+  // Första färgen ingen annan profil i (den synkade) listan har. Servern
+  // kontrollerar också och har sista ordet (se server/index.js).
+  function freeColor(l){
+    var used = l.map(function(p){ return String(p.color || '').toLowerCase(); });
+    for(var i = 0; i < COLORS.length; i++) if(used.indexOf(COLORS[i]) < 0) return COLORS[i];
+    return COLORS[l.length % COLORS.length];
+  }
   function create(name, avatar){
     name = (name || '').trim().slice(0, 20);
     if(!name) return null;
     var l = loadProfiles();
-    var p = { id: uid(), name: name, avatar: avatar || AVATARS[l.length % AVATARS.length], color: COLORS[l.length % COLORS.length] };
+    var p = { id: uid(), name: name, avatar: avatar || AVATARS[l.length % AVATARS.length], color: freeColor(l) };
     l.push(p);
     saveProfiles(l);
     setCurrentId(p.id);
-    apiCreate(p, function(){});
+    apiCreate(p, function(err, d){
+      // Servern kan ha valt en annan färg (t.ex. om cachen var gammal).
+      if(err || !d || !d.profile || d.profile.color === p.color) return;
+      var cur = loadProfiles();
+      cur.forEach(function(x){ if(x.id === p.id) x.color = d.profile.color; });
+      saveProfiles(cur);
+    });
     return p;
   }
   function select(id){ setCurrentId(id); }

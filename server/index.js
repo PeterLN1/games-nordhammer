@@ -498,12 +498,50 @@ app.get('/api/marathon/history', async (req, res) => {
 // (shared/profile.js). Se planen i .claude/plans för bakgrund.
 function validAvatar(a) { return typeof a === 'string' && a.length > 0 && a.length <= 8; }
 function validColor(c) { return typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c); }
+
+// Samma palett som COLORS i shared/profile.js. Profilfärger ska vara
+// unika i familjen — klienten valde tidigare färg efter antal profiler
+// på SIN enhet, så två "första profiler" på olika enheter krockade.
+const PROFILE_COLORS = ['#ff6b6b','#ffa94d','#ffd43b','#69db7c','#38d9a9','#4dabf7','#748ffc','#da77f2','#f783ac','#20c997'];
+function pickFreeColor(usedColors, preferred) {
+  const used = usedColors.map(c => String(c).toLowerCase());
+  if (preferred && !used.includes(preferred.toLowerCase())) return preferred;
+  const free = PROFILE_COLORS.find(c => !used.includes(c));
+  if (free) return free;
+  // Fler profiler än färger: minst använda färgen.
+  return PROFILE_COLORS.slice().sort((a, b) => used.filter(u => u === a).length - used.filter(u => u === b).length)[0];
+}
+// Rättar krockande färger: äldsta profilen (listans ordning) behåller
+// sin färg, senare får en ledig. Körs vid listning, så befintliga
+// dubbletter och samtidiga skapanden läker av sig själva — klienterna
+// tar serverns färger vid nästa synk.
+async function listProfilesDeduped() {
+  const profiles = await store.listProfiles();
+  // Först: vilka profiler behåller sin färg (första förekomsten av varje
+  // färg) — så bara de faktiska dubbletterna byter, ingen annan.
+  const keep = new Set();
+  const dupes = [];
+  for (const p of profiles) {
+    const c = String(p.color).toLowerCase();
+    if (keep.has(c)) dupes.push(p); else keep.add(c);
+  }
+  const taken = Array.from(keep);
+  for (const p of dupes) {
+    const color = pickFreeColor(taken);
+    await store.updateProfile(p.id, { color });
+    p.color = color;
+    taken.push(color);
+  }
+  const changed = dupes.length > 0;
+  if (changed) console.log('Profiler: rättade krockande färger.');
+  return profiles;
+}
 function validProfileId(id) { return typeof id === 'string' && /^[a-z0-9]{4,64}$/i.test(id); }
 
 app.get('/api/profiles', async (req, res) => {
   if (!store) return res.status(503).json({ error: 'databasen är otillgänglig just nu' });
   try {
-    res.json({ profiles: await store.listProfiles() });
+    res.json({ profiles: await listProfilesDeduped() });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'databasfel' });
   }
@@ -522,8 +560,10 @@ app.post('/api/profiles', async (req, res) => {
   if (!validAvatar(b.avatar)) return res.status(400).json({ error: 'ogiltig avatar' });
   if (!validColor(b.color)) return res.status(400).json({ error: 'ogiltig farg' });
   try {
-    await store.insertProfile({ id, name, avatar: b.avatar, color: b.color });
-    res.json({ ok: true });
+    const others = (await store.listProfiles()).filter(p => p.id !== id);
+    const color = pickFreeColor(others.map(p => p.color), b.color);
+    await store.insertProfile({ id, name, avatar: b.avatar, color });
+    res.json({ ok: true, profile: { id, name, avatar: b.avatar, color } });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'databasfel' });
   }
