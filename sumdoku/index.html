@@ -21,7 +21,7 @@
     --board-bg: #ffffff;
     --line-thin: rgba(27,33,56,.16);
     --line-thick: #1b2138;
-    --cage: rgba(27,33,56,.55);
+    --cage: rgba(27,33,56,.7);
     --given: #1b2138;
     --entered: #2f5bd3;
     --hl-unit: rgba(47,91,211,.07);
@@ -43,7 +43,7 @@
       --board-bg: #11172d;
       --line-thin: rgba(238,242,255,.13);
       --line-thick: rgba(238,242,255,.75);
-      --cage: rgba(238,242,255,.5);
+      --cage: rgba(238,242,255,.62);
       --given: #eef2ff;
       --entered: #8fb0ff;
       --hl-unit: rgba(143,176,255,.07);
@@ -65,7 +65,7 @@
     --board-bg: #11172d;
     --line-thin: rgba(238,242,255,.13);
     --line-thick: rgba(238,242,255,.75);
-    --cage: rgba(238,242,255,.5);
+    --cage: rgba(238,242,255,.62);
     --given: #eef2ff;
     --entered: #8fb0ff;
     --hl-unit: rgba(143,176,255,.07);
@@ -136,18 +136,11 @@
   .cell.same { background: var(--hl-same); }
   .cell.sel { background: var(--hl-sel); }
 
-  /* Burens streckade kontur: en inskjuten ram per cell som bara ritar de
-     sidor som gränsar mot en annan bur. Sidor inåt buren skjuts ut till
-     cellkanten så att strecken flyter ihop mellan cellerna. */
-  .cage-line {
-    position: absolute; pointer-events: none;
-    top: -1px; right: -1px; bottom: -1px; left: -1px;
-    border: 0 dashed var(--cage);
-  }
-  .cage-line.bt { top: 3px; border-top-width: 1.5px; }
-  .cage-line.br { right: 3px; border-right-width: 1.5px; }
-  .cage-line.bb { bottom: 3px; border-bottom-width: 1.5px; }
-  .cage-line.bl { left: 3px; border-left-width: 1.5px; }
+  /* Burarnas streckade konturer ritas i en SVG över hela brädet
+     (CSS-streckade ramar på cellerna försvann på iPhone/Safari). */
+  #board { position: relative; }
+  #cageSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  #cageSvg path { fill: none; stroke: var(--cage); stroke-width: 2.6; stroke-dasharray: 7 4.5; stroke-linecap: butt; }
 
   .sum {
     position: absolute; top: 2px; left: 3px; z-index: 1;
@@ -357,12 +350,7 @@
       var r = Math.floor(i / 9), c = i % 9, el = document.createElement('div');
       el.className = 'cell r' + r + ' c' + c + (isGiven(i) ? ' given' : '');
       el.setAttribute('role', 'gridcell');
-      var cg = cageOf[i], line = document.createElement('div'), cls = 'cage-line';
-      if(r === 0 || cageOf[i - 9] !== cg) cls += ' bt';
-      if(c === 8 || cageOf[i + 1] !== cg) cls += ' br';
-      if(r === 8 || cageOf[i + 9] !== cg) cls += ' bb';
-      if(c === 0 || cageOf[i - 1] !== cg) cls += ' bl';
-      line.className = cls; el.appendChild(line);
+      var cg = cageOf[i];
       if(cageStart[i] !== undefined){
         var s = document.createElement('span'); s.className = 'sum'; s.textContent = game.puzzle.cages[cg].sum; el.appendChild(s);
       }
@@ -370,6 +358,28 @@
       el.addEventListener('click', (function(idx){ return function(){ select(idx); }; })(i));
       b.appendChild(el); cellEls.push(el);
     }
+    b.appendChild(cageOutline());
+  }
+
+  // En inskjuten kontur per cell som bara ritar de sidor som gränsar mot
+  // en annan bur; sidor inåt buren går ut till cellkanten så att strecken
+  // flyter ihop mellan cellerna. Koordinater: 100 enheter per cell.
+  function cageOutline(){
+    var I = 8, d = '';
+    for(var i = 0; i < 81; i++){
+      var r = Math.floor(i / 9), c = i % 9, cg = cageOf[i], x = c * 100, y = r * 100;
+      var bt = r === 0 || cageOf[i - 9] !== cg, bb = r === 8 || cageOf[i + 9] !== cg;
+      var bl = c === 0 || cageOf[i - 1] !== cg, br = c === 8 || cageOf[i + 1] !== cg;
+      var L = bl ? x + I : x, R = br ? x + 100 - I : x + 100, T = bt ? y + I : y, B = bb ? y + 100 - I : y + 100;
+      if(bt) d += 'M' + L + ' ' + T + 'H' + R;
+      if(bb) d += 'M' + L + ' ' + B + 'H' + R;
+      if(bl) d += 'M' + L + ' ' + T + 'V' + B;
+      if(br) d += 'M' + R + ' ' + T + 'V' + B;
+    }
+    var NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg'), p = document.createElementNS(NS, 'path');
+    svg.id = 'cageSvg'; svg.setAttribute('viewBox', '0 0 900 900'); svg.setAttribute('preserveAspectRatio', 'none');
+    p.setAttribute('d', d); svg.appendChild(p);
+    return svg;
   }
 
   function conflicts(){
