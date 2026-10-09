@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#eef1f9" data-light="#eef1f9" data-dark="#0b1020">
+<title>Sumdoku</title>
+<script src="/shared/theme.js"></script>
+<script src="/shared/profile.js"></script>
+<script src="engine.js"></script>
+<style>
+  :root {
+    --bg: radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #e6ebf6 100%);
+    --chrome: rgba(0,0,0,.05);
+    --ink: #1b2138;
+    --muted: rgba(27,33,56,.6);
+    --key-bg: rgba(27,33,56,.08);
+    --panel-bg: #ffffff;
+    --board-bg: #ffffff;
+    --line-thin: rgba(27,33,56,.16);
+    --line-thick: #1b2138;
+    --cage: rgba(27,33,56,.55);
+    --given: #1b2138;
+    --entered: #2f5bd3;
+    --hl-unit: rgba(47,91,211,.07);
+    --hl-same: rgba(47,91,211,.20);
+    --hl-sel: rgba(255,196,0,.45);
+    --hl-cage: rgba(255,196,0,.13);
+    --wrong: #d23c3c;
+    --accent: #7b5cff;
+    --accent-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --bg: radial-gradient(120% 90% at 50% 0%, #16224a 0%, #0b1020 60%, #070a15 100%);
+      --chrome: rgba(0,0,0,.35);
+      --ink: #eef2ff;
+      --muted: rgba(238,242,255,.6);
+      --key-bg: rgba(238,242,255,.11);
+      --panel-bg: #141a33;
+      --board-bg: #11172d;
+      --line-thin: rgba(238,242,255,.13);
+      --line-thick: rgba(238,242,255,.75);
+      --cage: rgba(238,242,255,.5);
+      --given: #eef2ff;
+      --entered: #8fb0ff;
+      --hl-unit: rgba(143,176,255,.07);
+      --hl-same: rgba(143,176,255,.22);
+      --hl-sel: rgba(255,196,0,.35);
+      --hl-cage: rgba(255,196,0,.10);
+      --wrong: #ff7070;
+      --accent: #9a82ff;
+      --accent-ink: #120a33;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: radial-gradient(120% 90% at 50% 0%, #16224a 0%, #0b1020 60%, #070a15 100%);
+    --chrome: rgba(0,0,0,.35);
+    --ink: #eef2ff;
+    --muted: rgba(238,242,255,.6);
+    --key-bg: rgba(238,242,255,.11);
+    --panel-bg: #141a33;
+    --board-bg: #11172d;
+    --line-thin: rgba(238,242,255,.13);
+    --line-thick: rgba(238,242,255,.75);
+    --cage: rgba(238,242,255,.5);
+    --given: #eef2ff;
+    --entered: #8fb0ff;
+    --hl-unit: rgba(143,176,255,.07);
+    --hl-same: rgba(143,176,255,.22);
+    --hl-sel: rgba(255,196,0,.35);
+    --hl-cage: rgba(255,196,0,.10);
+    --wrong: #ff7070;
+    --accent: #9a82ff;
+    --accent-ink: #120a33;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #0b1020;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    touch-action: manipulation; overscroll-behavior: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100dvh; background: var(--bg); }
+
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: max(6px, env(safe-area-inset-top)) 12px 6px;
+    background: var(--chrome); flex: 0 0 auto;
+  }
+  header .back, header .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 10px; text-decoration: none;
+    color: var(--ink); background: var(--key-bg); font-size: 18px; line-height: 1;
+    border: none; cursor: pointer; font-family: inherit;
+  }
+  header .back:active, header .icon-btn:active { background: rgba(123,92,255,.3); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
+  header .spacer { flex: 1; }
+
+  #info {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    width: var(--size); margin: 8px auto 6px; font-size: 13px; font-weight: 600; color: var(--muted);
+  }
+  #timer { font-variant-numeric: tabular-nums; }
+
+  /* ---- bräde ----
+     --size: brädets sida — ryms både på bredden och i höjden (resten av
+     höjden går till header, info och knappsats). */
+  #app { --size: min(calc(100vw - 16px), 560px, calc(100dvh - 250px)); }
+  #boardWrap { flex: 0 0 auto; display: flex; justify-content: center; }
+  /* Fördela ledig höjd ovanför och under brädet; knappsatsen stannar nertill. */
+  .grow { flex: 1 1 0; min-height: 0; }
+  .grow.top { flex-grow: .6; }
+  #board {
+    width: var(--size); height: var(--size);
+    display: grid; grid-template-columns: repeat(9, 1fr); grid-template-rows: repeat(9, 1fr);
+    background: var(--board-bg); border: 2px solid var(--line-thick); border-radius: 6px; overflow: hidden;
+    --cell: calc(var(--size) / 9);
+  }
+  .cell {
+    position: relative; display: flex; align-items: center; justify-content: center;
+    border-right: 1px solid var(--line-thin); border-bottom: 1px solid var(--line-thin);
+    cursor: pointer; min-width: 0; min-height: 0;
+  }
+  .cell.c8 { border-right: none; }
+  .cell.r8 { border-bottom: none; }
+  .cell.c2, .cell.c5 { border-right: 2px solid var(--line-thick); }
+  .cell.r2, .cell.r5 { border-bottom: 2px solid var(--line-thick); }
+  .cell.unit { background: var(--hl-unit); }
+  .cell.incage { background: var(--hl-cage); }
+  .cell.same { background: var(--hl-same); }
+  .cell.sel { background: var(--hl-sel); }
+
+  /* Burens streckade kontur: en inskjuten ram per cell som bara ritar de
+     sidor som gränsar mot en annan bur. Sidor inåt buren skjuts ut till
+     cellkanten så att strecken flyter ihop mellan cellerna. */
+  .cage-line {
+    position: absolute; pointer-events: none;
+    top: -1px; right: -1px; bottom: -1px; left: -1px;
+    border: 0 dashed var(--cage);
+  }
+  .cage-line.bt { top: 3px; border-top-width: 1.5px; }
+  .cage-line.br { right: 3px; border-right-width: 1.5px; }
+  .cage-line.bb { bottom: 3px; border-bottom-width: 1.5px; }
+  .cage-line.bl { left: 3px; border-left-width: 1.5px; }
+
+  .sum {
+    position: absolute; top: 2px; left: 3px; z-index: 1;
+    font-size: max(8.5px, calc(var(--cell) * .2)); line-height: 1; font-weight: 700;
+    padding: 0 1px; background: var(--board-bg); border-radius: 2px; color: var(--ink);
+  }
+  .cell.unit .sum, .cell.incage .sum, .cell.same .sum, .cell.sel .sum { background: transparent; }
+  .sum.bad { color: var(--wrong); }
+  .val { font-size: calc(var(--cell) * .56); font-weight: 500; line-height: 1; color: var(--entered); }
+  .cell.given .val { color: var(--given); font-weight: 700; }
+  .val.conflict { color: var(--wrong); }
+  .val.wrong { color: var(--wrong); text-decoration: line-through; text-decoration-thickness: 2px; }
+  .notes {
+    position: absolute; inset: 0; padding: calc(var(--cell) * .2) 3px 2px;
+    display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+    font-size: max(8px, calc(var(--cell) * .2)); line-height: 1; color: var(--muted); font-weight: 600;
+  }
+  .notes span { display: flex; align-items: center; justify-content: center; }
+  .notes span.hit { color: var(--entered); font-weight: 800; }
+
+  #comboLine {
+    flex: 0 0 auto; width: var(--size); margin: 6px auto 0; min-height: 17px;
+    font-size: 12.5px; color: var(--muted); text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #comboLine b { color: var(--ink); }
+
+  /* ---- knappsats ---- */
+  #controls { flex: 0 0 auto; width: min(calc(100vw - 16px), 540px); margin: 0 auto; padding: 6px 0 max(10px, env(safe-area-inset-bottom)); }
+  .tools { display: flex; gap: 6px; margin-bottom: 6px; }
+  .tool {
+    flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 6px 2px; border: none; border-radius: 10px; background: var(--key-bg); color: var(--ink);
+    font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+  }
+  .tool .ic { font-size: 18px; line-height: 1.1; }
+  .tool.on { background: var(--accent); color: var(--accent-ink); }
+  .tool:active { transform: scale(.96); }
+  .pad { display: grid; grid-template-columns: repeat(9, 1fr); gap: 5px; }
+  .num {
+    height: clamp(46px, 7dvh, 64px); border: none; border-radius: 10px; background: var(--panel-bg); color: var(--ink);
+    font-family: inherit; font-size: 24px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,.12); position: relative;
+  }
+  .num:active { transform: scale(.94); background: var(--hl-same); }
+  .num.done { opacity: .3; }
+  .num.notes-mode { font-size: 17px; color: var(--muted); }
+
+  /* ---- overlay ---- */
+  #overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 100;
+    display: none; align-items: center; justify-content: center; padding: 16px;
+  }
+  #overlay.show { display: flex; animation: fade .2s ease; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .panel {
+    background: var(--panel-bg); color: var(--ink); border-radius: 16px; padding: 20px 18px;
+    width: 100%; max-width: 380px; max-height: 90dvh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  }
+  .panel h2 { margin: 0 0 10px; font-size: 20px; text-align: center; }
+  .panel p, .panel li { font-size: 14px; line-height: 1.5; }
+  .panel ul { padding-left: 20px; margin: 8px 0; }
+  .panel .big { text-align: center; font-size: 34px; font-weight: 800; margin: 6px 0; font-variant-numeric: tabular-nums; }
+  .panel .sub { text-align: center; color: var(--muted); font-size: 13.5px; margin: 0 0 12px; }
+  .btn {
+    display: block; width: 100%; padding: 12px; margin-top: 8px; border: none; border-radius: 12px;
+    font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+    background: var(--key-bg); color: var(--ink); text-align: left;
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); text-align: center; }
+  .btn small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .btn.primary small { color: inherit; opacity: .8; }
+  .btn:active { transform: scale(.98); }
+  .row-toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; font-size: 14px; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 30%; transform: translateX(-50%); z-index: 120;
+    background: rgba(20,24,40,.92); color: #fff; padding: 10px 16px; border-radius: 12px;
+    font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  #toast.show { opacity: 1; }
+  #loading { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-weight: 600; color: var(--muted); }
+  #boardWrap { position: relative; }
+  #boardWrap.busy #loading { display: flex; }
+  #boardWrap.busy #board { opacity: .25; }
+  #board.solved { animation: pop .5s ease; }
+  @keyframes pop { 50% { transform: scale(1.03); } }
+</style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <a class="back" href="/" aria-label="Till startsidan">‹</a>
+      <h1>➕ Sumdoku</h1>
+      <div class="spacer"></div>
+      <button class="icon-btn" id="btnProfile" aria-label="Byt profil"></button>
+      <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
+    </header>
+    <div class="grow top"></div>
+    <div id="info"><span id="modeLabel"></span><span id="timer">0:00</span></div>
+    <div id="boardWrap">
+      <div id="board" role="grid" aria-label="Sumdoku-bräde"></div>
+      <div id="loading">Bygger pussel…</div>
+    </div>
+    <div id="comboLine"></div>
+    <div class="grow"></div>
+    <div id="controls">
+      <div class="tools">
+        <button class="tool" id="btnUndo"><span class="ic">↶</span>Ångra</button>
+        <button class="tool" id="btnErase"><span class="ic">⌫</span>Sudda</button>
+        <button class="tool" id="btnNotes"><span class="ic">✏️</span>Anteckna</button>
+        <button class="tool" id="btnHint"><span class="ic">💡</span>Tips</button>
+        <button class="tool" id="btnNew"><span class="ic">🎲</span>Nytt</button>
+      </div>
+      <div class="pad" id="pad"></div>
+    </div>
+  </div>
+  <div id="overlay"><div class="panel" id="panel"></div></div>
+  <div id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  var E = window.SumdokuEngine;
+  var LEVELS = { easy: 'Lätt', medium: 'Medel', hard: 'Svår' };
+  var HINT_PENALTY = 30; // sekunder per tips
+
+  /* ---------- hjälp ---------- */
+  function $(id){ return document.getElementById(id); }
+  function load(key, def){ try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch(e){ return def; } }
+  function store(key, v){ try { localStorage.setItem(key, JSON.stringify(v)); } catch(e){} }
+  function fmt(sec){
+    sec = Math.max(0, Math.floor(sec));
+    var h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;
+    return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function todayStr(){
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  var toastTimer = null;
+  function toast(msg){
+    var t = $('toast'); t.textContent = msg; t.classList.add('show');
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 1600);
+  }
+  function profileId(){ var p = NordhammerProfile.current(); return p ? p.id : 'anon'; }
+  function saveKey(){ return 'sumdoku:save:' + profileId(); }
+  function bestKey(){ return 'sumdoku:best:' + profileId(); }
+  function dailyKey(date){ return 'sumdoku:daily:' + profileId() + ':' + date; }
+  var settings = load('sumdoku:settings', { showWrong: false, combos: true });
+
+  /* ---------- generering (Web Worker, med fallback) ---------- */
+  var worker = null, reqId = 0, pending = {};
+  try {
+    worker = new Worker('engine.js');
+    worker.onmessage = function(e){ var cb = pending[e.data.id]; delete pending[e.data.id]; if(cb) cb(e.data.puzzle); };
+    worker.onerror = function(){ worker = null; };
+  } catch(e){ worker = null; }
+  function generate(seed, difficulty, cb){
+    if(worker){ var id = ++reqId; pending[id] = cb; worker.postMessage({ id: id, seed: seed, difficulty: difficulty }); }
+    else setTimeout(function(){ cb(E.generate(seed, difficulty)); }, 30);
+  }
+
+  /* ---------- speltillstånd ----------
+     game = { mode: 'daily'|'easy'|'medium'|'hard', date, seed, puzzle,
+              values[81], notes[81] (bitmask), elapsed, hints, done }
+     Härledda uppslag (cageOf m.m.) byggs i prepare() och sparas inte. */
+  var game = null, cageOf = [], cageStart = {}, history = [];
+  var sel = -1, notesMode = false, lastTick = 0, busy = false;
+
+  function prepare(){
+    cageOf = []; cageStart = {};
+    game.puzzle.cages.forEach(function(cg, id){
+      cg.cells.forEach(function(c){ cageOf[c] = id; });
+      cageStart[cg.cells[0]] = id; // lägsta index = översta vänstra cellen
+    });
+    history = [];
+    buildBoard();
+    render();
+  }
+  function isGiven(i){ return game.puzzle.givens[i] !== undefined; }
+  function persist(){ if(game) store(saveKey(), game); }
+
+  function startGame(mode){
+    var difficulty = mode === 'daily' ? 'medium' : mode;
+    var date = todayStr();
+    var seed = mode === 'daily' ? 'sumdoku-daily-' + date : 'sumdoku-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    busy = true; $('boardWrap').classList.add('busy');
+    generate(seed, difficulty, function(puzzle){
+      busy = false; $('boardWrap').classList.remove('busy');
+      var values = new Array(81).fill(0);
+      for(var k in puzzle.givens) values[k] = puzzle.givens[k];
+      game = { mode: mode, date: date, seed: seed, puzzle: puzzle, values: values,
+               notes: new Array(81).fill(0), elapsed: 0, hints: 0, done: false };
+      var dailyDone = mode === 'daily' && load(dailyKey(date), null);
+      if(dailyDone){ game.values = puzzle.solution.slice(); game.done = true; game.elapsed = dailyDone.time; game.hints = dailyDone.hints; }
+      sel = -1; prepare(); persist();
+    });
+  }
+
+  /* ---------- bräde ---------- */
+  var cellEls = [];
+  function buildBoard(){
+    var b = $('board'); b.innerHTML = ''; cellEls = [];
+    for(var i = 0; i < 81; i++){
+      var r = Math.floor(i / 9), c = i % 9, el = document.createElement('div');
+      el.className = 'cell r' + r + ' c' + c + (isGiven(i) ? ' given' : '');
+      el.setAttribute('role', 'gridcell');
+      var cg = cageOf[i], line = document.createElement('div'), cls = 'cage-line';
+      if(r === 0 || cageOf[i - 9] !== cg) cls += ' bt';
+      if(c === 8 || cageOf[i + 1] !== cg) cls += ' br';
+      if(r === 8 || cageOf[i + 9] !== cg) cls += ' bb';
+      if(c === 0 || cageOf[i - 1] !== cg) cls += ' bl';
+      line.className = cls; el.appendChild(line);
+      if(cageStart[i] !== undefined){
+        var s = document.createElement('span'); s.className = 'sum'; s.textContent = game.puzzle.cages[cg].sum; el.appendChild(s);
+      }
+      var content = document.createElement('div'); content.className = 'content'; el.appendChild(content);
+      el.addEventListener('click', (function(idx){ return function(){ select(idx); }; })(i));
+      b.appendChild(el); cellEls.push(el);
+    }
+  }
+
+  function conflicts(){
+    var bad = new Array(81).fill(false), v = game.values;
+    for(var i = 0; i < 81; i++){
+      if(!v[i]) continue;
+      for(var j = i + 1; j < 81; j++){
+        if(v[j] !== v[i]) continue;
+        var same = Math.floor(i / 9) === Math.floor(j / 9) || i % 9 === j % 9 ||
+          (Math.floor(i / 27) === Math.floor(j / 27) && Math.floor(i % 9 / 3) === Math.floor(j % 9 / 3)) ||
+          cageOf[i] === cageOf[j];
+        if(same){ bad[i] = bad[j] = true; }
+      }
+    }
+    return bad;
+  }
+  function cageBad(id){
+    var cg = game.puzzle.cages[id], sum = 0, full = true;
+    cg.cells.forEach(function(c){ if(game.values[c]) sum += game.values[c]; else full = false; });
+    return sum > cg.sum || (full && sum !== cg.sum);
+  }
+
+  function render(){
+    if(!game) return;
+    var v = game.values, bad = conflicts();
+    var sv = sel >= 0 ? v[sel] : 0, sr = Math.floor(sel / 9), sc = sel % 9, sb = Math.floor(sr / 3) * 3 + Math.floor(sc / 3);
+    for(var i = 0; i < 81; i++){
+      var el = cellEls[i], r = Math.floor(i / 9), c = i % 9, b = Math.floor(r / 3) * 3 + Math.floor(c / 3);
+      el.classList.toggle('sel', i === sel);
+      el.classList.toggle('same', i !== sel && sv > 0 && v[i] === sv);
+      el.classList.toggle('incage', sel >= 0 && i !== sel && cageOf[i] === cageOf[sel]);
+      el.classList.toggle('unit', sel >= 0 && i !== sel && (r === sr || c === sc || b === sb));
+      var content = el.querySelector('.content'), html = '';
+      if(v[i]){
+        var wrong = settings.showWrong && !isGiven(i) && v[i] !== game.puzzle.solution[i];
+        html = '<span class="val' + (bad[i] ? ' conflict' : '') + (wrong ? ' wrong' : '') + '">' + v[i] + '</span>';
+      } else if(game.notes[i]){
+        html = '<div class="notes">';
+        for(var d = 1; d <= 9; d++) html += '<span' + (sv === d ? ' class="hit"' : '') + '>' + (game.notes[i] & (1 << d) ? d : '') + '</span>';
+        html += '</div>';
+      }
+      if(content.innerHTML !== html) content.innerHTML = html;
+      var sumEl = el.querySelector('.sum');
+      if(sumEl) sumEl.classList.toggle('bad', cageBad(cageOf[i]));
+    }
+    renderPad(); renderCombos(); renderInfo();
+  }
+
+  function renderPad(){
+    var counts = new Array(10).fill(0);
+    game.values.forEach(function(x){ counts[x]++; });
+    var btns = $('pad').children;
+    for(var d = 1; d <= 9; d++){
+      btns[d - 1].classList.toggle('done', counts[d] >= 9);
+      btns[d - 1].classList.toggle('notes-mode', notesMode);
+    }
+    $('btnNotes').classList.toggle('on', notesMode);
+  }
+
+  // Visar vilka sifferkombinationer som är möjliga i den valda buren,
+  // givet siffrorna som redan står i den.
+  function renderCombos(){
+    var line = $('comboLine');
+    if(!settings.combos || sel < 0 || game.done){ line.innerHTML = ''; return; }
+    var cg = game.puzzle.cages[cageOf[sel]], placed = [];
+    cg.cells.forEach(function(c){ if(game.values[c]) placed.push(game.values[c]); });
+    var list = E.combos(cg.cells.length, cg.sum).filter(function(ds){
+      return placed.every(function(p){ return ds.indexOf(p) >= 0; });
+    });
+    var txt = list.length ? list.map(function(ds){ return ds.join('+'); }).join(' · ') : 'ingen kombination stämmer';
+    line.innerHTML = '<b>' + cg.sum + '</b> i ' + cg.cells.length + ' rutor: ' + txt;
+  }
+
+  function renderInfo(){
+    var label = game.mode === 'daily' ? '📅 Dagens pussel' : '🎲 ' + LEVELS[game.mode];
+    if(game.hints) label += ' · ' + game.hints + ' tips';
+    $('modeLabel').textContent = label;
+    $('timer').textContent = (game.done ? '✓ ' : '') + fmt(game.elapsed + game.hints * HINT_PENALTY);
+  }
+
+  /* ---------- drag ---------- */
+  function select(i){ sel = i; render(); }
+
+  function peersOf(i){
+    var out = [], r = Math.floor(i / 9), c = i % 9;
+    for(var j = 0; j < 81; j++){
+      if(j === i) continue;
+      var rj = Math.floor(j / 9), cj = j % 9;
+      if(rj === r || cj === c || (Math.floor(rj / 3) === Math.floor(r / 3) && Math.floor(cj / 3) === Math.floor(c / 3)) || cageOf[j] === cageOf[i]) out.push(j);
+    }
+    return out;
+  }
+  // Ett drag = lista av [cell, föregående värde, föregående anteckningar].
+  function applyChanges(changes){
+    if(!changes.length) return;
+    history.push(changes);
+    if(history.length > 300) history.shift();
+    afterMove();
+  }
+  function afterMove(){
+    render(); persist(); checkWin();
+  }
+
+  function inputDigit(d){
+    if(!game || game.done || busy || sel < 0 || isGiven(sel)) return;
+    var i = sel, changes = [];
+    if(notesMode && !game.values[i]){
+      changes.push([i, game.values[i], game.notes[i]]);
+      game.notes[i] ^= 1 << d;
+    } else {
+      if(game.values[i] === d) return;
+      changes.push([i, game.values[i], game.notes[i]]);
+      game.values[i] = d; game.notes[i] = 0;
+      // Rensa siffran ur anteckningarna i samma rad/kolumn/låda/bur.
+      peersOf(i).forEach(function(j){
+        if(game.notes[j] & (1 << d)){ changes.push([j, game.values[j], game.notes[j]]); game.notes[j] &= ~(1 << d); }
+      });
+    }
+    applyChanges(changes);
+  }
+  function erase(){
+    if(!game || game.done || sel < 0 || isGiven(sel)) return;
+    if(!game.values[sel] && !game.notes[sel]) return;
+    var ch = [[sel, game.values[sel], game.notes[sel]]];
+    game.values[sel] = 0; game.notes[sel] = 0;
+    applyChanges(ch);
+  }
+  function undo(){
+    if(!game || game.done || !history.length) return;
+    var changes = history.pop();
+    for(var k = changes.length - 1; k >= 0; k--){ var ch = changes[k]; game.values[ch[0]] = ch[1]; game.notes[ch[0]] = ch[2]; }
+    sel = changes[0][0];
+    render(); persist();
+  }
+  function hint(){
+    if(!game || game.done || busy) return;
+    var sol = game.puzzle.solution, i = sel;
+    // Vald cell om den är tom eller fel, annars en slumpad tom/fel cell.
+    if(i < 0 || isGiven(i) || game.values[i] === sol[i]){
+      var cands = [];
+      for(var j = 0; j < 81; j++) if(game.values[j] !== sol[j]) cands.push(j);
+      if(!cands.length) return;
+      i = cands[Math.floor(Math.random() * cands.length)];
+    }
+    sel = i; game.hints++;
+    var wasNotes = notesMode; notesMode = false;
+    inputDigit(sol[i]);
+    notesMode = wasNotes;
+    toast('+' + HINT_PENALTY + ' s på tiden');
+    render(); persist();
+  }
+
+  function checkWin(){
+    var v = game.values, sol = game.puzzle.solution;
+    for(var i = 0; i < 81; i++) if(v[i] !== sol[i]) return;
+    game.done = true; sel = -1;
+    var total = game.elapsed + game.hints * HINT_PENALTY;
+    var best = load(bestKey(), {}), key = game.mode, newBest = !best[key] || total < best[key];
+    if(newBest){ best[key] = total; store(bestKey(), best); }
+    if(game.mode === 'daily') store(dailyKey(game.date), { time: game.elapsed, hints: game.hints });
+    persist(); render();
+    $('board').classList.add('solved');
+    setTimeout(function(){ $('board').classList.remove('solved'); showWin(total, newBest, best[key]); }, 550);
+  }
+
+  /* ---------- timer ---------- */
+  setInterval(function(){
+    if(!game || game.done || busy || document.hidden || $('overlay').classList.contains('show')) { lastTick = Date.now(); return; }
+    var now = Date.now();
+    if(lastTick) game.elapsed += Math.min(5, (now - lastTick) / 1000);
+    lastTick = now;
+    renderInfo();
+    if(Math.floor(game.elapsed) % 5 === 0) persist();
+  }, 1000);
+  document.addEventListener('visibilitychange', function(){ persist(); lastTick = Date.now(); });
+
+  /* ---------- overlay ---------- */
+  function showPanel(html){ $('panel').innerHTML = html; $('overlay').classList.add('show'); }
+  function hideOverlay(){ $('overlay').classList.remove('show'); }
+  $('overlay').addEventListener('click', function(e){ if(e.target.id === 'overlay') hideOverlay(); });
+
+  function showRules(){
+    showPanel(
+      '<h2>Så spelar du Sumdoku</h2>' +
+      '<ul>' +
+      '<li>Fyll brädet så att varje <b>rad</b>, <b>kolumn</b> och <b>3×3-låda</b> innehåller siffrorna 1–9 exakt en gång — precis som sudoku.</li>' +
+      '<li>Brädet är indelat i streckade <b>burar</b>. Talet i hörnet är <b>summan</b> av siffrorna i buren.</li>' +
+      '<li>En siffra får inte upprepas inom samma bur.</li>' +
+      '<li>Knep: varje rad, kolumn och låda summerar alltid till <b>45</b>.</li>' +
+      '</ul>' +
+      '<p style="color:var(--muted);font-size:13px">Under brädet visas vilka sifferkombinationer som passar den valda buren. ✏️ växlar till anteckningar. Tips kostar ' + HINT_PENALTY + ' s.</p>' +
+      '<label class="row-toggle">Visa fel siffror direkt <input type="checkbox" id="optWrong"' + (settings.showWrong ? ' checked' : '') + '></label>' +
+      '<label class="row-toggle">Visa burkombinationer <input type="checkbox" id="optCombos"' + (settings.combos ? ' checked' : '') + '></label>' +
+      '<button class="btn primary" id="rulesOk">Kör!</button>'
+    );
+    $('optWrong').onchange = function(){ settings.showWrong = this.checked; store('sumdoku:settings', settings); render(); };
+    $('optCombos').onchange = function(){ settings.combos = this.checked; store('sumdoku:settings', settings); render(); };
+    $('rulesOk').onclick = hideOverlay;
+    store('sumdoku:rulesSeen', true);
+  }
+
+  function showNewMenu(){
+    var best = load(bestKey(), {}), dailyDone = load(dailyKey(todayStr()), null);
+    function sub(key){ return best[key] ? 'Bästa: ' + fmt(best[key]) : ''; }
+    showPanel(
+      '<h2>Nytt spel</h2>' +
+      '<button class="btn primary" data-mode="daily">📅 Dagens pussel<small>' +
+        (dailyDone ? 'Klart på ' + fmt(dailyDone.time + dailyDone.hints * HINT_PENALTY) + ' ✓' : 'Medel · samma pussel för hela familjen') + '</small></button>' +
+      '<button class="btn" data-mode="easy">🟢 Lätt<small>Små burar och några förifyllda siffror. ' + sub('easy') + '</small></button>' +
+      '<button class="btn" data-mode="medium">🟡 Medel<small>Blandade burar, nästan inga ledtrådar. ' + sub('medium') + '</small></button>' +
+      '<button class="btn" data-mode="hard">🔴 Svår<small>Stora burar. ' + sub('hard') + '</small></button>'
+    );
+    Array.prototype.forEach.call($('panel').querySelectorAll('[data-mode]'), function(b){
+      b.onclick = function(){
+        var m = b.getAttribute('data-mode');
+        if(game && !game.done && game.values.some(function(x, i){ return x && !isGiven(i); }) &&
+           !(m === 'daily' && game.mode === 'daily' && game.date === todayStr()) &&
+           !confirm('Avbryta pågående spel?')) return;
+        hideOverlay();
+        if(m === 'daily' && game && game.mode === 'daily' && game.date === todayStr()) return; // redan igång
+        startGame(m);
+      };
+    });
+  }
+
+  function showWin(total, newBest, best){
+    var title = game.mode === 'daily' ? 'Dagens pussel löst!' : LEVELS[game.mode] + ' löst!';
+    showPanel(
+      '<h2>🎉 ' + title + '</h2>' +
+      '<div class="big">' + fmt(total) + '</div>' +
+      '<p class="sub">' + (game.hints ? game.hints + ' tips (+' + fmt(game.hints * HINT_PENALTY) + ') · ' : 'Utan tips · ') +
+        (newBest ? '🏆 Nytt rekord!' : 'Bästa: ' + fmt(best)) + '</p>' +
+      '<button class="btn primary" id="winNew">Nytt spel</button>' +
+      '<button class="btn" id="winClose" style="text-align:center">Titta på brädet</button>'
+    );
+    $('winNew').onclick = showNewMenu;
+    $('winClose').onclick = hideOverlay;
+  }
+
+  /* ---------- kontroller ---------- */
+  (function(){
+    var pad = $('pad');
+    for(var d = 1; d <= 9; d++){
+      var b = document.createElement('button'); b.className = 'num'; b.textContent = d;
+      b.addEventListener('click', (function(dd){ return function(){ inputDigit(dd); }; })(d));
+      pad.appendChild(b);
+    }
+  })();
+  function tap(id, fn){ $(id).addEventListener('click', fn); }
+  tap('btnUndo', undo);
+  tap('btnErase', erase);
+  tap('btnNotes', function(){ notesMode = !notesMode; renderPad(); });
+  tap('btnHint', hint);
+  tap('btnNew', showNewMenu);
+  tap('btnRules', showRules);
+
+  document.addEventListener('keydown', function(e){
+    if($('overlay').classList.contains('show')){ if(e.key === 'Escape') hideOverlay(); return; }
+    if(!game) return;
+    var k = e.key;
+    if((e.metaKey || e.ctrlKey) && k.toLowerCase() === 'z'){ e.preventDefault(); undo(); return; }
+    if(e.metaKey || e.ctrlKey || e.altKey) return;
+    if(/^[1-9]$/.test(k)){ inputDigit(+k); return; }
+    if(k === 'Backspace' || k === 'Delete' || k === '0'){ erase(); return; }
+    if(k === 'n' || k === 'N' || k === ' '){ e.preventDefault(); notesMode = !notesMode; renderPad(); return; }
+    if(k === 'u' || k === 'U'){ undo(); return; }
+    var mv = { ArrowUp: -9, ArrowDown: 9, ArrowLeft: -1, ArrowRight: 1 }[k];
+    if(mv){
+      e.preventDefault();
+      if(sel < 0){ select(0); return; }
+      var r = Math.floor(sel / 9), c = sel % 9;
+      if(mv === -9) r = (r + 8) % 9; else if(mv === 9) r = (r + 1) % 9;
+      else if(mv === -1) c = (c + 8) % 9; else c = (c + 1) % 9;
+      select(r * 9 + c);
+    }
+  });
+
+  /* ---------- profil + start ---------- */
+  function renderProfileBadge(){
+    var p = NordhammerProfile.current();
+    $('btnProfile').textContent = p ? p.avatar : '👤';
+  }
+  function resume(){
+    var saved = load(saveKey(), null);
+    // Dagens pussel från en tidigare dag byts mot dagens.
+    if(saved && saved.puzzle && !(saved.mode === 'daily' && saved.date !== todayStr())){
+      game = saved; sel = -1; lastTick = Date.now(); prepare();
+    } else startGame('daily');
+  }
+  $('btnProfile').onclick = function(){
+    persist(); // spara under nuvarande profil innan bytet
+    NordhammerProfile.openSwitcher(function(){ renderProfileBadge(); resume(); });
+  };
+
+  renderProfileBadge();
+  NordhammerProfile.ensurePicker(function(){
+    renderProfileBadge();
+    resume();
+    if(!load('sumdoku:rulesSeen', false)) showRules();
+  });
+})();
+</script>
+</body>
+</html>
