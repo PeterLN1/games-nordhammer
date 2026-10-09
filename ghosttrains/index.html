@@ -297,7 +297,7 @@
 
 <div id="drawer">
   <button id="drawerHandle" class="drawer-handle" aria-expanded="false" aria-controls="drawerContent">
-    <span class="ap-badge" id="apBadge">AP: 3/3</span>
+    <span class="ap-badge" id="apBadge">AP: 6/6</span>
     <span class="ap-badge" id="carsBadge" title="Tågvagnar kvar">🚂 20</span>
     <span class="ap-badge" id="scoreBadge" title="Poäng">⭐ 0</span>
     <span class="drawer-hint">Ställning · Marknad · Biljetter · Hand</span>
@@ -380,7 +380,7 @@
       <li>Dina claim hålls hemliga för de andra hela dagen.</li>
       <li>Vid midnatt löses dagens claim upp. Om två spelare claimar samma rutt blir det en krock — ingen får rutten, och båda omdirigeras till närmaste lediga rutt istället. Korten är ändå förbrukade.</li>
       <li>Vissa rutter har dubbelspår — då kan exakt två spelare claima samma sträcka samma dag utan krock (tidigast får spår A, senare spår B).</li>
-      <li>Varje dag får du 3 AP. Dra kort kostar 1 AP (joker från marknaden 2), claima en rutt 2 AP, dra biljetter 1 AP.</li>
+      <li>Varje dag får du 6 AP. Dra kort kostar 1 AP (joker från marknaden 2), claima en rutt 2 AP, dra biljetter 1 AP.</li>
       <li>Biljetter ger pluspoäng om du binder ihop städerna med dina egna rutter — men minuspoäng om du inte hinner.</li>
       <li>Tryck "Gå med i spelet" för att vara med — fram till dess tittar du bara. Under sista rundan går det inte att gå med.</li>
       <li>Alla börjar med 4 tågkort på handen.</li>
@@ -430,7 +430,7 @@
   var citiesById = {};
   var routesById = {};
   var state = {
-    hand: [], built: [], pendingToday: [], apRemaining: 3, market: [],
+    hand: [], built: [], pendingToday: [], apRemaining: 6, market: [],
     trainCars: 20, score: 0, tickets: [], gameStatus: 'active', finalResults: null
   };
   var currentTicketOffer = null;
@@ -855,7 +855,7 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
   function canAct(){ return !!state.joined && state.gameStatus !== 'finished'; }
 
   function renderAP(){
-    document.getElementById('apBadge').textContent = 'AP: ' + state.apRemaining + '/3';
+    document.getElementById('apBadge').textContent = 'AP: ' + state.apRemaining + '/' + (state.apMax || 6);
     var blocked = !canAct();
     document.getElementById('drawBtn').disabled = state.apRemaining < 1 || blocked;
     document.getElementById('drawTicketsBtn').disabled = state.apRemaining < 1 || blocked;
@@ -942,6 +942,7 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     var routeName = citiesById[route.cityA].name + '–' + citiesById[route.cityB].name;
     if (!slots.length) { toast(routeName + ': byggd av ' + joinNames(ownerNames) + '.'); return; }
     if (!state.joined) { toast(state.gameStatus === 'active' ? 'Gå med i spelet först (knappen ovanför lådan).' : 'Du är inte med i det här spelet.'); return; }
+    if (pendingRouteIds[route.id]) { toast(routeName + ': du har redan ett claim här i natt.'); return; }
     if (me && owners.indexOf(me.id) >= 0) {
       toast(routeName + ': du äger redan ena spåret — det andra är till någon annan.');
       return;
@@ -995,7 +996,11 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
   function updateSubmitState(){
     var route = currentClaim.route;
     var gameOver = state.gameStatus === 'finished';
-    var notEnoughCars = state.trainCars < route.length;
+    // Dagens oupplösta claims har redan "bokat" tågvagnar.
+    var reserved = (state.pendingToday || []).reduce(function(sum, p){
+      return sum + (routesById[p.routeId] ? routesById[p.routeId].length : 0);
+    }, 0);
+    var notEnoughCars = state.trainCars - reserved < route.length;
     var notEnoughAP = state.apRemaining < 2;
     var ok = currentClaim.selectedCards.length === route.length && !notEnoughAP && !notEnoughCars && !gameOver;
     document.getElementById('submitClaimBtn').disabled = !ok;
@@ -1023,6 +1028,7 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
       state.hand = res.hand;
       state.apRemaining = res.apRemaining;
       pendingRouteIds[route.id] = true;
+      state.pendingToday = (state.pendingToday || []).concat([{ routeId: route.id }]);
       renderHand(); renderMap(); renderAP(); renderMarket();
       document.getElementById('claimOverlay').classList.remove('show');
       toast('Claim skickat — löses upp vid midnatt.');

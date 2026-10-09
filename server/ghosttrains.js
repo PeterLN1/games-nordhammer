@@ -65,6 +65,10 @@ const ROUTE_POINTS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 10, 6: 15 };
 // spelare och slutar nästan alltid på tågvagnar, inte full karta.
 const STARTING_TRAIN_CARS = 20;
 const FINAL_ROUND_THRESHOLD = 2;
+// AP per dag. Med 6 hinner en spelare flera claims samma dag (2 AP st)
+// — därför kollar /claim tågvagnar mot dagens PENDING-claims och
+// resolveDay håller en tågvagnsbudget per spelare under natten.
+const DAILY_AP = 6;
 const STARTING_HAND_SIZE = 4;       // som i Ticket to Ride: 4 tågkort i startgiv
 const LONGEST_PATH_BONUS = 10;      // bonus för längsta sammanhängande tåg
 // Antal spelfärger i klientens palett (PLAYER_COLORS i index.html).
@@ -380,14 +384,27 @@ export async function resolveDay(store, day) {
     }
   }
 
+  // Tågvagnsbudget per spelare för resten av natten: lagrade vagnar
+  // minus nattens lyckade bygen. En spelare kan ha flera claims samma
+  // natt (6 AP), så omdirigeringar måste rymmas i det som faktiskt är kvar.
+  const budget = new Map();
+  const budgetFor = async (profileId) => {
+    if (!budget.has(profileId)) {
+      const spent = results.filter(r => r.profileId === profileId && r.track).reduce((s, r) => s + r.length, 0);
+      budget.set(profileId, (await store.getPlayer(profileId)).trainCars - spent);
+    }
+    return budget.get(profileId);
+  };
+
   collided.sort((a, b) => new Date(a.submittedAt) - new Date(b.submittedAt));
   for (const c of collided) {
     // Omdirigering får bara ge en rutt spelaren faktiskt har råd med
     // (kvarvarande tågvagnar) — annars Total Crash (se .claude/plans,
     // Pass 2: "reroute constraints").
-    const player = await store.getPlayer(c.profileId);
-    const alt = findNearestFreeRoute(c.fromCity, c.routeId, builtSet, player.trainCars, ownedBy.get(c.profileId));
+    const carsLeft = await budgetFor(c.profileId);
+    const alt = findNearestFreeRoute(c.fromCity, c.routeId, builtSet, carsLeft, ownedBy.get(c.profileId));
     if (alt) {
+      budget.set(c.profileId, carsLeft - alt.length);
       const track = trackSlots(alt).filter(t => !builtSet.has(alt.id + '|' + t))[0];
       builtSet.add(alt.id + '|' + track);
       markOwned(c.profileId, alt.id);
@@ -651,7 +668,7 @@ async function initSchema(pool) {
   await pool.query(`create table if not exists ghosttrains_ap (
     profile_id text primary key,
     game_day text not null,
-    remaining int not null default 3
+    remaining int not null default ${DAILY_AP}
   );`);
   // Pass 2 (tågvagnar, biljetter, poäng, se .claude/plans):
   await pool.query(`alter table ghosttrains_resolution_log add column if not exists details jsonb;`);
@@ -1038,11 +1055,11 @@ function pgStore(pool) {
     async spendAP(profileId, day, amount) {
       const r = await pool.query(
         `insert into ghosttrains_ap (profile_id, game_day, remaining)
-         select $1, $2, 3 - $3 where 3 - $3 >= 0
+         select $1, $2, ${DAILY_AP} - $3 where ${DAILY_AP} - $3 >= 0
          on conflict (profile_id) do update set
-           remaining = case when ghosttrains_ap.game_day = $2 then ghosttrains_ap.remaining - $3 else 3 - $3 end,
+           remaining = case when ghosttrains_ap.game_day = $2 then ghosttrains_ap.remaining - $3 else ${DAILY_AP} - $3 end,
            game_day = $2
-         where (ghosttrains_ap.game_day <> $2 and 3 - $3 >= 0)
+         where (ghosttrains_ap.game_day <> $2 and ${DAILY_AP} - $3 >= 0)
             or (ghosttrains_ap.game_day = $2 and ghosttrains_ap.remaining - $3 >= 0)
          returning remaining`,
         [profileId, day, amount]
@@ -1092,11 +1109,11 @@ function pgStore(pool) {
         const cost = drawnCard === WILD ? 2 : 1;
         const apRes = await client.query(
           `insert into ghosttrains_ap (profile_id, game_day, remaining)
-           select $1, $2, 3 - $3 where 3 - $3 >= 0
+           select $1, $2, ${DAILY_AP} - $3 where ${DAILY_AP} - $3 >= 0
            on conflict (profile_id) do update set
-             remaining = case when ghosttrains_ap.game_day = $2 then ghosttrains_ap.remaining - $3 else 3 - $3 end,
+             remaining = case when ghosttrains_ap.game_day = $2 then ghosttrains_ap.remaining - $3 else ${DAILY_AP} - $3 end,
              game_day = $2
-           where (ghosttrains_ap.game_day <> $2 and 3 - $3 >= 0)
+           where (ghosttrains_ap.game_day <> $2 and ${DAILY_AP} - $3 >= 0)
               or (ghosttrains_ap.game_day = $2 and ghosttrains_ap.remaining - $3 >= 0)
            returning remaining`,
           [profileId, day, cost]
@@ -1250,7 +1267,7 @@ function memStore() {
     },
     async spendAP(profileId, day, amount) {
       let s = apState.get(profileId);
-      if (!s || s.day !== day) s = { day, remaining: 3 };
+      if (!s || s.day !== day) s = { day, remaining: DAILY_AP };
       if (s.remaining - amount < 0) return null;
       s.remaining -= amount;
       apState.set(profileId, s);
@@ -1267,7 +1284,7 @@ function memStore() {
       const drawnCard = market[index];
       const cost = drawnCard === WILD ? 2 : 1;
       let s = apState.get(profileId);
-      if (!s || s.day !== day) s = { day, remaining: 3 };
+      if (!s || s.day !== day) s = { day, remaining: DAILY_AP };
       if (s.remaining - cost < 0) return { error: 'ap' };
       s.remaining -= cost;
       apState.set(profileId, s);
@@ -1350,6 +1367,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
         built: built.map(b => ({ routeId: b.route_id, track: b.track, ownerProfileId: b.owner_profile_id })),
         pendingToday: pendingMine.map(p => ({ id: p.id, routeId: p.route_id, fromCity: p.from_city, cards: p.cards })),
         apRemaining,
+        apMax: DAILY_AP,
         market,
         trainCars: player.trainCars,
         score: player.score,
@@ -1421,13 +1439,19 @@ function createGhostTrainsRouter(store, resolveSecret) {
       const freeSlots = trackSlots(route).filter(t => !builtSet.has(route.id + '|' + t));
       if (freeSlots.length === 0) return res.status(409).json({ error: 'rutten ar redan helt byggd' });
       if (ownsTrackOn(route.id, profileId, built)) return res.status(409).json({ error: 'du ager redan ena sparet pa denna rutt' });
+      const day = gameDay();
+      // Flera claims samma dag: aldrig samma rutt två gånger (skulle
+      // krocka med sig själv / ge båda dubbelspåren), och tågvagnarna
+      // räknas mot ALLA dagens oupplösta claims, inte bara detta.
+      const pendingToday = await store.pendingForProfileToday(profileId, day);
+      if (pendingToday.some(p => p.route_id === route.id)) return res.status(409).json({ error: 'du har redan ett claim pa denna rutt idag' });
+      const reserved = pendingToday.reduce((sum, p) => sum + (ROUTES_BY_ID.get(p.route_id)?.length || 0), 0);
       const player = await store.getPlayer(profileId);
-      if (player.trainCars < route.length) return res.status(400).json({ error: 'inte tillrackligt med tagvagnar kvar' });
+      if (player.trainCars - reserved < route.length) return res.status(400).json({ error: 'inte tillrackligt med tagvagnar kvar' });
       const hand = await store.getHand(profileId);
       const newHand = removeCards(hand, b.cards);
       if (!newHand) return res.status(400).json({ error: 'du har inte de korten' });
       const fromCity = pickOriginCity(route, profileId, built);
-      const day = gameDay();
       // Handen tas atomärt (compare-and-swap) innan AP spenderas — ett
       // samtidigt drag/dubbeltryck ger 409 istället för att tappa kort.
       // Misslyckas AP:t läggs korten tillbaka på handen.

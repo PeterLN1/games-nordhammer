@@ -114,17 +114,23 @@ inte ett enkelt "läs, mutera i JS, skriv tillbaka".**
 ## Spelregler (nuvarande implementation)
 
 ### Dagscykel & Action Points (AP)
-- Varje profil får 3 AP vid midnatt (Europe/Stockholm). Oanvända AP
+- Varje profil får 6 AP (`DAILY_AP`) vid midnatt (Europe/Stockholm). Oanvända AP
   sparas INTE till nästa dag.
 - AP är **lat-återställda** — ingen cron behövs för det. Vid varje
   läsning/förbrukning jämförs lagrat `game_day` mot dagens datum;
-  skiljer de sig får spelaren fulla 3 AP igen (se `spendAP`).
+  skiljer de sig får spelaren fulla AP igen (se `spendAP`).
 - Kostnader: blint kort-drag 1 AP, marknadsdrag 1 AP (2 AP om det
   dragna kortet är ett lokomotiv/joker — avgörs server-sidan, aldrig
   klienten), claima en rutt 2 AP, dra biljetter 1 AP.
-- **Bekväm bieffekt**: en spelare kan max skicka in ETT claim per dag
-  (2 av 3 AP) — flera claims samma dag som tillsammans skulle
-  överskrida tågvagnsbudgeten kan alltså aldrig inträffa.
+- **Flera claims per dag** (6 AP räcker till 3): förr (3 AP) kunde en
+  spelare bara göra ett claim per dag, och koden förlitade sig på det.
+  Nu gäller: `/claim` nekar samma rutt två gånger samma dag (skulle
+  krocka med sig själv / ge båda dubbelspåren), och tågvagnarna räknas
+  mot ALLA dagens oupplösta claims. `resolveDay` håller en tågvagns-
+  budget per spelare under natten så en omdirigering aldrig får
+  spelaren under 0.
+- Simulerat (botar mot riktiga koden): 6 AP + 20 vagnar ⇒ ~5–7 dagar
+  per spel för 2–6 spelare (3 AP gav ~11–13). Ändrar du AP: simulera om.
 
 ### Kortlek & marknad
 - 126 kort: 14 per färg (8 färger) + 14 lokomotiv/joker.
@@ -353,7 +359,7 @@ kan aldrig upplösas. Skicka in ALLA dagens claims INNAN du anropar
 `/resolve`, inte inkrementellt.
 
 **Fallgrop**: AP-ekonomin gör det svårt att snabbt simulera flera
-claims/kort-drag för samma testprofil samma dag (max 3 AP). Använd
+claims/kort-drag för samma testprofil samma dag (max 6 AP). Använd
 hellre många olika engångs-profil-id:n än att försöka kringgå AP:t.
 
 **Testa resolutionsmotorn isolerat** (rekommenderas för ändringar i
