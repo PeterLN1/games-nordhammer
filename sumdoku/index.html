@@ -221,6 +221,20 @@
   .btn:active { transform: scale(.98); }
   .row-toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; font-size: 14px; }
 
+  /* ---- topplista ---- */
+  .lb-tabs { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; }
+  .lb-tab { padding: 6px 14px; border-radius: 999px; border: none; background: var(--key-bg); color: var(--ink); font-family: inherit; font-weight: 700; font-size: 13px; cursor: pointer; }
+  .lb-tab.on { background: var(--accent); color: var(--accent-ink); }
+  .lb-title { font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 16px 0 8px; }
+  .lb-row { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 9px; font-size: 14px; }
+  .lb-row:nth-child(odd) { background: var(--key-bg); }
+  .lb-row.me { background: rgba(123,92,255,.18); box-shadow: inset 0 0 0 1px rgba(123,92,255,.5); }
+  .lb-rank { width: 24px; text-align: center; font-weight: 700; color: var(--muted); }
+  .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-hints { font-size: 12px; font-weight: 700; color: var(--muted); }
+  .lb-time { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .lb-empty { color: var(--muted); font-size: 13px; padding: 14px 12px; text-align: center; }
+
   #toast {
     position: fixed; left: 50%; bottom: 30%; transform: translateX(-50%); z-index: 120;
     background: rgba(20,24,40,.92); color: #fff; padding: 10px 16px; border-radius: 12px;
@@ -242,6 +256,7 @@
       <h1>➕ Sumdoku</h1>
       <div class="spacer"></div>
       <button class="icon-btn" id="btnProfile" aria-label="Byt profil"></button>
+      <button class="icon-btn" id="btnTop" aria-label="Topplista">🏆</button>
       <button class="icon-btn" id="btnRules" aria-label="Regler">❔</button>
     </header>
     <div class="grow top"></div>
@@ -537,6 +552,89 @@
     render(); persist();
   }
 
+  /* ---------- Familjetopplista för dagens pussel ----------
+     Återanvänder serverns generiska scores-tabell (server/index.js):
+     seed 'sumdoku:ÅÅÅÅ-MM-DD' ger en topplista per dag. seconds = total
+     tid inkl. tipsstraff, moves = antal tips. fromShare: true håller
+     resultaten utanför de globala lägestopplistorna — bara dagslistan
+     är meningsfull. Inskickningen markeras i dagsposten (submitted) och
+     görs om vid nästa start om den misslyckades (t.ex. offline). */
+  var API_BASE = 'https://games-nordhammer-production.up.railway.app';
+  function apiBase(){
+    try { return (localStorage.getItem('sumdoku:api') || API_BASE || '').replace(/\/+$/, ''); }
+    catch(e){ return API_BASE; }
+  }
+  function dailySeed(date){ return 'sumdoku:' + date; }
+  function lbFetch(date, cb){
+    fetch(apiBase() + '/api/leaderboard?seed=' + encodeURIComponent(dailySeed(date)) + '&limit=30')
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb(d && d.error ? new Error(d.error) : null, (d && d.scores) || []); })
+      .catch(cb);
+  }
+  function lbSubmit(date, rec, cb){
+    var p = NordhammerProfile.current();
+    if(!p) return cb && cb(new Error('ingen profil'));
+    var payload = { name: p.name, mode: 'sumdoku', tiles: 81, seconds: Math.max(1, Math.round(rec.time + rec.hints * HINT_PENALTY)),
+                    moves: rec.hints, seed: dailySeed(date), fromShare: true };
+    fetch(apiBase() + '/api/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb && cb(d && d.error ? new Error(d.error) : null); })
+      .catch(function(e){ cb && cb(e); });
+  }
+  // Skickar in dagsresultat som ännu inte nått servern (idag och igår).
+  function submitPending(cb){
+    var dates = [todayStr(), offsetDate(-1)], left = dates.length;
+    dates.forEach(function(date){
+      var rec = load(dailyKey(date), null);
+      if(!rec || rec.submitted){ if(!--left && cb) cb(); return; }
+      lbSubmit(date, rec, function(err){
+        if(!err){ rec.submitted = true; store(dailyKey(date), rec); }
+        if(!--left && cb) cb();
+      });
+    });
+  }
+  function offsetDate(days){
+    var d = new Date(); d.setDate(d.getDate() + days);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function renderLeaderboard(el, date){
+    el.innerHTML = '<div class="lb-empty">Laddar…</div>';
+    lbFetch(date, function(err, list){
+      if(err){ el.innerHTML = '<div class="lb-empty">Kunde inte hämta topplistan just nu.</div>'; return; }
+      if(!list.length){ el.innerHTML = '<div class="lb-empty">' + (date === todayStr() ? 'Ingen har löst dagens pussel än — bli först!' : 'Ingen löste pusslet den dagen.') + '</div>'; return; }
+      var me = NordhammerProfile.current(), avatars = {};
+      NordhammerProfile.list().forEach(function(p){ avatars[p.name] = p.avatar; });
+      var medals = ['🥇', '🥈', '🥉'], rank = 0;
+      el.innerHTML = list.map(function(s, i){
+        if(i === 0 || s.seconds !== list[i - 1].seconds) rank = i + 1; // delad placering vid lika tid
+        return '<div class="lb-row' + (me && me.name === s.name ? ' me' : '') + '">' +
+          '<span class="lb-rank">' + (rank <= 3 ? medals[rank - 1] : rank) + '</span>' +
+          '<span class="lb-name">' + (avatars[s.name] ? avatars[s.name] + ' ' : '') + esc(s.name) + '</span>' +
+          (s.moves ? '<span class="lb-hints">💡' + s.moves + '</span>' : '') +
+          '<span class="lb-time">' + fmt(s.seconds) + '</span></div>';
+      }).join('');
+    });
+  }
+  function showLeaderboard(date){
+    date = date || todayStr();
+    var today = todayStr(), yesterday = offsetDate(-1);
+    showPanel(
+      '<h2>🏆 Familjetopplista</h2>' +
+      '<div class="lb-tabs"><button class="lb-tab' + (date === today ? ' on' : '') + '" data-d="' + today + '">Idag</button>' +
+      '<button class="lb-tab' + (date === yesterday ? ' on' : '') + '" data-d="' + yesterday + '">Igår</button></div>' +
+      '<div id="lbList"></div>' +
+      '<p class="sub" style="margin-top:12px">Dagens pussel · tips räknas som +' + HINT_PENALTY + ' s</p>' +
+      '<button class="btn primary" id="lbClose">Stäng</button>'
+    );
+    Array.prototype.forEach.call($('panel').querySelectorAll('.lb-tab'), function(b){
+      b.onclick = function(){ showLeaderboard(b.getAttribute('data-d')); };
+    });
+    $('lbClose').onclick = hideOverlay;
+    // Eget osänt resultat först, så att man syns på listan direkt.
+    submitPending(function(){ if($('lbList')) renderLeaderboard($('lbList'), date); });
+  }
+
   function checkWin(){
     var v = game.values, sol = game.puzzle.solution;
     for(var i = 0; i < 81; i++) if(v[i] !== sol[i]) return;
@@ -544,7 +642,7 @@
     var total = game.elapsed + game.hints * HINT_PENALTY;
     var best = load(bestKey(), {}), key = game.mode, newBest = !best[key] || total < best[key];
     if(newBest){ best[key] = total; store(bestKey(), best); }
-    if(game.mode === 'daily') store(dailyKey(game.date), { time: game.elapsed, hints: game.hints });
+    if(game.mode === 'daily') store(dailyKey(game.date), { time: game.elapsed, hints: game.hints, submitted: false });
     persist(); render();
     $('board').classList.add('solved');
     setTimeout(function(){ $('board').classList.remove('solved'); showWin(total, newBest, best[key]); }, 550);
@@ -595,8 +693,10 @@
         (dailyDone ? 'Klart på ' + fmt(dailyDone.time + dailyDone.hints * HINT_PENALTY) + ' ✓' : 'Medel · samma pussel för hela familjen') + '</small></button>' +
       '<button class="btn" data-mode="easy">🟢 Lätt<small>Små burar och några förifyllda siffror. ' + sub('easy') + '</small></button>' +
       '<button class="btn" data-mode="medium">🟡 Medel<small>Blandade burar, nästan inga ledtrådar. ' + sub('medium') + '</small></button>' +
-      '<button class="btn" data-mode="hard">🔴 Svår<small>Stora burar. ' + sub('hard') + '</small></button>'
+      '<button class="btn" data-mode="hard">🔴 Svår<small>Stora burar. ' + sub('hard') + '</small></button>' +
+      '<button class="btn" id="menuTop" style="text-align:center">🏆 Dagens familjetopplista</button>'
     );
+    $('menuTop').onclick = function(){ showLeaderboard(); };
     Array.prototype.forEach.call($('panel').querySelectorAll('[data-mode]'), function(b){
       b.onclick = function(){
         var m = b.getAttribute('data-mode');
@@ -617,11 +717,16 @@
       '<div class="big">' + fmt(total) + '</div>' +
       '<p class="sub">' + (game.hints ? game.hints + ' tips (+' + fmt(game.hints * HINT_PENALTY) + ') · ' : 'Utan tips · ') +
         (newBest ? '🏆 Nytt rekord!' : 'Bästa: ' + fmt(best)) + '</p>' +
+      (game.mode === 'daily' ? '<div class="lb-title">🏆 Dagens familjetopplista</div><div id="lbList"></div>' : '') +
       '<button class="btn primary" id="winNew">Nytt spel</button>' +
       '<button class="btn" id="winClose" style="text-align:center">Titta på brädet</button>'
     );
     $('winNew').onclick = showNewMenu;
     $('winClose').onclick = hideOverlay;
+    if(game.mode === 'daily'){
+      var date = game.date;
+      submitPending(function(){ if($('lbList')) renderLeaderboard($('lbList'), date); });
+    }
   }
 
   /* ---------- kontroller ---------- */
@@ -640,6 +745,7 @@
   tap('btnHint', hint);
   tap('btnNew', showNewMenu);
   tap('btnRules', showRules);
+  tap('btnTop', function(){ showLeaderboard(); });
 
   document.addEventListener('keydown', function(e){
     if($('overlay').classList.contains('show')){ if(e.key === 'Escape') hideOverlay(); return; }
@@ -683,6 +789,7 @@
   NordhammerProfile.ensurePicker(function(){
     renderProfileBadge();
     resume();
+    submitPending(); // ev. resultat som inte nådde servern förra gången
     if(!load('sumdoku:rulesSeen', false)) showRules();
   });
 })();

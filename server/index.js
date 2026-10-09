@@ -21,7 +21,7 @@ const GHOSTTRAINS_RESOLVE_SECRET = process.env.GHOSTTRAINS_RESOLVE_SECRET || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const FLASHBACK_GENERATE_SECRET = process.env.FLASHBACK_GENERATE_SECRET || '';
 
-const MODES = new Set(['classic', 'tilematch', 'ordlek', 'ordlek-anti', 'flashback', 'streetview']);
+const MODES = new Set(['classic', 'tilematch', 'ordlek', 'ordlek-anti', 'flashback', 'streetview', 'sumdoku']);
 // enkel olämplighetsfilter (utökas vid behov)
 const BAD_WORDS = ['fitta', 'kuk', 'hora', 'knulla', 'jävla', 'javla', 'fuck', 'shit', 'bitch', 'cunt', 'nigger', 'nigga', 'slut'];
 
