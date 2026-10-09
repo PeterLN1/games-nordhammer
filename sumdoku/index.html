@@ -147,7 +147,12 @@
     font-size: max(8.5px, calc(var(--cell) * .2)); line-height: 1; font-weight: 700;
     padding: 0 1px; background: var(--board-bg); border-radius: 2px; color: var(--ink);
   }
-  .cell.unit .sum, .cell.incage .sum, .cell.same .sum, .cell.sel .sum { background: transparent; }
+  /* Summan ska täcka burstrecket även när rutan är markerad: markeringens
+     genomskinliga färg läggs ovanpå en täckande brädbakgrund. */
+  .cell.unit .sum { background: linear-gradient(var(--hl-unit), var(--hl-unit)), var(--board-bg); }
+  .cell.incage .sum { background: linear-gradient(var(--hl-cage), var(--hl-cage)), var(--board-bg); }
+  .cell.same .sum { background: linear-gradient(var(--hl-same), var(--hl-same)), var(--board-bg); }
+  .cell.sel .sum { background: linear-gradient(var(--hl-sel), var(--hl-sel)), var(--board-bg); }
   .sum.bad { color: var(--wrong); }
   .val { font-size: calc(var(--cell) * .56); font-weight: 500; line-height: 1; color: var(--entered); }
   .cell.given .val { color: var(--given); font-weight: 700; }
