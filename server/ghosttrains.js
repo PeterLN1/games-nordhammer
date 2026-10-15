@@ -108,6 +108,12 @@ export const CITIES = [
   { id: 'goteborg', name: 'Göteborg', x: 348, y: 1011 },
   { id: 'vaxjo', name: 'Växjö', x: 470, y: 1087 },
   { id: 'karlskrona', name: 'Karlskrona', x: 504, y: 1154 },
+  // Kalmar (tillagd mitt i första riktiga spelet): utan den kunde två
+  // rutter (jonkoping-vaxjo + kristianstad-lund) stänga in hela hörnet
+  // Växjö–Karlskrona–Kristianstad — hände en spelare med en Växjö-biljett.
+  // Koordinater från lat/long via samma projektion (minsta kvadrat-
+  // passning mot övriga städer, fel < 10 enheter).
+  { id: 'kalmar', name: 'Kalmar', x: 537, y: 1108 },
   { id: 'kristianstad', name: 'Kristianstad', x: 442, y: 1166 },
   // Lund och Malmö låg bara 12 enheter isär (verkligt avstånd ~18 km,
   // kortast av alla stadspar på kartan) — stadsprickarna (radie 10 var)
@@ -179,6 +185,12 @@ export const ROUTES = [
   { id: 'kristianstad-karlskrona', cityA: 'kristianstad', cityB: 'karlskrona', length: 1, color: 'blue', doubleTrack: false },
   { id: 'kristianstad-lund', cityA: 'kristianstad', cityB: 'lund', length: 2, color: 'orange', doubleTrack: false },
   { id: 'lund-malmo', cityA: 'lund', cityB: 'malmo', length: 1, color: 'purple', doubleTrack: false },
+  // Kalmar: tre rutter så varken Kalmar eller sydosthörnet kan stängas
+  // in av två rutter. Färgerna valda utan krock i någon ändstad, och så
+  // att färgbalansen blir jämnare (spann 12–18 mot tidigare 11–18).
+  { id: 'norrkoping-kalmar', cityA: 'norrkoping', cityB: 'kalmar', length: 4, color: 'orange', doubleTrack: false },
+  { id: 'kalmar-vaxjo', cityA: 'kalmar', cityB: 'vaxjo', length: 2, color: 'blue', doubleTrack: false },
+  { id: 'kalmar-karlskrona', cityA: 'kalmar', cityB: 'karlskrona', length: 1, color: 'red', doubleTrack: false },
   { id: 'stockholm-goteborg', cityA: 'stockholm', cityB: 'goteborg', length: 5, color: 'black', doubleTrack: true },
   { id: 'stockholm-malmo', cityA: 'stockholm', cityB: 'malmo', length: 6, color: 'white', doubleTrack: true },
   // "Västkustlinjen": direktförbindelse längs västkusten mellan de två
@@ -452,6 +464,57 @@ function isConnectedForProfile(ownedRouteIds, cityA, cityB) {
     for (const n of (adj.get(cur) || [])) if (!seen.has(n)) { seen.add(n); stack.push(n); }
   }
   return seen.has(cityB);
+}
+
+// Biljettstatus för EN spelare (privat, visas löpande i klienten):
+//   completed — städerna hänger ihop via spelarens egna rutter
+//   blocked   — ingen väg alls via egna + lediga rutter (någon annan har
+//               stängt vägen) — biljetten kan inte längre klaras
+//   too_far   — vägen finns men kräver fler tågvagnar än spelaren har kvar
+//   open      — går fortfarande att klara
+// Dijkstra där egna rutter (och dagens egna PENDING-claims, optimistiskt)
+// kostar 0 och lediga rutter kostar sin längd. En rutt där spelaren redan
+// äger ena dubbelspåret räknas som egen. Byggda rutter utan ledigt spår
+// är oframkomliga. carsLeft = tågvagnar minus dagens bokade claims.
+function ticketStatus(ticket, profileId, builtList, carsLeft, pendingRouteIds = new Set()) {
+  const ownRouteIds = new Set(builtList.filter(b => b.owner_profile_id === profileId).map(b => b.route_id));
+  if (isConnectedForProfile(ownRouteIds, ticket.cityA, ticket.cityB)) return { status: 'completed', carsNeeded: 0 };
+  const cost = r => {
+    if (ownRouteIds.has(r.id) || pendingRouteIds.has(r.id)) return 0;
+    const freeSlot = trackSlots(r).some(t => !builtList.some(b => b.route_id === r.id && b.track === t));
+    return freeSlot ? r.length : Infinity;
+  };
+  const dist = new Map(CITIES.map(c => [c.id, Infinity]));
+  dist.set(ticket.cityA, 0);
+  const todo = new Set(CITIES.map(c => c.id));
+  while (todo.size) {
+    let u = null;
+    for (const c of todo) if (u === null || dist.get(c) < dist.get(u)) u = c;
+    todo.delete(u);
+    if (dist.get(u) === Infinity) break;
+    for (const e of ADJACENCY.get(u)) {
+      const d = dist.get(u) + cost(ROUTES_BY_ID.get(e.routeId));
+      if (d < dist.get(e.other)) dist.set(e.other, d);
+    }
+  }
+  const need = dist.get(ticket.cityB);
+  if (need === Infinity) return { status: 'blocked', carsNeeded: null };
+  if (need > carsLeft) return { status: 'too_far', carsNeeded: need };
+  return { status: 'open', carsNeeded: need };
+}
+
+// Lägger till status (+ bakåtkompatibla `completed`) på biljetter för en profil.
+async function decorateTickets(store, profileId, tickets) {
+  const [built, player, pending] = await Promise.all([
+    store.builtRoutes(), store.getPlayer(profileId), store.pendingForProfileToday(profileId, gameDay())
+  ]);
+  const pendingIds = new Set(pending.map(p => p.route_id));
+  const reserved = pending.reduce((s, p) => s + (ROUTES_BY_ID.get(p.route_id)?.length || 0), 0);
+  const carsLeft = player.trainCars - reserved;
+  return tickets.filter(Boolean).map(t => {
+    const st = ticketStatus(t, profileId, built, carsLeft, pendingIds);
+    return { ...t, completed: st.status === 'completed', status: st.status, carsNeeded: st.carsNeeded };
+  });
 }
 
 // Längsta sammanhängande tåg för EN spelare: längsta "trail" (varje
@@ -1342,9 +1405,6 @@ function createGhostTrainsRouter(store, resolveSecret) {
 
       const finalResults = gameState.status === 'finished' ? await finalResultsFor(store, gameState) : null;
 
-      // Biljettstatus (privat — bara den egna profilens biljetter) räknas
-      // löpande så spelaren ser vilka som redan är klara.
-      const ownRouteIds = new Set(built.filter(b => b.owner_profile_id === profileId).map(b => b.route_id));
 
       // Offentlig ställning: tågvagnar, ruttpoäng och antal biljetter per
       // spelare (i Ticket to Ride ligger allt detta öppet på bordet).
@@ -1371,10 +1431,9 @@ function createGhostTrainsRouter(store, resolveSecret) {
         market,
         trainCars: player.trainCars,
         score: player.score,
-        tickets: ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean)
-          .map(t => ({ ...t, completed: isConnectedForProfile(ownRouteIds, t.cityA, t.cityB) })),
+        tickets: await decorateTickets(store, profileId, ticketIds.map(id => TICKETS_BY_ID.get(id))),
         players,
-        ticketOffer: ticketOffer ? { tickets: ticketOffer.ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean), minKeep: ticketOffer.minKeep } : null,
+        ticketOffer: ticketOffer ? { tickets: await decorateTickets(store, profileId, ticketOffer.ticketIds.map(id => TICKETS_BY_ID.get(id))), minKeep: ticketOffer.minKeep } : null,
         joined: !!player.joined,
         gameStatus: gameState.status,
         finalDay: gameState.finalDay,
@@ -1483,7 +1542,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
       const dealt = await store.dealTickets(3);
       if (!dealt.length) return res.json({ ok: true, offer: null, apRemaining, note: 'inga fler biljetter kvar i leken' });
       await store.setTicketOffer(profileId, dealt, 1);
-      res.json({ ok: true, offer: { tickets: dealt.map(id => TICKETS_BY_ID.get(id)).filter(Boolean), minKeep: 1 }, apRemaining });
+      res.json({ ok: true, offer: { tickets: await decorateTickets(store, profileId, dealt.map(id => TICKETS_BY_ID.get(id))), minKeep: 1 }, apRemaining });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 
@@ -1507,10 +1566,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
       await store.returnTicketsToDeck(discard);
       await store.clearTicketOffer(profileId);
       const ticketIds = await store.getPlayerTickets(profileId);
-      const built = await store.builtRoutes();
-      const ownRouteIds = new Set(built.filter(r => r.owner_profile_id === profileId).map(r => r.route_id));
-      res.json({ ok: true, tickets: ticketIds.map(id => TICKETS_BY_ID.get(id)).filter(Boolean)
-        .map(t => ({ ...t, completed: isConnectedForProfile(ownRouteIds, t.cityA, t.cityB) })) });
+      res.json({ ok: true, tickets: await decorateTickets(store, profileId, ticketIds.map(id => TICKETS_BY_ID.get(id))) });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 

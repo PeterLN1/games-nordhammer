@@ -161,6 +161,9 @@
     background: var(--panel-bg);
   }
   .ticket-chip.done { border-color: #2f9e44; background: rgba(47,158,68,.14); }
+  .ticket-chip.blocked { border-color: #e5484d; background: rgba(229,72,77,.12); }
+  .ticket-chip.too_far { border-color: #e0a300; background: rgba(224,163,0,.14); }
+  .ticket-choice .tstatus { font-size: 12px; font-weight: 700; }
   #playersBar { padding: 8px 12px; background: var(--chrome); }
   .player-row {
     display: flex; align-items: center; gap: 10px; padding: 5px 2px; font-size: 13.5px; font-weight: 700;
@@ -381,7 +384,7 @@
       <li>Vid midnatt löses dagens claim upp. Om två spelare claimar samma rutt blir det en krock — ingen får rutten, och båda omdirigeras till närmaste lediga rutt istället. Korten är ändå förbrukade.</li>
       <li>Vissa rutter har dubbelspår — då kan exakt två spelare claima samma sträcka samma dag utan krock (tidigast får spår A, senare spår B).</li>
       <li>Varje dag får du 6 AP. Dra kort kostar 1 AP (joker från marknaden 2), claima en rutt 2 AP, dra biljetter 1 AP.</li>
-      <li>Biljetter ger pluspoäng om du binder ihop städerna med dina egna rutter — men minuspoäng om du inte hinner.</li>
+      <li>Biljetter ger pluspoäng om du binder ihop städerna med dina egna rutter — men minuspoäng om du inte hinner. ✅ = klar, ❌ = blockerad (andra har byggt bort alla vägar), ⚠️ = vägen kräver fler tågvagnar än du har.</li>
       <li>Tryck "Gå med i spelet" för att vara med — fram till dess tittar du bara. Under sista rundan går det inte att gå med.</li>
       <li>Alla börjar med 4 tågkort på handen.</li>
       <li>På en dubbelspårsrutt får du bara äga det ena spåret.</li>
@@ -880,9 +883,11 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     }
     (state.tickets || []).forEach(function(t){
       var chip = document.createElement('span');
-      chip.className = 'ticket-chip' + (t.completed ? ' done' : '');
-      chip.textContent = (t.completed ? '✅ ' : '') + ticketLabel(t);
-      if (t.completed) chip.title = 'Klar — städerna hänger ihop via dina rutter';
+      var st = ticketStatusInfo(t);
+      chip.className = 'ticket-chip' + (st.cls ? ' ' + st.cls : '');
+      chip.textContent = (st.icon ? st.icon + ' ' : '') + ticketLabel(t);
+      if (st.text) chip.title = st.text;
+      if (st.cls === 'blocked' || st.cls === 'too_far') chip.onclick = function(){ toast(st.text); };
       box.appendChild(chip);
     });
   }
@@ -903,6 +908,14 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
         '<span class="pstat" title="Antal biljetter">🎫 ' + pl.ticketCount + '</span>';
       box.appendChild(row);
     });
+  }
+
+  // Klar / blockerad / för lång — räknas ut av servern (ticketStatus).
+  function ticketStatusInfo(t){
+    if (t.status === 'completed' || t.completed) return { cls: 'done', icon: '✅', text: 'Klar — städerna hänger ihop via dina rutter.' };
+    if (t.status === 'blocked') return { cls: 'blocked', icon: '❌', text: 'Blockerad — andra spelare har byggt bort alla vägar. Biljetten kan inte längre klaras.' };
+    if (t.status === 'too_far') return { cls: 'too_far', icon: '⚠️', text: 'Räcker inte — kortaste vägen kräver ' + t.carsNeeded + ' tågvagnar till, du har för få kvar.' };
+    return { cls: '', icon: '', text: t.carsNeeded != null ? 'Kräver minst ' + t.carsNeeded + ' tågvagnar till.' : '' };
   }
 
   function renderMarket(){
@@ -1070,7 +1083,12 @@ c-7 -32 -20 -62 -29 -67 -9 -5 -25 -26 -36 -47 -19 -37 -20 -38 -86 -44 -40
     offer.tickets.forEach(function(t){
       var btn = document.createElement('button');
       btn.className = 'ticket-choice';
-      btn.innerHTML = '<span>' + ticketLabel(t) + '</span>';
+      var st = ticketStatusInfo(t);
+      var warn = st.cls === 'blocked' ? '<span class="tstatus" style="color:#e5484d">❌ Blockerad</span>'
+        : st.cls === 'too_far' ? '<span class="tstatus" style="color:#e0a300">⚠️ För lång</span>'
+        : st.cls === 'done' ? '<span class="tstatus" style="color:#2f9e44">✅ Redan klar</span>' : '';
+      btn.innerHTML = '<span>' + ticketLabel(t) + '</span>' + warn;
+      if (st.text) btn.title = st.text;
       btn.onclick = function(){
         currentTicketOffer.selected[t.id] = !currentTicketOffer.selected[t.id];
         btn.classList.toggle('selected', !!currentTicketOffer.selected[t.id]);

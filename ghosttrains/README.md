@@ -107,6 +107,12 @@ inte ett enkelt "läs, mutera i JS, skriv tillbaka".**
     tydliga avvikare jämfört med sina gradkamrater — inte till alla
     flaskhalsar. Kollisioner är en avsiktlig spelmekanik, inte något
     att eliminera överallt.
+  - **Inga instängda områden**: inga två enkelspår ska tillsammans
+    kunna stänga in en grupp på 2+ städer (en spelare kan då göra alla
+    biljetter dit omöjliga för andra). Upptäcktes i första riktiga
+    spelet: jonkoping-vaxjo + kristianstad-lund stängde in Växjö/
+    Karlskrona/Kristianstad. Löst genom att lägga till **Kalmar** (3
+    rutter). Kvar som enskilda städer med grad 2: Kiruna, Mora, Lund.
   - Alla dessa kontrollerades med små, engångs node-skript under
     utvecklingen (inte sparade som filer) — skriv om vid behov, det
     är enkel grafteori över `CITIES`/`ROUTES`.
@@ -259,6 +265,15 @@ Obyggda rutter: tunna, streckade, nedtonade i kortfärgen. Byggda:
 heldragna med kant (`--city-stroke`); egna får ljussken (`#ownGlow`,
 `filterUnits="userSpaceOnUse"` — annars försvinner vågräta linjer).
 Tryck på en byggd rutt visar ägaren.
+
+### Biljettstatus
+`ticketStatus` (Dijkstra: egna rutter + dagens egna PENDING kostar 0,
+lediga rutter sin längd, fullbyggda är oframkomliga) ger varje egen
+biljett `status`: `completed` / `open` / `blocked` (ingen väg alls) /
+`too_far` (vägen kräver fler tågvagnar än som finns kvar efter dagens
+claims), plus `carsNeeded`. Skickas i `/state`, `/tickets/draw`-offers
+och `/tickets/choose`. Klienten visar ✅/❌/⚠️ på biljetterna och i
+biljettvalet.
 
 ### Ställning
 `/state` innehåller `players`: tågvagnar, ruttpoäng och antal biljetter
