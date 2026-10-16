@@ -708,7 +708,7 @@
         el('h1', { text: d.title }),
         el('div', { class: 'lock-boxes', 'aria-label': 'Svaret: ' + d.solution }, answer.map(function(ch){ return el('div', { class: 'lock-box static', text: ch }); }))),
       el('section', null, el('p', { class: 'intro', text: d.intro })),
-      el('section', null, el('h2', { class: 'section-title', text: 'Sedan' }), el('p', { class: 'epilogue', text: d.epilogue.text })),
+      el('section', null, el('h2', { class: 'section-title', text: 'Ni löste uppgiften' }), el('p', { class: 'epilogue', text: d.epilogue.text })),
       d.epilogue.item ? el('section', null, el('h2', { class: 'section-title', text: 'Nytt föremål' }), itemCard(d.epilogue.item, true)) : null,
       el('section', null, el('h2', { class: 'section-title', text: 'Så här gick det till' }),
         el('ul', { class: 'story' }, d.story.map(function(line){ return el('li', { text: line }); }))),
