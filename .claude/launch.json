@@ -4,8 +4,23 @@
     {
       "name": "static",
       "runtimeExecutable": "python3",
-      "runtimeArgs": [".claude/nocache_server.py"],
+      "runtimeArgs": [
+        ".claude/nocache_server.py"
+      ],
       "port": 8934
+    },
+    {
+      "name": "nattaget-api",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NATTAGET_CONTENT=sample",
+        "NATTAGET_ADMIN_SECRET=lokal",
+        "NATTAGET_FAKE_NOW=2026-12-01T07:42:00+01:00",
+        "PORT=3917",
+        "node",
+        "server/index.js"
+      ],
+      "port": 3917
     }
   ]
 }

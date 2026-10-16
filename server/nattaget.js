@@ -292,6 +292,7 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
     board,
     hints, hintsUsed: hints.length, hintsTotal: HINT_COUNT,
     lockOpen: !solve && (archiveMode || allLit),
+    stars: computeStars(solves, events),
     attemptsLeft: Math.max(0, MAX_ATTEMPTS_PER_DAY - myAttempts)
   };
   if (solve) {
@@ -452,6 +453,12 @@ export function memStore() {
 }
 
 /* ---------- Router ---------- */
+const MAX_NOTE = 280;
+// Kontrolltecken och radbrytningar blir mellanslag; texten visas alltid
+// som ren text i klienten, aldrig som HTML.
+function cleanNote(raw) {
+  return String(raw == null ? '' : raw).replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
+}
 function validProfileId(id) { return typeof id === 'string' && /^[a-z0-9]{4,64}$/i.test(id); }
 
 function secretOk(expected, given) {
@@ -487,17 +494,71 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
     } catch (e) { console.error('Nattåget: fel i /state:', e.message); res.status(500).json({ error: 'serverfel' }); }
   });
 
-  router.get('/day/:n', async (req, res) => {
+  // Luckans nummer ur URL:en. Svarar själv 404/403 och returnerar null
+  // för okända och framtida luckor (datumlåset gäller alla anrop).
+  function openDayNumber(req, res) {
+    const n = Number(req.params.n);
+    if (!Number.isInteger(n) || n < 1 || n > content.days.length) { res.status(404).json({ error: 'ingen sådan lucka' }); return null; }
+    if (dayDate(content, n) > today()) { res.status(403).json({ error: 'locked' }); return null; }
+    return n;
+  }
+  async function dayView(n, p) {
+    const [events, solves, profiles] = await Promise.all([store.listEvents(), store.listSolves(), profilesSafe()]);
+    return buildDayView({ content, n, today: today(), me: p.slot, players: p.players, profiles, events, solves });
+  }
+  // Gemensamt skal för luckans endpoints: spelare + öppen lucka + felhantering.
+  const dayRoute = (name, fn) => async (req, res) => {
     try {
       const p = await player(req, res); if (!p) return;
-      const n = Number(req.params.n);
-      if (!Number.isInteger(n) || n < 1 || n > content.days.length) return res.status(404).json({ error: 'ingen sådan lucka' });
-      // Datumlåset: en framtida lucka skickas aldrig, till någon.
-      if (dayDate(content, n) > today()) return res.status(403).json({ error: 'locked' });
-      const [events, solves, profiles] = await Promise.all([store.listEvents(), store.listSolves(), profilesSafe()]);
-      res.json(buildDayView({ content, n, today: today(), me: p.slot, players: p.players, profiles, events, solves }));
-    } catch (e) { console.error('Nattåget: fel i /day:', e.message); res.status(500).json({ error: 'serverfel' }); }
-  });
+      const n = openDayNumber(req, res); if (n == null) return;
+      await fn(req, res, p, n);
+    } catch (e) { console.error('Nattåget: fel i ' + name + ':', e.message); res.status(500).json({ error: 'serverfel' }); }
+  };
+
+  router.get('/day/:n', dayRoute('/day', async (req, res, p, n) => {
+    res.json(await dayView(n, p));
+  }));
+
+  // Lägger ut spelarens lapp på tavlan. Bara samma dag (dagens lucka),
+  // och inte för fotouppgifter (de läggs ut via /photo). Idempotent.
+  router.post('/day/:n/fragment', dayRoute('/fragment', async (req, res, p, n) => {
+    const view = await dayView(n, p);
+    if (view.status !== 'today') return res.status(409).json({ error: 'not_today' });
+    if (content.days[n - 1].fragments[p.slot].kind === 'photo_task') return res.status(400).json({ error: 'photo_task' });
+    if (!view.fragments[p.slot].posted) await store.insertEvent({ day: n, profileId: p.profileId, kind: 'fragment', createdAt: now() });
+    res.json({ ok: true, day: await dayView(n, p) });
+  }));
+
+  router.post('/day/:n/note', dayRoute('/note', async (req, res, p, n) => {
+    const text = cleanNote((req.body || {}).text);
+    if (!text) return res.status(400).json({ error: 'tom anteckning' });
+    if ([...text].length > MAX_NOTE) return res.status(400).json({ error: 'for lang anteckning' });
+    await store.insertEvent({ day: n, profileId: p.profileId, kind: 'note', body: text, createdAt: now() });
+    res.json({ ok: true, day: await dayView(n, p) });
+  }));
+
+  // Låset. Felaktiga försök sparas som 'attempt' och syns på tavlan.
+  router.post('/day/:n/solve', dayRoute('/solve', async (req, res, p, n) => {
+    const d = content.days[n - 1];
+    const view = await dayView(n, p);
+    if (view.status === 'solved') return res.status(409).json({ error: 'already_solved', day: view });
+    if (!view.lockOpen) return res.status(409).json({ error: 'lock_closed' });
+    if (view.missingItems.length) return res.status(409).json({ error: 'missing_items', missingItems: view.missingItems });
+    if (view.attemptsLeft <= 0) return res.status(429).json({ error: 'too_many_attempts' });
+    const given = normalizeAnswer(d.lock, (req.body || {}).answer).slice(0, 40);
+    if (!given) return res.status(400).json({ error: 'tomt svar' });
+    if (given === normalizeAnswer(d.lock, d.answer)) {
+      // Samma dag med alla fem = tillsammans; annars i efterhand.
+      const mode = view.status === 'today' && view.allLit ? 'together' : 'archive';
+      const at = now();
+      if (await store.insertSolve({ day: n, profileId: p.profileId, mode, solvedAt: at })) {
+        await store.insertEvent({ day: n, profileId: p.profileId, kind: 'solve', createdAt: at });
+      }
+      return res.json({ correct: true, day: await dayView(n, p) });
+    }
+    await store.insertEvent({ day: n, profileId: p.profileId, kind: 'attempt', body: given, createdAt: now() });
+    res.json({ correct: false, day: await dayView(n, p) });
+  }));
 
   router.post('/admin/players', async (req, res) => {
     const b = req.body || {};

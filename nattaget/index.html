@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Spelet har alltid sitt mörka tema, oavsett sajtens tema. -->
+<meta name="theme-color" content="#0F1A2B" data-light="#0F1A2B" data-dark="#0F1A2B">
+<meta name="color-scheme" content="dark">
+<title>Nattåget</title>
+<script src="/shared/theme.js"></script>
+<script src="/shared/profile.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Nattåget — se nattaget/SPEC.md. Färgerna är spelets egna (SPEC 3)
+     och gäller i både ljust och mörkt sajttema. */
+  :root {
+    --bg: #0F1A2B;
+    --surface: #17253B;
+    --surface-dark: #0B1422;
+    --border: #3A4A63;
+    --text: #E8EEF5;
+    --muted: #A9B6C8;
+    --soft: #C9D3E0;
+    --glow: #F2B544;
+    --flame: #FFD27A;
+    --off: #5B6B84;
+    --paper: #F4EBDD;
+    --paper-ink: #2A2118;
+    --serif: 'DM Serif Display', Georgia, serif;
+    --sans: 'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 16px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+  }
+  #app {
+    max-width: 480px; margin: 0 auto;
+    padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 40px);
+  }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 400; margin: 0; letter-spacing: .01em; }
+  p { margin: 0; }
+  a { color: inherit; }
+  button { font: inherit; color: inherit; }
+  svg { display: block; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  /* ---------- Knappar ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 48px; padding: 0 20px; border-radius: 12px; border: 0;
+    font-weight: 600; font-size: 16px; cursor: pointer; text-decoration: none;
+  }
+  .btn-primary { background: var(--glow); color: #1A1406; }
+  .btn-primary:active { filter: brightness(.92); }
+  .btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn[disabled] { opacity: .5; cursor: default; }
+  .btn-block { width: 100%; }
+  .icon-btn {
+    width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 12px; border: 1px solid var(--border); background: transparent; cursor: pointer; text-decoration: none;
+  }
+
+  /* ---------- Toppfält ---------- */
+  .topbar { display: flex; align-items: center; gap: 12px; min-height: 44px; margin-bottom: 20px; }
+  .topbar .date { flex: 1; text-align: center; color: var(--muted); font-size: 14px; }
+  .stars-pill { display: inline-flex; align-items: center; gap: 6px; min-width: 44px; justify-content: flex-end; color: var(--glow); font-weight: 600; }
+
+  /* ---------- Kalendern ---------- */
+  .cal-head { text-align: center; margin: 12px 0 20px; }
+  .cal-head h1 { font-size: 44px; line-height: 1.1; }
+  .cal-head p { color: var(--soft); margin-top: 8px; font-size: 15px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+  .stat { background: var(--surface); border-radius: 14px; padding: 12px 14px; }
+  .stat .label { color: var(--muted); font-size: 13px; }
+  .stat .value { font-family: var(--serif); font-size: 28px; display: flex; align-items: center; gap: 8px; }
+  .stat .value small { font-family: var(--sans); font-size: 15px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .cell {
+    aspect-ratio: 1 / 1.08; border-radius: 14px; padding: 8px; text-decoration: none;
+    display: flex; flex-direction: column; justify-content: space-between;
+    background: var(--surface-dark); border: 1px solid var(--border);
+  }
+  .cell .num { font-family: var(--serif); font-size: 26px; line-height: 1; }
+  .cell .tag { font-size: 11.5px; font-weight: 600; color: var(--muted); line-height: 1.2; }
+  .cell.today { background: var(--glow); color: #1A1406; border-color: var(--glow); box-shadow: 0 0 24px rgba(242,181,68,.45), 0 0 4px rgba(255,210,122,.6); }
+  .cell.today .tag { color: #3B2C0A; }
+  .cell.solved { border-color: var(--glow); }
+  .cell.solved .tag { color: var(--glow); }
+  .cell.locked { background: var(--surface); border-color: transparent; opacity: .45; }
+  .cell.locked .num { color: var(--muted); }
+  .packing { margin-top: 24px; }
+  .packing h2, .section-title { font-size: 22px; margin-bottom: 10px; }
+  .item { background: var(--surface); border-radius: 14px; padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; }
+  .item + .item { margin-top: 8px; }
+  .item .name { font-weight: 600; }
+  .item .desc { color: var(--muted); font-size: 14px; }
+  .item svg { flex: none; margin-top: 2px; color: var(--glow); }
+  .who { text-align: center; color: var(--muted); font-size: 14px; margin-top: 28px; }
+  .who button { background: none; border: 0; color: var(--glow); text-decoration: underline; cursor: pointer; min-height: 44px; padding: 0 6px; }
+
+  /* ---------- Luckan ---------- */
+  .eyebrow { color: var(--glow); font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  .day-head h1 { font-size: 32px; line-height: 1.15; margin: 6px 0 10px; }
+  .intro { color: var(--soft); }
+  section { margin-top: 28px; }
+
+  .lanterns { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; text-align: center; }
+  .lantern { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .lantern svg { width: 40px; height: 56px; color: var(--off); }
+  .lantern.lit svg { color: var(--glow); filter: drop-shadow(0 0 10px rgba(242,181,68,.55)); }
+  .lantern .flame { fill: transparent; }
+  .lantern.lit .flame { fill: var(--flame); }
+  .lantern.lit .pane { fill: rgba(255,210,122,.18); }
+  .lantern .name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lantern.lit .name { color: var(--text); }
+  .lantern-line { text-align: center; color: var(--soft); margin-top: 14px; font-size: 15px; }
+
+  .paper {
+    background: var(--paper); color: var(--paper-ink); border-radius: 4px; padding: 18px 18px 16px;
+    transform: rotate(-1.2deg); box-shadow: 0 10px 24px rgba(0,0,0,.35);
+    font-size: 17px; line-height: 1.45; white-space: pre-wrap;
+  }
+  .paper .from { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; opacity: .6; margin-bottom: 6px; }
+  .mine-actions { margin-top: 18px; }
+  .on-board { display: flex; align-items: center; gap: 8px; color: var(--glow); font-weight: 600; min-height: 48px; }
+
+  .board { display: flex; flex-direction: column; gap: 10px; }
+  .post { background: var(--surface); border-radius: 12px; padding: 12px 14px; }
+  .post .meta { display: flex; gap: 8px; align-items: baseline; font-size: 13px; color: var(--muted); }
+  .post .meta .n { font-weight: 700; }
+  .post .meta .t { margin-left: auto; }
+  .post .body { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .post .fragment { margin-top: 8px; background: var(--paper); color: var(--paper-ink); border-radius: 4px; padding: 10px 12px; white-space: pre-wrap; }
+  .post.attempt .body { font-variant-numeric: tabular-nums; }
+  .post.attempt .body b { letter-spacing: .12em; }
+  .post.solve { border: 1px solid var(--glow); }
+  .waiting { border: 1.5px dashed var(--border); border-radius: 12px; padding: 14px; color: var(--muted); text-align: center; }
+  .empty { color: var(--muted); font-size: 15px; }
+
+  .note-form { display: flex; gap: 8px; align-items: flex-end; }
+  .note-form textarea {
+    flex: 1; min-height: 48px; max-height: 160px; resize: none; padding: 12px 14px; border-radius: 12px;
+    background: var(--surface-dark); color: var(--text); border: 1px solid var(--border); font: inherit; line-height: 1.35;
+  }
+  .note-form textarea:focus, .lock-box:focus { outline: 2px solid var(--glow); outline-offset: 1px; }
+  .note-count { font-size: 12px; color: var(--muted); text-align: right; margin-top: 4px; min-height: 18px; }
+
+  .lock { background: var(--surface); border-radius: 16px; padding: 18px 16px; }
+  .lock-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .lock-head svg { color: var(--glow); }
+  .lock.closed .lock-head svg { color: var(--off); }
+  .lock-head h2 { font-size: 22px; }
+  .lock-boxes { display: flex; gap: 10px; justify-content: center; margin-bottom: 16px; }
+  .lock-box {
+    width: 52px; height: 64px; text-align: center; font-size: 28px; font-family: var(--serif);
+    background: var(--surface-dark); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 0;
+    caret-color: var(--glow);
+  }
+  .lock-box.static { display: flex; align-items: center; justify-content: center; color: var(--glow); border-color: var(--glow); }
+  .lock-msg { color: var(--muted); font-size: 15px; text-align: center; }
+  .lock-msg.err { color: #FFB4A2; }
+  .lock-msg + .btn, .lock-boxes + .btn { margin-top: 4px; }
+  .lock-foot { margin-top: 10px; font-size: 13px; color: var(--muted); text-align: center; min-height: 20px; }
+  .shake { animation: shake .35s; }
+  @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+
+  /* ---------- Löst lucka ---------- */
+  .solved-meta { color: var(--glow); font-size: 14px; font-weight: 600; text-align: center; margin-top: 20px; }
+  .solved-head { text-align: center; }
+  .solved-head h1 { font-size: 32px; line-height: 1.15; margin: 6px 0 16px; }
+  .epilogue { color: var(--soft); font-size: 17px; }
+  .story { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+  .story li { display: flex; gap: 10px; align-items: flex-start; color: var(--soft); }
+  .story li::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--glow); margin-top: 9px; }
+  .new-item { border: 1px solid var(--glow); }
+
+  /* ---------- Meddelandesidor ---------- */
+  .message { text-align: center; padding-top: 18vh; }
+  .message svg { margin: 0 auto 18px; color: var(--glow); }
+  .message h1 { font-size: 34px; margin-bottom: 12px; }
+  .message p { color: var(--soft); max-width: 340px; margin: 0 auto 24px; }
+  .message .prologue { color: var(--soft); font-size: 17px; text-align: left; background: var(--surface); padding: 18px; border-radius: 14px; margin: 0 auto 24px; max-width: 420px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 20px); transform: translateX(-50%);
+    background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 12px 16px; border-radius: 12px;
+    max-width: calc(100% - 32px); box-shadow: 0 10px 30px rgba(0,0,0,.4); z-index: 50;
+  }
+  .loading { text-align: center; color: var(--muted); padding-top: 30vh; }
+</style>
+</head>
+<body>
+<div id="app"><p class="loading">Laddar …</p></div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- API ---------- */
+  var API_BASE = 'https://games-nordhammer-production.up.railway.app';
+  function apiBase(){ try { return (localStorage.getItem('nordhammer:api') || API_BASE || '').replace(/\/+$/, ''); } catch(e){ return API_BASE; } }
+  // Svarar alltid { status, body } — även vid fel — så att vyn kan
+  // visa rätt sida (403 inte spelare, 503 inte redo, 403 låst lucka).
+  function api(method, path, body){
+    var profile = NordhammerProfile.current();
+    var pid = profile ? profile.id : '';
+    var opts = { method: method };
+    if (method === 'GET') path += (path.indexOf('?') < 0 ? '?' : '&') + 'profile=' + encodeURIComponent(pid);
+    else { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(Object.assign({ profile: pid }, body || {})); }
+    return fetch(apiBase() + '/api/nattaget' + path, opts).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(d){ return { status: r.status, body: d }; });
+    });
+  }
+
+  /* ---------- Små hjälpare ---------- */
+  var app = document.getElementById('app');
+  // Bygger DOM. Text sätts alltid som text, aldrig som HTML.
+  function el(tag, attrs){
+    var node = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function(k){
+      var v = attrs[k];
+      if (v == null || v === false) return;
+      if (k === 'class') node.className = v;
+      else if (k === 'text') node.textContent = v;
+      else if (k === 'style') node.setAttribute('style', v);
+      else if (k.slice(0, 2) === 'on') node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v === true ? '' : v);
+    });
+    for (var i = 2; i < arguments.length; i++) add(node, arguments[i]);
+    return node;
+  }
+  function add(node, c){
+    if (c == null || c === false) return;
+    if (Array.isArray(c)) { c.forEach(function(x){ add(node, x); }); return; }
+    node.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+  }
+  // Ikoner (inline-SVG, inga emoji). Bara statiska strängar här.
+  var ICONS = {
+    back: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+    star: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4L2.8 9.5l6.4-.8z"/></svg>',
+    lock: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/></svg>',
+    unlock: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 017.6-1.7"/></svg>',
+    check: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    bag: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1.2 12H6.2z"/><path d="M9 8V6a3 3 0 016 0v2"/></svg>',
+    train: '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14M9 21l-2 0M15 21h2M8 17l-2 4M16 17l2 4"/><circle cx="9" cy="14" r=".8" fill="currentColor"/><circle cx="15" cy="14" r=".8" fill="currentColor"/></svg>',
+    lantern: '<svg viewBox="0 0 40 56" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 9a6 6 0 0112 0" stroke-linecap="round"/><path d="M12 13h16l-2-4H14z" fill="currentColor"/><path class="pane" d="M12 13h16v28H12z"/><path d="M10 41h20v5H10z" fill="currentColor"/><path class="flame" stroke="none" d="M20 22c3 4 4 6.5 4 9a4 4 0 01-8 0c0-2.5 1-5 4-9z"/><path d="M20 41v-4" stroke-linecap="round"/></svg>'
+  };
+  function icon(name){ var s = document.createElement('span'); s.innerHTML = ICONS[name]; return s.firstChild; }
+
+  var MONTHS = ['januari','februari','mars','april','maj','juni','juli','augusti','september','oktober','november','december'];
+  var WEEKDAYS = ['söndag','måndag','tisdag','onsdag','torsdag','fredag','lördag'];
+  function prettyDate(iso){ // "2026-12-01" → "tisdag 1 december"
+    var d = new Date(iso + 'T12:00:00Z');
+    return WEEKDAYS[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
+  }
+  function clock(iso){
+    return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+  }
+  var NUMBER_WORDS = ['Ingen', 'En', 'Två', 'Tre', 'Fyra', 'Alla fem'];
+  function joinNames(names){ return names.length <= 1 ? names.join('') : names.slice(0, -1).join(', ') + ' och ' + names[names.length - 1]; }
+  function genitive(name){ return /[sxz]$/i.test(name) ? name : name + 's'; }
+  function colorStyle(c){ return /^#[0-9a-f]{3,8}$/i.test(c || '') ? 'color:' + c : null; }
+
+  var toastTimer;
+  function toast(msg){
+    var old = document.querySelector('.toast'); if (old) old.remove();
+    var t = el('div', { class: 'toast', role: 'status', text: msg });
+    document.body.appendChild(t);
+    clearTimeout(toastTimer); toastTimer = setTimeout(function(){ t.remove(); }, 3500);
+  }
+
+  /* ---------- Vyer ---------- */
+  var view = { name: null, day: null, data: null };
+
+  function setScreen(nodes){
+    app.textContent = '';
+    add(app, nodes);
+  }
+
+  function messagePage(title, text, actions, extra){
+    setScreen(el('div', { class: 'message' }, icon('train'), el('h1', { text: title }), text ? el('p', { text: text }) : null, extra, actions));
+  }
+  function switchProfileButton(label){
+    return el('button', { class: 'btn btn-primary', text: label || 'Välj profil', onclick: function(){ NordhammerProfile.openSwitcher(function(){ refresh(); }); } });
+  }
+  // Gemensam felhantering för /state och /day.
+  function handleError(res){
+    if (res.status === 503) { messagePage('Nattåget är inte redo än', 'Kom tillbaka lite senare.', el('a', { class: 'btn btn-secondary', href: '/', text: 'Till startsidan' })); return true; }
+    if (res.status === 403 && res.body && res.body.error === 'not_player') {
+      messagePage('Nattåget', 'Nattåget är familjens julkalender. Välj din profil för att spela.', switchProfileButton());
+      return true;
+    }
+    if (res.status === 403 && res.body && res.body.error === 'locked') { toast('Den luckan är inte öppen än.'); location.hash = ''; return true; }
+    if (res.status === 404) { location.hash = ''; return true; }
+    if (res.status >= 400) { messagePage('Något gick fel', 'Kunde inte hämta tåget just nu.', el('button', { class: 'btn btn-primary', text: 'Försök igen', onclick: function(){ refresh(); } })); return true; }
+    return false;
+  }
+
+  /* --- Kalendern --- */
+  function renderCalendar(s){
+    if (!s.started) {
+      return messagePage('Kommer 1 december', null, null,
+        el('div', { class: 'prologue', text: s.prologue || '' }));
+    }
+    var me = s.players.filter(function(p){ return p.slot === s.me; })[0];
+    var cells = s.days.map(function(d){
+      if (d.status === 'locked') {
+        return el('div', { class: 'cell locked', 'aria-label': 'Lucka ' + d.day + ', låst' }, el('span', { class: 'num', text: d.day }), icon('lock'));
+      }
+      var cls = 'cell', tag;
+      if (d.status === 'today') { cls += ' today'; tag = 'Idag · ' + (d.litCount || 0) + '/5'; }
+      else if (d.status === 'solved') { cls += ' solved'; tag = d.solvedMode === 'together' ? 'Alla fem' : 'Arkiv'; }
+      else tag = 'Olöst';
+      return el('a', { class: cls, href: '#dag-' + d.day, 'aria-label': 'Lucka ' + d.day + ', ' + tag }, el('span', { class: 'num', text: d.day }), el('span', { class: 'tag', text: tag }));
+    });
+    setScreen([
+      el('div', { class: 'topbar' }, el('a', { class: 'icon-btn', href: '/', 'aria-label': 'Till startsidan' }, icon('back'))),
+      el('header', { class: 'cal-head' }, el('h1', { text: s.title }), s.subtitle ? el('p', { text: s.subtitle }) : null),
+      el('div', { class: 'stats' },
+        el('div', { class: 'stat' }, el('div', { class: 'label', text: 'Lagets stjärnor' }), el('div', { class: 'value' }, el('span', { style: 'color:var(--glow)' }, icon('star')), String(s.stars))),
+        el('div', { class: 'stat' }, el('div', { class: 'label', text: 'Vagnar öppnade' }), el('div', { class: 'value' }, String(s.openedCount), el('small', { text: '/ ' + s.totalDays })))),
+      el('nav', { class: 'grid', 'aria-label': 'Luckor' }, cells),
+      s.items && s.items.length ? el('section', { class: 'packing' }, el('h2', { text: 'Lagets packning' }), s.items.map(itemCard)) : null,
+      el('p', { class: 'who' }, 'Du spelar som ', el('b', { text: me ? me.name : '' }), ' · ', el('button', { text: 'Byt profil', onclick: function(){ NordhammerProfile.openSwitcher(function(){ refresh(); }); } }))
+    ]);
+  }
+  function itemCard(it, isNew){
+    return el('div', { class: 'item' + (isNew ? ' new-item' : '') }, icon('bag'),
+      el('div', null, el('div', { class: 'name', text: it.name }), it.description ? el('div', { class: 'desc', text: it.description }) : null));
+  }
+
+  /* --- Luckan --- */
+  function topbar(d){
+    return el('div', { class: 'topbar' },
+      el('a', { class: 'icon-btn', href: '#', 'aria-label': 'Tillbaka till tåget' }, icon('back')),
+      el('div', { class: 'date', text: prettyDate(d.date) }),
+      el('div', { class: 'stars-pill', 'aria-label': d.stars + ' stjärnor' }, icon('star'), String(d.stars)));
+  }
+  function lanternRow(d){
+    return el('div', { class: 'lanterns' }, d.players.map(function(p){
+      return el('div', { class: 'lantern' + (p.lit ? ' lit' : '') }, icon('lantern'), el('span', { class: 'name', text: p.name }));
+    }));
+  }
+  function lanternSentence(d){
+    if (d.allLit) return d.status === 'today' ? 'Alla fem lyktor lyser. Låset är öppet.' : 'Alla fem lyktor lyste.';
+    var dark = d.players.filter(function(p){ return !p.lit; }).map(function(p){ return p.name; });
+    if (d.status !== 'today') return d.litCount ? NUMBER_WORDS[d.litCount] + ' av fem var med samma dag.' : 'Ingen hann vara med samma dag.';
+    if (d.litCount === 0) return 'Ingen lykta lyser än.';
+    return NUMBER_WORDS[d.litCount] + (d.litCount === 1 ? ' lykta lyser. ' : ' lyktor lyser. ') + joinNames(dark) + ' har inte hittat ' + (dark.length === 1 ? 'sin lapp' : 'sina lappar') + ' än.';
+  }
+  function playerName(d, slot){ var p = d.players.filter(function(x){ return x.slot === slot; })[0]; return p ? p.name : slot; }
+
+  function fragmentBody(f){
+    // Fas 2: textlappar. Övriga typer (svg, grid_map, foto) kommer i fas 4.
+    var parts = [];
+    if (f.text) parts.push(f.text);
+    if (f.reveal) parts.push(f.reveal);
+    if (!parts.length) parts.push('(Den här lappen kan inte visas än.)');
+    return parts.join('\n\n');
+  }
+
+  function myFragmentSection(d){
+    var f = d.fragments[d.me];
+    var canPost = d.status === 'today' && !f.posted && f.kind !== 'photo_task';
+    return el('section', null,
+      el('h2', { class: 'section-title', text: 'Din lapp' }),
+      el('div', { class: 'paper' }, el('div', { class: 'from', text: 'Till ' + playerName(d, d.me) }), fragmentBody(f)),
+      el('div', { class: 'mine-actions' },
+        f.posted ? el('div', { class: 'on-board' }, icon('check'), 'Ligger på tavlan')
+          : canPost ? el('button', { class: 'btn btn-primary btn-block', text: 'Lägg ut på tavlan', onclick: postFragment })
+          : f.kind === 'photo_task' && d.status === 'today' ? el('p', { class: 'empty', text: 'Fotouppgifter kommer snart.' }) : null));
+  }
+
+  function boardSection(d){
+    var posts = d.board.map(function(b){
+      var head = el('div', { class: 'meta' }, el('span', { class: 'n', style: colorStyle(b.color), text: b.name }), el('span', { class: 't', text: clock(b.at) }));
+      if (b.kind === 'fragment' || b.kind === 'photo') {
+        var f = d.fragments[b.slot];
+        return el('div', { class: 'post' }, head, el('div', { class: 'body', text: 'lade ut sin lapp' }), f ? el('div', { class: 'fragment', text: fragmentBody(f) }) : null);
+      }
+      if (b.kind === 'note') return el('div', { class: 'post' }, head, el('div', { class: 'body', text: b.text }));
+      if (b.kind === 'attempt') return el('div', { class: 'post attempt' }, head, el('div', { class: 'body' }, 'provade ', el('b', { text: b.text })));
+      if (b.kind === 'hint') {
+        var h = d.hints[b.hint - 1];
+        return el('div', { class: 'post' }, head, el('div', { class: 'body', text: 'tog ledtråd ' + b.hint + (h ? ': ' + h.text : '') }));
+      }
+      if (b.kind === 'solve') return el('div', { class: 'post solve' }, head, el('div', { class: 'body', text: 'öppnade låset' }));
+      return null;
+    });
+    var waiting = null;
+    if (d.status === 'today') {
+      var missing = d.players.filter(function(p){ return !(d.fragments[p.slot] && d.fragments[p.slot].posted); }).map(function(p){ return genitive(p.name); });
+      if (missing.length) waiting = el('div', { class: 'waiting', text: 'Väntar på ' + joinNames(missing) + (missing.length === 1 ? ' lapp …' : ' lappar …') });
+    }
+    return el('section', null,
+      el('h2', { class: 'section-title', text: 'Tavlan' }),
+      el('div', { class: 'board' }, posts.length ? posts : (waiting ? null : el('p', { class: 'empty', text: 'Tavlan är tom.' })), waiting));
+  }
+
+  function noteSection(){
+    var ta = el('textarea', { id: 'note', rows: '1', maxlength: '280', placeholder: 'Skriv en anteckning …', 'aria-label': 'Anteckning' });
+    var count = el('div', { class: 'note-count', id: 'note-count' });
+    function update(){
+      var n = Array.from(ta.value).length;
+      count.textContent = n > 200 ? n + ' / 280' : '';
+      ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 2, 160) + 'px';
+    }
+    ta.addEventListener('input', update);
+    var form = el('form', { class: 'note-form', onsubmit: function(e){ e.preventDefault(); sendNote(ta); } },
+      ta, el('button', { class: 'btn btn-secondary', type: 'submit', text: 'Skicka' }));
+    return el('section', null, form, count);
+  }
+
+  function lockSection(d){
+    var lock = d.lock;
+    var open = d.lockOpen && !d.missingItems.length;
+    var body;
+    if (!d.lockOpen) {
+      body = el('p', { class: 'lock-msg', text: 'Låset går att använda när alla fem lappar ligger på tavlan.' });
+    } else if (d.missingItems.length) {
+      body = el('p', { class: 'lock-msg', text: 'Låset går inte att öppna än. Det behövs: ' + joinNames(d.missingItems.map(function(i){ return i.name || 'något som laget inte har hittat'; })) + '.' });
+    } else if (lock.type !== 'digits') {
+      body = el('p', { class: 'lock-msg', text: 'Den här låstypen kommer snart.' });
+    } else if (d.attemptsLeft <= 0) {
+      body = el('p', { class: 'lock-msg', text: 'Du har använt dina tio försök idag. Någon annan i laget kan fortsätta.' });
+    } else {
+      var boxes = [];
+      for (var i = 0; i < lock.length; i++) {
+        boxes.push(el('input', { class: 'lock-box', id: 'lock-' + i, type: 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', 'aria-label': 'Siffra ' + (i + 1) }));
+      }
+      wireDigitBoxes(boxes);
+      body = el('form', { onsubmit: function(e){ e.preventDefault(); submitDigits(boxes); } },
+        el('div', { class: 'lock-boxes', id: 'lock-boxes' }, boxes),
+        el('button', { class: 'btn btn-primary btn-block', type: 'submit', text: 'Öppna låset' }),
+        el('p', { class: 'lock-foot', id: 'lock-foot', text: d.attemptsLeft < 10 ? 'Du har ' + d.attemptsLeft + ' försök kvar idag.' : '' }));
+    }
+    return el('section', null, el('div', { class: 'lock' + (open ? '' : ' closed') },
+      el('div', { class: 'lock-head' }, icon(open ? 'unlock' : 'lock'), el('h2', { text: 'Låset' })), body));
+  }
+  function wireDigitBoxes(boxes){
+    boxes.forEach(function(b, i){
+      // Flera siffror på en gång (autofyll, snabb inmatning) fördelas
+      // över rutorna från den här och framåt.
+      b.addEventListener('input', function(){
+        var digits = b.value.replace(/\D/g, '');
+        if (digits.length > 1 && b.value.length > 1 && b.selectionStart === b.value.length && digits[0] === b.dataset.prev) digits = digits.slice(1);
+        b.value = digits.slice(0, 1);
+        for (var k = 1; k < digits.length && boxes[i + k]; k++) boxes[i + k].value = digits[k];
+        boxes.forEach(function(x){ x.dataset.prev = x.value; });
+        var next = boxes[Math.min(i + Math.max(digits.length, 1), boxes.length - 1)];
+        if (digits && next !== b) next.focus();
+      });
+      b.addEventListener('keydown', function(e){
+        if (e.key === 'Backspace' && !b.value && boxes[i - 1]) { boxes[i - 1].focus(); boxes[i - 1].value = ''; e.preventDefault(); }
+        if (e.key === 'ArrowLeft' && boxes[i - 1]) boxes[i - 1].focus();
+        if (e.key === 'ArrowRight' && boxes[i + 1]) boxes[i + 1].focus();
+      });
+      // Klistra in en hel kod.
+      b.addEventListener('paste', function(e){
+        var t = ((e.clipboardData || window.clipboardData).getData('text') || '').replace(/\D/g, '');
+        if (!t) return;
+        e.preventDefault();
+        for (var k = 0; k < boxes.length - i && k < t.length; k++) boxes[i + k].value = t[k];
+        (boxes[Math.min(i + t.length, boxes.length - 1)]).focus();
+      });
+      b.addEventListener('focus', function(){ b.select(); });
+    });
+  }
+
+  function renderDay(d){
+    if (d.status === 'solved') return renderSolved(d);
+    // Behåll det spelaren håller på att skriva när tavlan uppdateras.
+    var keep = saveInputs();
+    setScreen([
+      topbar(d),
+      el('header', { class: 'day-head' },
+        el('div', { class: 'eyebrow', text: (d.status === 'archive' ? 'Arkivlucka ' : 'Lucka ') + d.day }),
+        el('h1', { text: d.title }),
+        el('p', { class: 'intro', text: d.intro })),
+      el('section', null, lanternRow(d), el('p', { class: 'lantern-line', text: lanternSentence(d) })),
+      myFragmentSection(d),
+      boardSection(d),
+      noteSection(),
+      lockSection(d)
+    ]);
+    restoreInputs(keep);
+  }
+  function saveInputs(){
+    var out = { values: {}, focus: null };
+    app.querySelectorAll('textarea, input').forEach(function(n){ if (n.id) out.values[n.id] = n.value; });
+    var a = document.activeElement;
+    if (a && a.id && app.contains(a)) out.focus = { id: a.id, start: a.selectionStart, end: a.selectionEnd };
+    return out;
+  }
+  function restoreInputs(keep){
+    Object.keys(keep.values).forEach(function(id){
+      var n = document.getElementById(id);
+      if (n) { n.value = keep.values[id]; n.dispatchEvent(new Event('input')); }
+    });
+    if (keep.focus) {
+      var f = document.getElementById(keep.focus.id);
+      if (f) { f.focus({ preventScroll: true }); try { f.setSelectionRange(keep.focus.start, keep.focus.end); } catch(e){} }
+    }
+  }
+
+  function renderSolved(d){
+    var s = d.solved;
+    var answer = String(d.solution || '').split('');
+    setScreen([
+      topbar(d),
+      el('section', { style: 'margin-top:8px' }, lanternRow(d)),
+      el('p', { class: 'solved-meta', text: 'Lucka ' + d.day + ' · löst ' + s.time + ' · ' + (s.mode === 'together' ? 'alla fem' : 'i efterhand') }),
+      el('header', { class: 'solved-head' },
+        el('h1', { text: d.title }),
+        el('div', { class: 'lock-boxes', 'aria-label': 'Svaret: ' + d.solution }, answer.map(function(ch){ return el('div', { class: 'lock-box static', text: ch }); }))),
+      el('section', null, el('p', { class: 'epilogue', text: d.epilogue.text })),
+      d.epilogue.item ? el('section', null, el('h2', { class: 'section-title', text: 'Nytt föremål' }), itemCard(d.epilogue.item, true)) : null,
+      el('section', null, el('h2', { class: 'section-title', text: 'Så här gick det till' }),
+        el('ul', { class: 'story' }, d.story.map(function(line){ return el('li', { text: line }); }))),
+      el('section', null, el('a', { class: 'btn btn-primary btn-block', href: '#', text: 'Tillbaka till tåget' }))
+    ]);
+  }
+
+  /* ---------- Åtgärder ---------- */
+  var busy = false;
+  function act(path, body){
+    if (busy) return Promise.resolve(null);
+    busy = true;
+    return api('POST', '/day/' + view.day + path, body).then(function(res){ busy = false; return res; },
+      function(){ busy = false; toast('Ingen kontakt med tåget. Försök igen.'); return null; });
+  }
+  function postFragment(){
+    act('/fragment').then(function(res){
+      if (!res) return;
+      if (res.status === 200) { view.data = res.body.day; renderDay(view.data); }
+      else if (!handleError(res)) toast('Kunde inte lägga ut lappen.');
+    });
+  }
+  function sendNote(ta){
+    var text = ta.value.trim();
+    if (!text) return;
+    act('/note', { text: text }).then(function(res){
+      if (!res) return;
+      if (res.status === 200) {
+        ta.value = '';
+        ta.blur();
+        view.data = res.body.day; renderDay(view.data);
+      } else toast(res.status === 400 ? 'Anteckningen får vara högst 280 tecken.' : 'Kunde inte skicka anteckningen.');
+    });
+  }
+  function submitDigits(boxes){
+    var answer = boxes.map(function(b){ return b.value; }).join('');
+    if (answer.length !== boxes.length) { shake(); (boxes.filter(function(b){ return !b.value; })[0] || boxes[0]).focus(); return; }
+    act('/solve', { answer: answer }).then(function(res){
+      if (!res) return;
+      var b = res.body || {};
+      if (res.status === 200 && b.correct) { view.data = b.day; window.scrollTo(0, 0); renderDay(view.data); return; }
+      if (res.status === 200) {
+        boxes.forEach(function(x){ x.value = ''; });
+        view.data = b.day; renderDay(view.data);
+        var first = document.getElementById('lock-0'); if (first) first.focus({ preventScroll: true });
+        shake();
+        var foot = document.getElementById('lock-foot');
+        if (foot) { foot.textContent = 'Fel kod. ' + (b.day.attemptsLeft ? 'Du har ' + b.day.attemptsLeft + ' försök kvar idag.' : ''); foot.className = 'lock-foot lock-msg err'; }
+        return;
+      }
+      if (b.error === 'already_solved') { view.data = b.day; renderDay(view.data); return; }
+      if (b.error === 'too_many_attempts') toast('Du har använt dina tio försök idag.');
+      else if (b.error === 'lock_closed') toast('Låset är inte öppet än.');
+      else if (b.error === 'missing_items') toast('Laget saknar något för att öppna låset.');
+      else if (!handleError(res)) toast('Något gick fel. Försök igen.');
+      refresh();
+    });
+  }
+  function shake(){
+    var b = document.getElementById('lock-boxes'); if (!b) return;
+    b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
+  }
+
+  /* ---------- Navigering och uppdatering ---------- */
+  function route(){
+    var m = /^#dag-(\d{1,2})$/.exec(location.hash);
+    return m ? { name: 'day', day: +m[1] } : { name: 'calendar', day: null };
+  }
+  var loadSeq = 0;
+  // Byter vy (visar "Laddar") eller uppdaterar tyst den vy som visas.
+  function refresh(){
+    var r = route();
+    var changed = r.name !== view.name || r.day !== view.day;
+    view.name = r.name; view.day = r.day;
+    if (changed) { view.data = null; setScreen(el('p', { class: 'loading', text: 'Laddar …' })); window.scrollTo(0, 0); }
+    var seq = ++loadSeq;
+    var req = r.name === 'day' ? api('GET', '/day/' + r.day) : api('GET', '/state');
+    req.then(function(res){
+      if (seq !== loadSeq) return; // en nyare hämtning har startat
+      if (handleError(res)) return;
+      view.data = res.body;
+      if (r.name === 'day') renderDay(res.body); else renderCalendar(res.body);
+    }, function(){
+      if (seq !== loadSeq) return;
+      if (view.data) return; // behåll det vi har vid tillfälligt nätfel
+      messagePage('Ingen kontakt', 'Kunde inte nå tåget. Kontrollera uppkopplingen.', el('button', { class: 'btn btn-primary', text: 'Försök igen', onclick: function(){ refresh(); } }));
+    });
+  }
+
+  // Hämtar luckan var 20:e sekund medan sidan är synlig.
+  // Inte medan någon skriver — en omritning stänger tangentbordet på mobilen.
+  function typing(){ var a = document.activeElement; return !!(a && app.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName)); }
+  setInterval(function(){
+    if (document.visibilityState === 'visible' && !busy && !typing()) refresh();
+  }, 20000);
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') refresh(); });
+  window.addEventListener('hashchange', function(){ refresh(); });
+
+  NordhammerProfile.ensurePicker(function(){ refresh(); });
+})();
+</script>
+</body>
+</html>

@@ -16,11 +16,13 @@ Den här filen beskriver spelmotorn. Det riktiga innehållet (berättelse, gåto
 - Varje lucka har en lapp (`fragment`) per spelare. Spelaren ser bara sin egen lapp.
 - Spelaren trycker **”Lägg ut på tavlan”**. Då hamnar lappen på den gemensamma tavlan och spelarens lykta tänds.
 - Vissa lappar är **fotouppgifter** (`kind: "photo_task"`). Spelaren laddar upp ett foto, som läggs på tavlan. Först då visas lappens text (`reveal`) och lyktan tänds.
+- **Lyktor tänds bara samma dag.** En spelares lykta lyser för en lucka om spelaren lade ut sin lapp (eller sitt foto) samma dag som luckan gällde, räknat i svensk tid. En lapp som läggs ut efter midnatt tänder inte lyktan. I arkivläge visar lyktorna därför vilka som var med samma dag. Lappar kan bara läggas ut i dagens lucka.
 
 ### Låset
 - Låset för dagens lucka går att använda först när **alla fem lyktor lyser**.
 - När låset är öppet kan **vem som helst** slå in svaret.
 - Varje felaktigt försök visas på tavlan (”Simon provade 1397”). Det är en del av känslan av att spela tillsammans.
+- Löses luckan samma dag med alla fem lyktor tända blir den löst **tillsammans** (`mode: "together"`). Annars, alltså i en arkivlucka, blir den löst **i efterhand** (`mode: "archive"`).
 
 ### Arkivluckor
 - En lucka som inte lösts före midnatt blir en **arkivlucka**.
@@ -34,7 +36,7 @@ Den här filen beskriver spelmotorn. Det riktiga innehållet (berättelse, gåto
   - Lucka löst samma dag med alla fem lyktor: **+3**
   - Arkivlucka löst: **+1**
   - Varje ledtråd: **−1**
-  - Stjärnorna kan inte bli negativa.
+  - Stjärnorna kan inte bli negativa. De räknas som summan av alla poster ovan, och blir summan negativ visas 0. Ledtrådar som tas när laget har 0 stjärnor blir alltså en skuld som dras av från stjärnor som laget får senare.
 
 ### Föremål
 - En lucka kan ge ett föremål (`epilogue.item`) när den löses. Föremålet hamnar i lagets packning.
@@ -250,12 +252,12 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 |---|---|---|
 | GET | `/state?profile=` | Kalendern: titel, undertitel, prolog (före start), vilka dagar som är öppna, status per dag, antal lyktor idag, stjärnor, föremål |
 | GET | `/day/:n?profile=` | En lucka: se *Vad servern får skicka* nedan |
-| POST | `/day/:n/fragment` | Lägger ut spelarens lapp. Inte för `photo_task` |
+| POST | `/day/:n/fragment` | `{profile}`. Lägger ut spelarens lapp. Bara i dagens lucka (annars 409), inte för `photo_task` (400). Går att anropa flera gånger utan att lappen läggs ut igen. Svarar `{ok, day}` |
 | POST | `/day/:n/photo` | `{profile, mime, data}` (base64, jpeg/png, högst 600 kB efter klientens nedskalning till 1280 px). Lägger ut fotot och lappen |
 | GET | `/photo/:id?profile=` | Hämtar ett foto |
-| POST | `/day/:n/note` | `{profile, text}`, högst 280 tecken |
+| POST | `/day/:n/note` | `{profile, text}`, högst 280 tecken. Radbrytningar och kontrolltecken blir mellanslag. Svarar `{ok, day}` |
 | POST | `/day/:n/hint` | Avslöjar nästa ledtråd |
-| POST | `/day/:n/solve` | `{profile, answer}` → `{correct: bool}`. Felaktigt försök sparas som `attempt`. Högst 10 försök per spelare och dag |
+| POST | `/day/:n/solve` | `{profile, answer}` → `{correct: bool, day}`. Felaktigt försök sparas som `attempt`. Högst 10 försök per spelare och dag (429). Stängt lås → 409 `lock_closed`, saknade föremål → 409 `missing_items`, redan löst → 409 `already_solved` |
 | POST | `/admin/players` | `{secret, players: {peter: "<id>", …}}`. Skyddas av `NATTAGET_ADMIN_SECRET` |
 | POST | `/admin/reset` | `{secret}`. Tömmer alla nattaget-tabeller utom `nattaget_players`. Bara för test |
 
@@ -267,6 +269,8 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 - Andra spelares lappar **bara** om de är utlagda på tavlan, eller i arkivläge.
 - Ledtrådar bara om de är avslöjade.
 - `epilogue` och ”Så här gick det till” bara när luckan är löst.
+- `solution` bara när luckan är löst: svaret efter normalisering, så att den lösta vyn kan visa det som låsrutor (3.4). Fältet heter aldrig `answer`, och det finns inte i en olöst lucka.
+- `day` är samma vy i svaren från `fragment`, `note` och `solve`, så att klienten slipper hämta luckan igen.
 - Lyktorna, tavlan och status (`today` | `archive` | `solved`).
 
 ### Tid

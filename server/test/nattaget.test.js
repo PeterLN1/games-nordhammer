@@ -441,3 +441,132 @@ test('normalisering av svar', () => {
   assert.equal(normalizeAnswer({ type: 'coordinate' }, 'c5'), 'C5');
   assert.equal(normalizeAnswer({ type: 'choice' }, 'Norr'), 'Norr');
 });
+
+describe('fas 2: spela lucka 1 med fem profiler', () => {
+  let g;
+  const D1 = SAMPLE.days[0];
+  before(async () => { g = await startGame(at('2026-12-01', '07:42')); });
+  after(() => g.close());
+
+  test('låset är stängt tills alla fem lagt ut sina lappar', async () => {
+    const r = await g.post('/day/1/solve', { profile: IDS.peter, answer: D1.answer });
+    assert.equal(r.status, 409);
+    assert.equal(r.body.error, 'lock_closed');
+    assert.equal(r.body.correct, undefined);
+  });
+
+  test('att lägga ut lappen tänder lyktan, och går bara att göra en gång', async () => {
+    let r = await g.post('/day/1/fragment', { profile: IDS.maria });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.day.fragments.maria.posted, true);
+    assert.equal(r.body.day.players.find(p => p.slot === 'maria').lit, true);
+    r = await g.post('/day/1/fragment', { profile: IDS.maria });
+    assert.equal(r.body.day.board.filter(b => b.kind === 'fragment').length, 1);
+    assert.equal((await g.post('/day/1/fragment', { profile: STRANGER })).status, 403);
+  });
+
+  test('anteckningar: högst 280 tecken, ren text', async () => {
+    g.setNow(at('2026-12-01', '08:15'));
+    assert.equal((await g.post('/day/1/note', { profile: IDS.sara, text: '   ' })).status, 400);
+    assert.equal((await g.post('/day/1/note', { profile: IDS.sara, text: 'x'.repeat(281) })).status, 400);
+    assert.equal((await g.post('/day/1/note', { profile: IDS.sara, text: 'å'.repeat(280) })).status, 200);
+    const r = await g.post('/day/1/note', { profile: IDS.sara, text: 'Udda\nsiffror <b>alla</b>' });
+    const note = r.body.day.board.filter(b => b.kind === 'note').pop();
+    assert.equal(note.text, 'Udda siffror <b>alla</b>');
+    assert.equal(note.name, 'Sara');
+    assert.equal(note.color, PROFILES.find(p => p.id === IDS.sara).color);
+  });
+
+  test('när alla fem lagt ut öppnas låset; fel försök syns på tavlan', async () => {
+    g.setNow(at('2026-12-01', '18:00'));
+    for (const s of ['peter', 'sara', 'vilma', 'simon']) await g.post('/day/1/fragment', { profile: IDS[s] });
+    const v = await g.get('/day/1', IDS.peter);
+    assert.equal(v.body.allLit, true);
+    assert.equal(v.body.lockOpen, true);
+    const r = await g.post('/day/1/solve', { profile: IDS.simon, answer: '1397' });
+    assert.equal(r.body.correct, false);
+    const a = r.body.day.board.find(b => b.kind === 'attempt');
+    assert.equal(a.name, 'Simon');
+    assert.equal(a.text, '1397');
+    assert.equal(r.body.day.attemptsLeft, 9);
+  });
+
+  test('rätt svar löser luckan tillsammans och ger epilog, föremål och berättelse', async () => {
+    g.setNow(at('2026-12-01', '21:48'));
+    const r = await g.post('/day/1/solve', { profile: IDS.vilma, answer: ' ' + D1.answer.split('').join(' ') });
+    assert.equal(r.body.correct, true);
+    const d = r.body.day;
+    assert.equal(d.status, 'solved');
+    assert.equal(d.solved.mode, 'together');
+    assert.equal(d.solved.time, '21:48');
+    assert.equal(d.solution, D1.answer);
+    assert.equal(d.epilogue.item.name, D1.epilogue.item.name);
+    assert.equal(d.lockOpen, false);
+    assert.deepEqual(d.story, [
+      'Maria lade första lappen kl. 07:42.',
+      'Sara skrev den första anteckningen.',
+      'Laget provade ett felaktigt svar.',
+      'Vilma slog in koden.',
+      'Inga ledtrådar behövdes.',
+      'Löst med alla fem.'
+    ]);
+    assert.ok(!hasKeyDeep(r.body, 'answer'));
+    const s = await g.get('/state', IDS.peter);
+    assert.equal(s.body.stars, 3);
+    assert.equal(s.body.days[0].solvedMode, 'together');
+    assert.deepEqual(s.body.items.map(i => i.id), ['nyckel12']);
+  });
+
+  test('en löst lucka går inte att lösa igen', async () => {
+    const r = await g.post('/day/1/solve', { profile: IDS.peter, answer: D1.answer });
+    assert.equal(r.status, 409);
+    assert.equal(r.body.error, 'already_solved');
+  });
+
+  test('framtida luckor går inte att posta till', async () => {
+    assert.equal((await g.post('/day/2/fragment', { profile: IDS.peter })).status, 403);
+    assert.equal((await g.post('/day/2/note', { profile: IDS.peter, text: 'hej' })).status, 403);
+    assert.equal((await g.post('/day/2/solve', { profile: IDS.peter, answer: 'C5' })).status, 403);
+  });
+});
+
+describe('fas 2: låsregler', () => {
+  let g;
+  before(async () => { g = await startGame(at('2026-12-01', '10:00')); });
+  after(() => g.close());
+
+  test('högst 10 försök per spelare och dag', async () => {
+    for (const s of Object.keys(IDS)) await g.post('/day/1/fragment', { profile: IDS[s] });
+    for (let i = 0; i < 10; i++) {
+      const r = await g.post('/day/1/solve', { profile: IDS.peter, answer: '000' + i });
+      assert.equal(r.body.correct, false);
+    }
+    const r = await g.post('/day/1/solve', { profile: IDS.peter, answer: SAMPLE.days[0].answer });
+    assert.equal(r.status, 429);
+    // Andra spelare har egna försök kvar.
+    assert.equal((await g.post('/day/1/solve', { profile: IDS.maria, answer: '1234' })).body.correct, false);
+  });
+
+  test('en arkivlucka löses i efterhand utan lyktor, och lappar kan inte läggas ut där', async () => {
+    g.setNow(at('2026-12-03', '10:00'));
+    assert.equal((await g.post('/day/2/fragment', { profile: IDS.peter })).status, 409);
+    const r = await g.post('/day/2/solve', { profile: IDS.peter, answer: 'c5' });
+    assert.equal(r.body.correct, true);
+    assert.equal(r.body.day.solved.mode, 'archive');
+    assert.ok(r.body.day.story.includes('Löst i efterhand.'));
+    assert.ok(r.body.day.story.includes('Peter slog in svaret.'));
+  });
+
+  test('en lucka som kräver föremål går inte att lösa utan dem', async () => {
+    g.setNow(at('2026-12-04', '10:00'));
+    const r = await g.post('/day/3/solve', { profile: IDS.peter, answer: SAMPLE.days[2].answer });
+    assert.equal(r.status, 409);
+    assert.equal(r.body.error, 'missing_items');
+    assert.deepEqual(r.body.missingItems.map(i => i.id), ['nyckel12']);
+  });
+
+  test('fotouppgifter läggs inte ut via /fragment', async () => {
+    g.setNow(at('2026-12-03', '10:00'));
+    assert.equal((await g.post('/day/3/fragment', { profile: IDS.peter })).status, 400);
+  });
+});
