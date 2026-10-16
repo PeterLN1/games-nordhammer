@@ -13,6 +13,7 @@ import express from 'express';
 import pg from 'pg';
 import { createGhostTrains } from './ghosttrains.js';
 import { createFlashback } from './flashback.js';
+import { createNattaget } from './nattaget.js';
 
 const PORT = process.env.PORT || 3000;
 const DATABASE_URL = process.env.DATABASE_URL || '';
@@ -658,5 +659,10 @@ app.use('/api/ghosttrains', ghostTrains.router);
 
 const flashback = await createFlashback(pool, { anthropicApiKey: ANTHROPIC_API_KEY, generateSecret: FLASHBACK_GENERATE_SECRET });
 app.use('/api/flashback', flashback.router);
+
+// Nattåget: innehåll, regler och miljövariabler — se nattaget/SPEC.md.
+// Profilnamn och -färger hämtas från den gemensamma profiltabellen.
+const nattaget = await createNattaget(pool, { listProfiles: () => (store ? store.listProfiles() : []) });
+app.use('/api/nattaget', nattaget.router);
 
 app.listen(PORT, () => console.log('Topplista-API lyssnar pa port ' + PORT));
