@@ -384,9 +384,19 @@ describe('innehållsladdning', () => {
   });
   after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-  test('testinnehåll när CONTENT_KEY saknas eller NATTAGET_CONTENT=sample', () => {
-    assert.equal(loadContent({ key: '' }).source, 'sample');
+  test('testinnehåll bara när NATTAGET_CONTENT=sample', () => {
+    assert.equal(loadContent({ mode: 'sample', key: '' }).source, 'sample');
     assert.equal(loadContent({ mode: 'sample', key, encPath }).source, 'sample');
+  });
+
+  test('utan CONTENT_KEY och utan sample finns inget innehåll', () => {
+    const orig = console.warn; console.warn = () => {};
+    try {
+      const r = loadContent({ key: '' });
+      assert.equal(r.content, null);
+      assert.equal(r.source, 'none');
+      assert.equal(loadContent({ mode: '', key: undefined }).content, null);
+    } finally { console.warn = orig; }
   });
 
   test('krypterat innehåll dekrypteras med rätt nyckel', () => {
@@ -406,14 +416,23 @@ describe('innehållsladdning', () => {
     assert.deepEqual(logged, ['Nattåget: kunde inte dekryptera innehållet.']);
   });
 
-  test('utan innehåll svarar spelet 503', async () => {
-    const game = await createNattaget(null, { content: null, store: memStore(), adminSecret: SECRET, now: () => new Date() });
+  test('utan innehåll svarar /state och /day/:n 503 "inte redo"', async () => {
+    const orig = console.warn; console.warn = () => {};
+    let game;
+    try { game = await createNattaget(null, { contentMode: '', contentKey: '', store: memStore(), adminSecret: SECRET, now: () => new Date() }); }
+    finally { console.warn = orig; }
+    assert.equal(game.content, null);
     const app = express(); app.use('/n', game.router);
     const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
-    const r = await fetch('http://127.0.0.1:' + server.address().port + '/n/state?profile=' + IDS.peter);
-    assert.equal(r.status, 503);
+    const base = 'http://127.0.0.1:' + server.address().port + '/n';
+    for (const p of ['/state', '/day/1']) {
+      const r = await fetch(base + p + '?profile=' + IDS.peter);
+      assert.equal(r.status, 503);
+      assert.deepEqual(await r.json(), { error: 'not_ready', message: 'Nattåget är inte redo än.' });
+    }
     await new Promise(r => server.close(r));
   });
+
 });
 
 test('normalisering av svar', () => {

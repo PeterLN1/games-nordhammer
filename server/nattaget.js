@@ -54,18 +54,23 @@ function validateContent(c) {
   return c;
 }
 
-// Väljer källa: testinnehåll om NATTAGET_CONTENT=sample eller om
-// CONTENT_KEY saknas, annars den krypterade filen. Går dekrypteringen
-// fel returneras { content: null } — spelet svarar då 503 hellre än
-// att visa testinnehåll i produktion.
+// Väljer källa: testinnehåll BARA om NATTAGET_CONTENT=sample är satt,
+// annars den krypterade filen med CONTENT_KEY. Saknas nyckeln, eller går
+// dekrypteringen fel, returneras { content: null } — spelet svarar då
+// 503 ("Nattåget är inte redo än") hellre än att visa testinnehåll i
+// produktion.
 export function loadContent({ mode, key, encPath = ENC_PATH, samplePath = SAMPLE_PATH } = {}) {
-  if (mode === 'sample' || !key) {
+  if (mode === 'sample') {
     try {
       return { content: validateContent(JSON.parse(fs.readFileSync(samplePath, 'utf8'))), source: 'sample' };
     } catch (e) {
       console.error('Nattåget: kunde inte läsa testinnehållet.');
       return { content: null, source: 'sample' };
     }
+  }
+  if (!key) {
+    console.warn('Nattåget: CONTENT_KEY saknas och NATTAGET_CONTENT=sample är inte satt — spelet är inte redo.');
+    return { content: null, source: 'none' };
   }
   let file;
   try { file = JSON.parse(fs.readFileSync(encPath, 'utf8')); }
@@ -465,7 +470,7 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
   // Gemensamt för alla spelaranrop: innehållet måste finnas och profilen
   // måste vara kopplad till en plats. Okänd profil → 403.
   async function player(req, res) {
-    if (!content) { res.status(503).json({ error: 'Nattåget är inte tillgängligt just nu.' }); return null; }
+    if (!content) { res.status(503).json({ error: 'not_ready', message: 'Nattåget är inte redo än.' }); return null; }
     const profileId = req.method === 'GET' ? req.query.profile : (req.body && req.body.profile);
     if (!validProfileId(profileId)) { res.status(403).json({ error: 'not_player' }); return null; }
     const players = await store.getPlayers();

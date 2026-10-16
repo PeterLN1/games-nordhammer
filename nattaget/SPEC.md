@@ -198,7 +198,7 @@ Ingen lapp får renderas som rå HTML.
 - `days` innehåller 24 element i den riktiga filen. Testfilen har färre.
 
 ### Filer
-- `server/nattaget/content.sample.json` – testinnehåll i klartext. Används när `NATTAGET_CONTENT=sample` eller när `CONTENT_KEY` saknas.
+- `server/nattaget/content.sample.json` – testinnehåll i klartext. Används **bara** när `NATTAGET_CONTENT=sample` är satt.
 - `server/nattaget/content.enc` – det riktiga innehållet, krypterat. Levereras separat.
 
 ### Kryptering
@@ -218,6 +218,11 @@ function decryptContent(file, keyB64) {
 }
 ```
 Servern dekrypterar en gång vid start och håller innehållet i minnet. Innehållet loggas aldrig.
+
+### När innehållet saknas
+- Utan `NATTAGET_CONTENT=sample` läser servern alltid `content.enc` med `CONTENT_KEY`.
+- Saknas `CONTENT_KEY`, saknas filen eller går dekrypteringen fel har servern inget innehåll. Då svarar `/state` och `/day/:n` med **503** och `{"error": "not_ready", "message": "Nattåget är inte redo än."}`. Testinnehållet används aldrig som reserv.
+- Sidan visar då ”Nattåget är inte redo än”.
 
 ---
 
@@ -270,7 +275,7 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 
 ### Miljövariabler (lägg till i `server/.env.example`)
 ```
-CONTENT_KEY=              # base64, 32 byte. Saknas → testinnehåll
+CONTENT_KEY=              # base64, 32 byte. Saknas → 503 "inte redo" (om inte sample)
 NATTAGET_CONTENT=         # "sample" tvingar testinnehåll
 NATTAGET_ADMIN_SECRET=
 NATTAGET_FAKE_NOW=        # bara lokalt
