@@ -9,7 +9,7 @@ import os from 'os';
 import path from 'path';
 import express from 'express';
 import {
-  createNattaget, loadContent, makeNow, memStore, SAMPLE_PATH, normalizeAnswer, computeStars
+  createNattaget, loadContent, makeNow, memStore, pgStore, SAMPLE_PATH, normalizeAnswer, computeStars
 } from '../nattaget.js';
 
 const SAMPLE = JSON.parse(fs.readFileSync(SAMPLE_PATH, 'utf8'));
@@ -363,6 +363,32 @@ describe('admin', () => {
   });
 });
 
+describe('admin/reset och foton', () => {
+  test('minneslagret: reset tömmer foton, händelser och lösningar men inte spelarna', async () => {
+    const st = memStore();
+    await st.setPlayers(IDS);
+    const id = await st.insertPhoto({ day: 1, profileId: IDS.peter, mime: 'image/jpeg', data: Buffer.from('x') });
+    assert.ok(await st.getPhoto(id));
+    await st.insertEvent({ day: 1, profileId: IDS.peter, kind: 'photo', body: String(id) });
+    await st.insertSolve({ day: 1, profileId: IDS.peter, mode: 'together' });
+    await st.reset();
+    assert.equal(await st.getPhoto(id), null);
+    assert.deepEqual(await st.listEvents(), []);
+    assert.deepEqual(await st.listSolves(), []);
+    assert.equal((await st.getPlayers()).length, 5);
+  });
+
+  test('Postgres: reset tömmer nattaget_photos men inte nattaget_players', async () => {
+    const sql = [];
+    const fakePool = { query: async q => { sql.push(q); return { rows: [], rowCount: 0 }; } };
+    await pgStore(fakePool).reset();
+    assert.equal(sql.length, 1);
+    assert.match(sql[0], /^truncate\b/);
+    for (const t of ['nattaget_events', 'nattaget_photos', 'nattaget_solves']) assert.ok(sql[0].includes(t), t + ' töms inte');
+    assert.ok(!sql[0].includes('nattaget_players'));
+  });
+});
+
 describe('tid', () => {
   test('NATTAGET_FAKE_NOW används lokalt men ignoreras i produktion', () => {
     const fake = '2026-12-05T10:00:00+01:00';
@@ -384,9 +410,69 @@ describe('innehållsladdning', () => {
   });
   after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
+  // Fångar varningar och fel så att testerna kan kontrollera dem.
+  function captureLogs(fn) {
+    const logged = [];
+    const ow = console.warn, oe = console.error;
+    console.warn = (...a) => logged.push(a.join(' '));
+    console.error = (...a) => logged.push(a.join(' '));
+    try { return { result: fn(), logged }; } finally { console.warn = ow; console.error = oe; }
+  }
+  const missingEnc = path.join(tmp, 'finns-inte.enc');
+
   test('testinnehåll bara när NATTAGET_CONTENT=sample', () => {
-    assert.equal(loadContent({ mode: 'sample', key: '' }).source, 'sample');
-    assert.equal(loadContent({ mode: 'sample', key, encPath }).source, 'sample');
+    const { result } = captureLogs(() => loadContent({ mode: 'sample', key: '', encPath }));
+    assert.equal(result.source, 'sample');
+    assert.equal(result.content.start_date, SAMPLE.start_date);
+  });
+
+  test('CONTENT_KEY + content.enc vinner alltid över sample, med varning', () => {
+    const { result, logged } = captureLogs(() => loadContent({ mode: 'sample', key, sampleStart: '2026-10-17', encPath }));
+    assert.equal(result.source, 'encrypted');
+    assert.equal(result.content.start_date, SAMPLE.start_date); // startdatumet flyttas inte
+    assert.deepEqual(logged, [
+      'Nattåget: NATTAGET_CONTENT ignoreras eftersom CONTENT_KEY och content.enc finns.',
+      'Nattåget: NATTAGET_SAMPLE_START ignoreras eftersom CONTENT_KEY och content.enc finns.'
+    ]);
+  });
+
+  test('CONTENT_KEY + content.enc utan testinställningar ger inga varningar', () => {
+    const { result, logged } = captureLogs(() => loadContent({ key, encPath }));
+    assert.equal(result.source, 'encrypted');
+    assert.deepEqual(logged, []);
+  });
+
+  test('CONTENT_KEY utan content.enc: sample används om det är satt, annars inte redo', () => {
+    let r = captureLogs(() => loadContent({ mode: 'sample', key, encPath: missingEnc }));
+    assert.equal(r.result.source, 'sample');
+    r = captureLogs(() => loadContent({ key, encPath: missingEnc }));
+    assert.equal(r.result.content, null);
+    assert.deepEqual(r.logged, ['Nattåget: CONTENT_KEY är satt men content.enc saknas — spelet är inte redo.']);
+  });
+
+  test('NATTAGET_SAMPLE_START flyttar testinnehållets startdatum', () => {
+    const { result } = captureLogs(() => loadContent({ mode: 'sample', sampleStart: '2026-10-17', encPath: missingEnc }));
+    assert.equal(result.content.start_date, '2026-10-17');
+  });
+
+  test('NATTAGET_SAMPLE_START med fel format ignoreras med varning', () => {
+    for (const bad of ['17 oktober', '2026-13-45', '2026-10-1']) {
+      const { result, logged } = captureLogs(() => loadContent({ mode: 'sample', sampleStart: bad, encPath: missingEnc }));
+      assert.equal(result.content.start_date, SAMPLE.start_date);
+      assert.equal(logged.length, 1);
+    }
+  });
+
+  test('NATTAGET_SAMPLE_START öppnar luckor från det datumet', async () => {
+    const game = await createNattaget(null, { contentMode: 'sample', contentKey: '', sampleStart: '2026-10-17', encPath: missingEnc, store: memStore(), adminSecret: SECRET, now: () => at('2026-10-18', '12:00') });
+    await game.store.setPlayers(IDS);
+    const app = express(); app.use('/n', game.router);
+    const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
+    const base = 'http://127.0.0.1:' + server.address().port + '/n';
+    const st = await (await fetch(base + '/state?profile=' + IDS.peter)).json();
+    assert.deepEqual(st.days.map(d => d.status), ['archive', 'today', 'locked']);
+    assert.equal((await fetch(base + '/day/3?profile=' + IDS.peter)).status, 403);
+    await new Promise(r => server.close(r));
   });
 
   test('utan CONTENT_KEY och utan sample finns inget innehåll', () => {
@@ -569,4 +655,99 @@ describe('fas 2: låsregler', () => {
     g.setNow(at('2026-12-03', '10:00'));
     assert.equal((await g.post('/day/3/fragment', { profile: IDS.peter })).status, 400);
   });
+});
+
+describe('fas 3: ledtrådar, stjärnor, arkiv och föremål', () => {
+  let g;
+  const hints = SAMPLE.days[0].hints;
+  before(async () => { g = await startGame(at('2026-12-01', '09:00')); });
+  after(() => g.close());
+
+  test('ledtrådar avslöjas en i taget och syns för alla', async () => {
+    let r = await g.post('/day/1/hint', { profile: IDS.sara, n: 1 });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.day.hints, [{ n: 1, text: hints[0], by: 'sara' }]);
+    assert.ok(!r.text.includes(hints[1]));
+    const other = await g.get('/day/1', IDS.simon);
+    assert.equal(other.body.hints[0].text, hints[0]);
+    assert.equal(other.body.board.find(b => b.kind === 'hint').hint, 1);
+  });
+
+  test('två som tar samma ledtråd samtidigt tar bara en', async () => {
+    const [a, b] = await Promise.all([
+      g.post('/day/1/hint', { profile: IDS.peter, n: 2 }),
+      g.post('/day/1/hint', { profile: IDS.maria, n: 2 })
+    ]);
+    // Minneslagret är synkront mellan läsning och skrivning per anrop, så
+    // den andra ser alltid att ledtråd 2 redan är tagen.
+    assert.deepEqual([a.status, b.status].sort(), [200, 409]);
+    assert.equal((await g.get('/day/1', IDS.peter)).body.hintsUsed, 2);
+  });
+
+  test('efter tre ledtrådar finns inga fler', async () => {
+    assert.equal((await g.post('/day/1/hint', { profile: IDS.peter, n: 3 })).status, 200);
+    const r = await g.post('/day/1/hint', { profile: IDS.peter, n: 4 });
+    assert.equal(r.status, 409);
+    assert.equal(r.body.error, 'no_more_hints');
+  });
+
+  test('stjärnorna blir aldrig negativa, och skulden dras av senare', async () => {
+    assert.equal((await g.get('/state', IDS.peter)).body.stars, 0);
+    for (const s of Object.keys(IDS)) await g.post('/day/1/fragment', { profile: IDS[s] });
+    const r = await g.post('/day/1/solve', { profile: IDS.peter, answer: SAMPLE.days[0].answer });
+    assert.equal(r.body.day.solved.mode, 'together');
+    assert.ok(r.body.day.story.includes('Laget behövde 3 ledtrådar.'));
+    assert.equal(r.body.day.stars, 0); // +3 − 3
+    assert.equal((await g.post('/day/1/hint', { profile: IDS.peter, n: 4 })).body.error, 'already_solved');
+  });
+
+  test('en olöst arkivlucka kan lösas av en person och ger +1', async () => {
+    g.setNow(at('2026-12-03', '10:00'));
+    const v = await g.get('/day/2', IDS.vilma);
+    assert.equal(v.body.status, 'archive');
+    assert.equal(v.body.lockOpen, true);
+    const r = await g.post('/day/2/solve', { profile: IDS.vilma, answer: SAMPLE.days[1].answer });
+    assert.equal(r.body.correct, true);
+    assert.equal(r.body.day.solved.mode, 'archive');
+    assert.equal(r.body.day.stars, 1);
+    const s = await g.get('/state', IDS.peter);
+    assert.deepEqual(s.body.days.map(d => [d.status, d.solvedMode]), [['solved', 'together'], ['solved', 'archive'], ['today', undefined]]);
+  });
+
+  test('requires_items: luckan med nyckeln går att lösa när föremålet finns', async () => {
+    const v = await g.get('/day/3', IDS.peter);
+    assert.deepEqual(v.body.missingItems, []);
+    assert.deepEqual(v.body.requiresItems, [{ id: 'nyckel12', name: 'Mässingsnyckel nr 12' }]);
+    g.setNow(at('2026-12-04', '10:00'));
+    const r = await g.post('/day/3/solve', { profile: IDS.sara, answer: 'lykta' });
+    assert.equal(r.body.correct, true);
+    assert.equal(r.body.day.solved.mode, 'archive');
+  });
+
+  test('framtida ledtrådar går inte att ta', async () => {
+    g.setNow(at('2026-12-01', '10:00'));
+    assert.equal((await g.post('/day/2/hint', { profile: IDS.peter, n: 1 })).status, 403);
+  });
+});
+
+test('Postgres: villkorad insert tar ett lås per lucka och lägger inte till när antalet ändrats', async () => {
+  const sql = [];
+  let count = 1;
+  const client = {
+    query: async (q, params) => {
+      sql.push(q);
+      if (/count\(\*\)/.test(q)) return { rows: [{ c: count }] };
+      if (/^insert/.test(q)) return { rows: [{ id: '7', day: params[0], profile_id: params[1], kind: params[2], body: null, created_at: new Date() }] };
+      return { rows: [] };
+    },
+    release() {}
+  };
+  const st = pgStore({ connect: async () => client });
+  assert.equal(await st.insertEventIfCount({ day: 1, profileId: IDS.peter, kind: 'hint' }, { kind: 'hint', count: 0 }), null);
+  assert.ok(sql.some(q => q.includes('pg_advisory_xact_lock')));
+  assert.ok(!sql.some(q => /^insert/.test(q)));
+  count = 0;
+  const e = await st.insertEventIfCount({ day: 1, profileId: IDS.peter, kind: 'hint' }, { kind: 'hint', count: 0 });
+  assert.equal(e.id, 7);
+  assert.equal(sql.filter(q => q === 'commit').length, 2);
 });

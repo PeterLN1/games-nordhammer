@@ -172,6 +172,35 @@
   .shake { animation: shake .35s; }
   @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 
+  /* ---------- Arkivlappar med frost ---------- */
+  .frag-list { display: flex; flex-direction: column; gap: 14px; }
+  .frag .paper-wrap { position: relative; }
+  .frag .paper { transform: rotate(-.6deg); font-size: 16px; padding: 14px 16px; }
+  .frag:nth-child(even) .paper { transform: rotate(.7deg); }
+  .frag .never { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .frost {
+    position: absolute; inset: -2px; width: calc(100% + 4px); height: calc(100% + 4px);
+    border-radius: 6px; touch-action: none; cursor: grab; transition: opacity .6s ease;
+  }
+  .frost:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+  .frost.gone { opacity: 0; pointer-events: none; }
+
+  /* ---------- Föremålskrav och ledtrådar ---------- */
+  .needs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .need { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 8px; border-radius: 999px; font-size: 14px; border: 1px solid var(--border); color: var(--muted); }
+  .need svg { width: 18px; height: 18px; }
+  .need.have { border-color: var(--glow); color: var(--text); }
+  .need.have svg { color: var(--glow); }
+  .hints-box { background: var(--surface); border-radius: 16px; padding: 16px; }
+  .hints-box .count { color: var(--muted); font-size: 14px; margin-bottom: 10px; }
+  .hint-item { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(58,74,99,.6); }
+  .hint-item:first-of-type { border-top: 0; padding-top: 0; }
+  .hint-item .no { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--surface-dark); color: var(--glow); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .hint-item .by { font-size: 12px; color: var(--muted); }
+  .hint-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .hint-actions .btn { flex: 1; }
+  .hint-confirm { color: var(--soft); font-size: 15px; margin-top: 12px; }
+
   /* ---------- Löst lucka ---------- */
   .solved-meta { color: var(--glow); font-size: 14px; font-weight: 600; text-align: center; margin-top: 20px; }
   .solved-head { text-align: center; }
@@ -379,6 +408,150 @@
           : f.kind === 'photo_task' && d.status === 'today' ? el('p', { class: 'empty', text: 'Fotouppgifter kommer snart.' }) : null));
   }
 
+  // Arkivläge: alla fem lappar. Lappar som aldrig lades ut är frosttäckta
+  // och skrapas fram — bara en visuell effekt, texten finns redan här.
+  function archiveFragmentsSection(d){
+    return el('section', null,
+      el('h2', { class: 'section-title', text: 'Lapparna' }),
+      el('div', { class: 'frag-list' }, d.players.map(function(p){
+        var f = d.fragments[p.slot];
+        if (!f) return null;
+        var mine = p.slot === d.me;
+        var key = d.day + ':' + p.slot;
+        var frosted = !f.posted && !mine && !isScratched(key);
+        return el('div', { class: 'frag' },
+          el('div', { class: 'paper-wrap' },
+            el('div', { class: 'paper' }, el('div', { class: 'from', text: mine ? 'Din lapp' : 'Från ' + p.name }), fragmentBody(f)),
+            frosted ? frostCanvas(key, genitive(p.name) + ' lapp') : null),
+          !f.posted ? el('div', { class: 'never', text: mine ? 'Du lade aldrig ut din lapp.' : p.name + ' lade aldrig ut sin lapp.' }) : null);
+      })));
+  }
+
+  var SCRATCH_KEY = 'nattaget:scratched';
+  var scratchedMem = {};
+  function isScratched(key){
+    if (scratchedMem[key]) return true;
+    try { return (JSON.parse(localStorage.getItem(SCRATCH_KEY)) || []).indexOf(key) >= 0; } catch(e){ return false; }
+  }
+  function markScratched(key){
+    scratchedMem[key] = true;
+    try {
+      var list = JSON.parse(localStorage.getItem(SCRATCH_KEY)) || [];
+      if (list.indexOf(key) < 0) { list.push(key); localStorage.setItem(SCRATCH_KEY, JSON.stringify(list.slice(-200))); }
+    } catch(e){}
+  }
+
+  // Frostskiktet. Samma canvas återanvänds när vyn ritas om (var 20:e
+  // sekund), så att det som redan skrapats bort finns kvar.
+  var frostCache = {};
+  var scratching = false;
+  function frostCanvas(key, label){
+    if (frostCache[key]) return frostCache[key];
+    label = label.charAt(0).toUpperCase() + label.slice(1);
+    var c = el('canvas', { class: 'frost', tabindex: '0', role: 'button', 'aria-label': 'Skrapa fram ' + label });
+    frostCache[key] = c;
+    var ctx = c.getContext('2d'), dpr = window.devicePixelRatio || 1, drawn = false, strokes = 0, last = null;
+    // Målas när kortet fått en storlek. setTimeout i stället för
+    // requestAnimationFrame, som inte körs alls i en flik som inte ritas.
+    function paint(){
+      if (drawn) return;
+      var w = c.clientWidth, h = c.clientHeight;
+      if (!w || !h) return setTimeout(paint, 50);
+      c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+      ctx.scale(dpr, dpr);
+      var g = ctx.createLinearGradient(0, 0, w, h);
+      g.addColorStop(0, '#E4EDF6'); g.addColorStop(.5, '#C7D5E5'); g.addColorStop(1, '#DCE6F1');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+      // Iskristaller och korn.
+      for (var i = 0; i < w * h / 90; i++) {
+        ctx.fillStyle = Math.random() < .5 ? 'rgba(255,255,255,.75)' : 'rgba(150,170,195,.35)';
+        ctx.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4);
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1;
+      for (var k = 0; k < 14; k++) {
+        var x = Math.random() * w, y = Math.random() * h, r = 6 + Math.random() * 14;
+        for (var a = 0; a < 6; a++) {
+          ctx.beginPath(); ctx.moveTo(x, y);
+          ctx.lineTo(x + Math.cos(a * Math.PI / 3) * r, y + Math.sin(a * Math.PI / 3) * r); ctx.stroke();
+        }
+      }
+      ctx.fillStyle = '#3A4A63'; ctx.font = '600 15px Figtree, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, w / 2, h / 2 - 10);
+      ctx.font = '500 13px Figtree, sans-serif'; ctx.fillStyle = '#5B6B84';
+      ctx.fillText('Skrapa fram med fingret', w / 2, h / 2 + 12);
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 34;
+      drawn = true;
+    }
+    setTimeout(paint, 0);
+    function pos(e){ var r = c.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+    function reveal(){
+      markScratched(key);
+      c.classList.add('gone');
+      setTimeout(function(){ c.remove(); delete frostCache[key]; }, 650);
+    }
+    function clearedEnough(){
+      var data = ctx.getImageData(0, 0, c.width, c.height).data, clear = 0, total = 0;
+      for (var i = 3; i < data.length; i += 4 * 24) { total++; if (data[i] < 40) clear++; }
+      return total && clear / total > .5;
+    }
+    c.addEventListener('pointerdown', function(e){
+      if (!drawn) return;
+      scratching = true; last = pos(e);
+      try { c.setPointerCapture(e.pointerId); } catch(err){}
+      ctx.beginPath(); ctx.arc(last.x, last.y, 17, 0, Math.PI * 2); ctx.fill();
+      e.preventDefault();
+    });
+    c.addEventListener('pointermove', function(e){
+      if (!scratching || !last) return;
+      var p = pos(e);
+      ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+      last = p;
+      if (++strokes % 12 === 0 && clearedEnough()) { scratching = false; last = null; reveal(); }
+    });
+    function end(){ if (!last) return; scratching = false; last = null; if (clearedEnough()) reveal(); }
+    c.addEventListener('pointerup', end);
+    c.addEventListener('pointercancel', end);
+    c.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); reveal(); } });
+    return c;
+  }
+
+  function requiresSection(d){
+    if (!d.requiresItems || !d.requiresItems.length) return null;
+    var missing = {};
+    d.missingItems.forEach(function(i){ missing[i.id] = true; });
+    return el('div', { class: 'needs', 'aria-label': 'Föremål som behövs' }, d.requiresItems.map(function(it){
+      var have = !missing[it.id];
+      return el('span', { class: 'need' + (have ? ' have' : '') }, icon(have ? 'check' : 'lock'),
+        (it.name || 'Okänt föremål') + (have ? '' : ' saknas'));
+    }));
+  }
+
+  // Ledtrådar: två tryck, eftersom en ledtråd kostar en stjärna för hela laget.
+  var hintConfirm = null; // lucknummer som väntar på bekräftelse
+  function hintSection(d){
+    var used = d.hintsUsed, total = d.hintsTotal;
+    if (!total) return null;
+    var list = d.hints.map(function(h){
+      return el('div', { class: 'hint-item' }, el('span', { class: 'no', text: h.n }),
+        el('div', null, el('div', { text: h.text }), h.by ? el('div', { class: 'by', text: 'Tagen av ' + playerName(d, h.by) }) : null));
+    });
+    var actions;
+    if (used >= total) actions = el('p', { class: 'empty', style: 'margin-top:8px', text: 'Alla ledtrådar är använda.' });
+    else if (hintConfirm === d.day) actions = [
+      el('p', { class: 'hint-confirm', text: 'Ta ledtråd ' + (used + 1) + '? Den kostar en stjärna för hela laget och syns för alla.' }),
+      el('div', { class: 'hint-actions' },
+        el('button', { class: 'btn btn-secondary', text: 'Avbryt', onclick: function(){ hintConfirm = null; renderDay(view.data); } }),
+        el('button', { class: 'btn btn-primary', text: 'Ta ledtråden', onclick: takeHint }))
+    ];
+    else actions = el('div', { class: 'hint-actions' }, el('button', { class: 'btn btn-secondary', 'aria-label': 'Ledtråd, kostar en stjärna', onclick: function(){ hintConfirm = d.day; renderDay(view.data); } },
+      'Ledtråd (−1 ', el('span', { style: 'color:var(--glow);display:inline-flex' }, icon('star')), ')'));
+    return el('section', null, el('div', { class: 'hints-box' },
+      el('h2', { class: 'section-title', text: 'Ledtrådar' }),
+      el('p', { class: 'count', text: used === 0 ? 'Inga ledtrådar tagna än. Det finns ' + total + '.' : used + ' av ' + total + ' tagna.' }),
+      list, actions));
+  }
+
   function boardSection(d){
     var posts = d.board.map(function(b){
       var head = el('div', { class: 'meta' }, el('span', { class: 'n', style: colorStyle(b.color), text: b.name }), el('span', { class: 't', text: clock(b.at) }));
@@ -484,12 +657,14 @@
       el('header', { class: 'day-head' },
         el('div', { class: 'eyebrow', text: (d.status === 'archive' ? 'Arkivlucka ' : 'Lucka ') + d.day }),
         el('h1', { text: d.title }),
-        el('p', { class: 'intro', text: d.intro })),
+        el('p', { class: 'intro', text: d.intro }),
+        requiresSection(d)),
       el('section', null, lanternRow(d), el('p', { class: 'lantern-line', text: lanternSentence(d) })),
-      myFragmentSection(d),
+      d.status === 'archive' ? archiveFragmentsSection(d) : myFragmentSection(d),
       boardSection(d),
       noteSection(),
-      lockSection(d)
+      lockSection(d),
+      hintSection(d)
     ]);
     restoreInputs(keep);
   }
@@ -527,6 +702,20 @@
         el('ul', { class: 'story' }, d.story.map(function(line){ return el('li', { text: line }); }))),
       el('section', null, el('a', { class: 'btn btn-primary btn-block', href: '#', text: 'Tillbaka till tåget' }))
     ]);
+  }
+
+  function takeHint(){
+    var d = view.data;
+    hintConfirm = null;
+    act('/hint', { n: d.hintsUsed + 1 }).then(function(res){
+      if (!res) return;
+      var b = res.body || {};
+      if (b.day) { view.data = b.day; renderDay(view.data); }
+      if (res.status === 200) return;
+      if (b.error === 'hint_already_taken') toast('Någon i laget tog just den ledtråden.');
+      else if (b.error === 'no_more_hints') toast('Alla ledtrådar är använda.');
+      else if (!b.day && !handleError(res)) toast('Kunde inte ta ledtråden.');
+    });
   }
 
   /* ---------- Åtgärder ---------- */
@@ -615,7 +804,7 @@
   // Inte medan någon skriver — en omritning stänger tangentbordet på mobilen.
   function typing(){ var a = document.activeElement; return !!(a && app.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName)); }
   setInterval(function(){
-    if (document.visibilityState === 'visible' && !busy && !typing()) refresh();
+    if (document.visibilityState === 'visible' && !busy && !typing() && !scratching) refresh();
   }, 20000);
   document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') refresh(); });
   window.addEventListener('hashchange', function(){ refresh(); });

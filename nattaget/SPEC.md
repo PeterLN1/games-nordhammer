@@ -26,7 +26,7 @@ Den här filen beskriver spelmotorn. Det riktiga innehållet (berättelse, gåto
 
 ### Arkivluckor
 - En lucka som inte lösts före midnatt blir en **arkivlucka**.
-- I en arkivlucka visas alla fem lappar för alla, även de som aldrig lades ut. Lapparna som inte lagts ut visas ”frosttäckta” och skrapas fram med fingret. Det är bara en visuell effekt; innehållet finns redan i klienten då.
+- I en arkivlucka visas alla fem lappar för alla, även de som aldrig lades ut. Lapparna som inte lagts ut visas ”frosttäckta” och skrapas fram med fingret. Det är bara en visuell effekt; innehållet finns redan i klienten då. Den egna lappen är aldrig frostad. När drygt halva frosten är bortskrapad försvinner resten. Vilka lappar spelaren har skrapat fram sparas i `localStorage` på enheten, så frosten kommer inte tillbaka vid nästa besök. Med tangentbord tar Enter eller mellanslag bort frosten direkt.
 - Låset i en arkivlucka går att använda direkt, utan krav på lyktor. Det räcker att en person löser den.
 - Fotouppgifter i en arkivlucka: `reveal`-texten visas direkt, ingen uppladdning krävs.
 
@@ -200,7 +200,7 @@ Ingen lapp får renderas som rå HTML.
 - `days` innehåller 24 element i den riktiga filen. Testfilen har färre.
 
 ### Filer
-- `server/nattaget/content.sample.json` – testinnehåll i klartext. Används **bara** när `NATTAGET_CONTENT=sample` är satt.
+- `server/nattaget/content.sample.json` – testinnehåll i klartext. Används **bara** när `NATTAGET_CONTENT=sample` är satt (och det riktiga innehållet inte finns, se nedan).
 - `server/nattaget/content.enc` – det riktiga innehållet, krypterat. Levereras separat.
 
 ### Kryptering
@@ -221,9 +221,14 @@ function decryptContent(file, keyB64) {
 ```
 Servern dekrypterar en gång vid start och håller innehållet i minnet. Innehållet loggas aldrig.
 
+### Vilket innehåll som används
+Servern väljer i den här ordningen:
+1. **`CONTENT_KEY` är satt och `content.enc` finns** → alltid det riktiga innehållet. `NATTAGET_CONTENT` och `NATTAGET_SAMPLE_START` ignoreras, med en varning i loggen. Testinställningar som glömts kvar i Railway kan alltså aldrig ersätta det riktiga innehållet.
+2. **`NATTAGET_CONTENT=sample`** → testinnehållet. Är `NATTAGET_SAMPLE_START` satt (`ÅÅÅÅ-MM-DD`) flyttas testinnehållets `start_date` dit, så att testluckor kan öppnas på riktigt i produktion före december. Klockan går som vanligt. Fel format ignoreras med en varning.
+3. **Annars** har servern inget innehåll.
+
 ### När innehållet saknas
-- Utan `NATTAGET_CONTENT=sample` läser servern alltid `content.enc` med `CONTENT_KEY`.
-- Saknas `CONTENT_KEY`, saknas filen eller går dekrypteringen fel har servern inget innehåll. Då svarar `/state` och `/day/:n` med **503** och `{"error": "not_ready", "message": "Nattåget är inte redo än."}`. Testinnehållet används aldrig som reserv.
+- Saknas `CONTENT_KEY` (eller `content.enc`) utan `NATTAGET_CONTENT=sample`, eller går dekrypteringen fel, har servern inget innehåll. Då svarar `/state` och `/day/:n` med **503** och `{"error": "not_ready", "message": "Nattåget är inte redo än."}`. Testinnehållet används aldrig som reserv.
 - Sidan visar då ”Nattåget är inte redo än”.
 
 ---
@@ -256,10 +261,10 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 | POST | `/day/:n/photo` | `{profile, mime, data}` (base64, jpeg/png, högst 600 kB efter klientens nedskalning till 1280 px). Lägger ut fotot och lappen |
 | GET | `/photo/:id?profile=` | Hämtar ett foto |
 | POST | `/day/:n/note` | `{profile, text}`, högst 280 tecken. Radbrytningar och kontrolltecken blir mellanslag. Svarar `{ok, day}` |
-| POST | `/day/:n/hint` | Avslöjar nästa ledtråd |
+| POST | `/day/:n/hint` | `{profile, n}` där `n` är numret på ledtråden spelaren vill ta (nästa i tur). Om någon hann före svarar servern 409 `hint_already_taken` med den nya vyn, så att två samtidiga tryck bara kostar en stjärna. Inga fler → 409 `no_more_hints`. Löst lucka → 409 `already_solved`. Går i dagens lucka och i arkivluckor. Svarar `{ok, day}` |
 | POST | `/day/:n/solve` | `{profile, answer}` → `{correct: bool, day}`. Felaktigt försök sparas som `attempt`. Högst 10 försök per spelare och dag (429). Stängt lås → 409 `lock_closed`, saknade föremål → 409 `missing_items`, redan löst → 409 `already_solved` |
 | POST | `/admin/players` | `{secret, players: {peter: "<id>", …}}`. Skyddas av `NATTAGET_ADMIN_SECRET` |
-| POST | `/admin/reset` | `{secret}`. Tömmer alla nattaget-tabeller utom `nattaget_players`. Bara för test |
+| POST | `/admin/reset` | `{secret}`. Tömmer `nattaget_events`, `nattaget_photos` och `nattaget_solves`, men inte `nattaget_players`. Bara för test |
 
 ### Vad servern får skicka för en lucka
 - Aldrig en framtida lucka (inte ens till admin).
@@ -282,6 +287,7 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 CONTENT_KEY=              # base64, 32 byte. Saknas → 503 "inte redo" (om inte sample)
 NATTAGET_CONTENT=         # "sample" tvingar testinnehåll
 NATTAGET_ADMIN_SECRET=
+NATTAGET_SAMPLE_START=    # ÅÅÅÅ-MM-DD, flyttar testinnehållets startdatum (bara med sample)
 NATTAGET_FAKE_NOW=        # bara lokalt
 ```
 

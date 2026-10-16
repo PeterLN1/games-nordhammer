@@ -54,35 +54,49 @@ function validateContent(c) {
   return c;
 }
 
-// Väljer källa: testinnehåll BARA om NATTAGET_CONTENT=sample är satt,
-// annars den krypterade filen med CONTENT_KEY. Saknas nyckeln, eller går
-// dekrypteringen fel, returneras { content: null } — spelet svarar då
-// 503 ("Nattåget är inte redo än") hellre än att visa testinnehåll i
-// produktion.
-export function loadContent({ mode, key, encPath = ENC_PATH, samplePath = SAMPLE_PATH } = {}) {
-  if (mode === 'sample') {
-    try {
-      return { content: validateContent(JSON.parse(fs.readFileSync(samplePath, 'utf8'))), source: 'sample' };
-    } catch (e) {
-      console.error('Nattåget: kunde inte läsa testinnehållet.');
-      return { content: null, source: 'sample' };
+function readSample(samplePath, sampleStart) {
+  let c;
+  try { c = validateContent(JSON.parse(fs.readFileSync(samplePath, 'utf8'))); }
+  catch (e) {
+    console.error('Nattåget: kunde inte läsa testinnehållet.');
+    return { content: null, source: 'sample' };
+  }
+  if (sampleStart) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(sampleStart) && !Number.isNaN(Date.parse(sampleStart + 'T00:00:00Z'))) c.start_date = sampleStart;
+    else console.warn('Nattåget: NATTAGET_SAMPLE_START har fel format (ska vara ÅÅÅÅ-MM-DD) och ignoreras.');
+  }
+  return { content: c, source: 'sample' };
+}
+
+// Väljer källa, i den här ordningen:
+//  1. CONTENT_KEY satt och content.enc finns → alltid det riktiga
+//     innehållet. NATTAGET_CONTENT och NATTAGET_SAMPLE_START ignoreras
+//     (med en varning), så att testinställningar som glömts kvar i
+//     Railway aldrig kan ersätta det riktiga innehållet.
+//  2. NATTAGET_CONTENT=sample → testinnehållet, med startdatumet flyttat
+//     till NATTAGET_SAMPLE_START om den är satt.
+//  3. Annars inget innehåll → spelet svarar 503 ("Nattåget är inte redo än").
+// Går dekrypteringen fel blir det också inget innehåll — aldrig testinnehåll.
+export function loadContent({ mode, key, sampleStart, encPath = ENC_PATH, samplePath = SAMPLE_PATH } = {}) {
+  if (key && fs.existsSync(encPath)) {
+    if (mode) console.warn('Nattåget: NATTAGET_CONTENT ignoreras eftersom CONTENT_KEY och content.enc finns.');
+    if (sampleStart) console.warn('Nattåget: NATTAGET_SAMPLE_START ignoreras eftersom CONTENT_KEY och content.enc finns.');
+    let file;
+    try { file = JSON.parse(fs.readFileSync(encPath, 'utf8')); }
+    catch (e) {
+      console.error('Nattåget: kunde inte läsa den krypterade innehållsfilen.');
+      return { content: null, source: 'encrypted' };
+    }
+    try { return { content: validateContent(decryptContent(file, key)), source: 'encrypted' }; }
+    catch (e) {
+      console.error('Nattåget: kunde inte dekryptera innehållet.');
+      return { content: null, source: 'encrypted' };
     }
   }
-  if (!key) {
-    console.warn('Nattåget: CONTENT_KEY saknas och NATTAGET_CONTENT=sample är inte satt — spelet är inte redo.');
-    return { content: null, source: 'none' };
-  }
-  let file;
-  try { file = JSON.parse(fs.readFileSync(encPath, 'utf8')); }
-  catch (e) {
-    console.error('Nattåget: kunde inte läsa den krypterade innehållsfilen.');
-    return { content: null, source: 'encrypted' };
-  }
-  try { return { content: validateContent(decryptContent(file, key)), source: 'encrypted' }; }
-  catch (e) {
-    console.error('Nattåget: kunde inte dekryptera innehållet.');
-    return { content: null, source: 'encrypted' };
-  }
+  if (mode === 'sample') return readSample(samplePath, sampleStart);
+  if (key) console.warn('Nattåget: CONTENT_KEY är satt men content.enc saknas — spelet är inte redo.');
+  else console.warn('Nattåget: CONTENT_KEY saknas och NATTAGET_CONTENT=sample är inte satt — spelet är inte redo.');
+  return { content: null, source: 'none' };
 }
 
 /* ---------- Tid ---------- */
@@ -290,7 +304,7 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
     litCount: lit.size, allLit,
     fragments,
     board,
-    hints, hintsUsed: hints.length, hintsTotal: HINT_COUNT,
+    hints, hintsUsed: hints.length, hintsTotal: Math.min(HINT_COUNT, (d.hints || []).length),
     lockOpen: !solve && (archiveMode || allLit),
     stars: computeStars(solves, events),
     attemptsLeft: Math.max(0, MAX_ATTEMPTS_PER_DAY - myAttempts)
@@ -379,7 +393,7 @@ async function initSchema(pool) {
   }
 }
 
-function pgStore(pool) {
+export function pgStore(pool) {
   const ev = r => ({ id: Number(r.id), day: r.day, profile_id: r.profile_id, kind: r.kind, body: r.body, created_at: r.created_at });
   return {
     async getPlayers() {
@@ -409,6 +423,31 @@ function pgStore(pool) {
       );
       return ev(r.rows[0]);
     },
+    // Lägger bara till händelsen om det finns exakt `count` händelser av
+    // typen `kind` för luckan (och profilen, om given). Ett transaktionslås
+    // per lucka gör att två samtidiga anrop inte båda kan lyckas.
+    async insertEventIfCount({ day, profileId, kind, body, createdAt }, guard) {
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        await client.query("select pg_advisory_xact_lock(hashtext('nattaget'), $1)", [day]);
+        const c = await client.query(
+          'select count(*)::int as c from nattaget_events where day = $1 and kind = $2 and ($3::text is null or profile_id = $3)',
+          [day, guard.kind, guard.profileId ?? null]
+        );
+        let row = null;
+        if (c.rows[0].c === guard.count) {
+          const r = await client.query(
+            'insert into nattaget_events (day, profile_id, kind, body, created_at) values ($1,$2,$3,$4, coalesce($5, now())) returning id, day, profile_id, kind, body, created_at',
+            [day, profileId, kind, body ?? null, createdAt ?? null]
+          );
+          row = ev(r.rows[0]);
+        }
+        await client.query('commit');
+        return row;
+      } catch (e) { await client.query('rollback'); throw e; }
+      finally { client.release(); }
+    },
     async listSolves() {
       const r = await pool.query('select day, profile_id, mode, solved_at from nattaget_solves order by day');
       return r.rows;
@@ -420,6 +459,15 @@ function pgStore(pool) {
       );
       return r.rowCount > 0;
     },
+    async insertPhoto({ day, profileId, mime, data }) {
+      const r = await pool.query('insert into nattaget_photos (day, profile_id, mime, data) values ($1,$2,$3,$4) returning id', [day, profileId, mime, data]);
+      return Number(r.rows[0].id);
+    },
+    async getPhoto(id) {
+      const r = await pool.query('select id, day, profile_id, mime, data from nattaget_photos where id = $1', [id]);
+      return r.rows[0] || null;
+    },
+    // Tömmer allt utom nattaget_players (kopplingen plats → profil).
     async reset() {
       await pool.query('truncate nattaget_events, nattaget_photos, nattaget_solves restart identity');
     }
@@ -427,7 +475,7 @@ function pgStore(pool) {
 }
 
 export function memStore() {
-  let players = [], events = [], solves = [], nextId = 1;
+  let players = [], events = [], solves = [], photos = [], nextId = 1;
   return {
     async getPlayers() { return players.map(p => Object.assign({}, p)); },
     async setPlayers(map) {
@@ -442,13 +490,23 @@ export function memStore() {
       events.push(e);
       return Object.assign({}, e);
     },
+    async insertEventIfCount(e, guard) {
+      const c = events.filter(x => x.day === e.day && x.kind === guard.kind && (guard.profileId == null || x.profile_id === guard.profileId)).length;
+      return c === guard.count ? this.insertEvent(e) : null;
+    },
     async listSolves() { return solves.map(s => Object.assign({}, s)); },
     async insertSolve({ day, profileId, mode, solvedAt }) {
       if (solves.some(s => s.day === day)) return false;
       solves.push({ day, profile_id: profileId, mode, solved_at: solvedAt ? new Date(solvedAt) : new Date() });
       return true;
     },
-    async reset() { events = []; solves = []; nextId = 1; }
+    async insertPhoto({ day, profileId, mime, data }) {
+      const p = { id: photos.length + 1, day, profile_id: profileId, mime, data };
+      photos.push(p);
+      return p.id;
+    },
+    async getPhoto(id) { return photos.find(p => p.id === Number(id)) || null; },
+    async reset() { events = []; solves = []; photos = []; nextId = 1; }
   };
 }
 
@@ -525,7 +583,9 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
     const view = await dayView(n, p);
     if (view.status !== 'today') return res.status(409).json({ error: 'not_today' });
     if (content.days[n - 1].fragments[p.slot].kind === 'photo_task') return res.status(400).json({ error: 'photo_task' });
-    if (!view.fragments[p.slot].posted) await store.insertEvent({ day: n, profileId: p.profileId, kind: 'fragment', createdAt: now() });
+    if (!view.fragments[p.slot].posted) {
+      await store.insertEventIfCount({ day: n, profileId: p.profileId, kind: 'fragment', createdAt: now() }, { kind: 'fragment', profileId: p.profileId, count: 0 });
+    }
     res.json({ ok: true, day: await dayView(n, p) });
   }));
 
@@ -534,6 +594,20 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
     if (!text) return res.status(400).json({ error: 'tom anteckning' });
     if ([...text].length > MAX_NOTE) return res.status(400).json({ error: 'for lang anteckning' });
     await store.insertEvent({ day: n, profileId: p.profileId, kind: 'note', body: text, createdAt: now() });
+    res.json({ ok: true, day: await dayView(n, p) });
+  }));
+
+  // Avslöjar nästa ledtråd för hela laget (kostar en stjärna). Klienten
+  // skickar vilket nummer den tror är nästa (`n`), så att två som trycker
+  // samtidigt inte tar två ledtrådar — den andra får 409 och den nya vyn.
+  router.post('/day/:n/hint', dayRoute('/hint', async (req, res, p, n) => {
+    const view = await dayView(n, p);
+    if (view.status === 'solved') return res.status(409).json({ error: 'already_solved', day: view });
+    if (view.hintsUsed >= view.hintsTotal) return res.status(409).json({ error: 'no_more_hints', day: view });
+    const want = (req.body || {}).n;
+    if (want != null && Number(want) !== view.hintsUsed + 1) return res.status(409).json({ error: 'hint_already_taken', day: view });
+    const added = await store.insertEventIfCount({ day: n, profileId: p.profileId, kind: 'hint', createdAt: now() }, { kind: 'hint', count: view.hintsUsed });
+    if (!added) return res.status(409).json({ error: 'hint_already_taken', day: await dayView(n, p) });
     res.json({ ok: true, day: await dayView(n, p) });
   }));
 
@@ -594,7 +668,12 @@ export async function createNattaget(pool, opts = {}) {
   const env = process.env;
   const { content, source } = opts.content !== undefined
     ? { content: opts.content, source: 'given' }
-    : loadContent({ mode: opts.contentMode ?? env.NATTAGET_CONTENT, key: opts.contentKey ?? env.CONTENT_KEY, encPath: opts.encPath });
+    : loadContent({
+      mode: opts.contentMode ?? env.NATTAGET_CONTENT,
+      key: opts.contentKey ?? env.CONTENT_KEY,
+      sampleStart: opts.sampleStart ?? env.NATTAGET_SAMPLE_START,
+      encPath: opts.encPath
+    });
   const now = opts.now || makeNow({ fakeNow: env.NATTAGET_FAKE_NOW, nodeEnv: env.NODE_ENV });
   if (env.NATTAGET_FAKE_NOW && env.NODE_ENV === 'production') console.warn('Nattåget: NATTAGET_FAKE_NOW ignoreras i produktion.');
 
