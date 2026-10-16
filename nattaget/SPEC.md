@@ -128,11 +128,16 @@ Som dagens lucka, med skillnaderna:
 - Låset är öppet direkt.
 
 ### 3.4 Löst lucka
-- Alla lyktor tända (om löst samma dag med alla fem).
+En löst lucka är facit: hela gåtan visas. Uppifrån och ned:
+- Lyktorna (alla tända om löst samma dag med alla fem).
 - ”Lucka N · löst 21:48 · alla fem”, rubrik och svaret visat som låsrutor.
+- Berättelsen (`intro`).
 - `epilogue.text`.
-- ”Så här gick det till” (genererat av servern).
 - Nytt föremål, om luckan gav ett.
+- ”Så här gick det till” (genererat av servern).
+- **Alla fem lappar**, utan frost, med `reveal` för fotouppgifter. Lappar som aldrig lades ut är markerade.
+- **Tavlan** i tidsordning.
+- **Ledtrådarna**: de laget tog visas öppet med vem som tog dem. De som aldrig togs är hopfällda (”Ledtråd 3 · behövdes inte”) och fälls ut med ett tryck.
 - Knapp ”Tillbaka till tåget”.
 
 ---
@@ -270,9 +275,10 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 - Aldrig en framtida lucka (inte ens till admin).
 - Aldrig `answer`.
 - `intro`, `title`, `lock` (utan svaret), `requires_items` och vilka som saknas.
-- Spelarens **egen** lapp. För `photo_task`: `reveal` bara efter att spelaren lagt upp foto, eller i arkivläge.
-- Andra spelares lappar **bara** om de är utlagda på tavlan, eller i arkivläge.
-- Ledtrådar bara om de är avslöjade.
+- Spelarens **egen** lapp. För `photo_task`: `reveal` bara efter att spelaren lagt upp foto, i arkivläge eller när luckan är löst.
+- Andra spelares lappar **bara** om de är utlagda på tavlan, i arkivläge eller när luckan är löst.
+- Ledtrådar bara om de är avslöjade, eller när luckan är löst. Varje ledtråd har `n`, `text`, `taken` och `by` (platsen som tog den, annars `null`).
+- **När luckan är löst skickas hela gåtan:** alla fem lappar (med `reveal` och `posted`), hela tavlan (även foton) och alla ledtrådar, där de som aldrig togs har `taken: false`. `answer` skickas ändå aldrig. Svaret finns bara som `solution`.
 - `epilogue` och ”Så här gick det till” bara när luckan är löst.
 - `solution` bara när luckan är löst: svaret efter normalisering, så att den lösta vyn kan visa det som låsrutor (3.4). Fältet heter aldrig `answer`, och det finns inte i en olöst lucka.
 - `day` är samma vy i svaren från `fragment`, `note` och `solve`, så att klienten slipper hämta luckan igen.
@@ -312,7 +318,7 @@ NATTAGET_FAKE_NOW=        # bara lokalt
 | 2 | Kalendervyn och luckvyn med `text`-lappar, lyktor, tavla, anteckningar, `digits`-lås, löst vy, epilog och ”Så här gick det till” | Testdag 1 går att spela igenom med fem profiler |
 | 3 | Arkivläge med frosteffekt, ledtrådar, stjärnor, föremål och `requires_items` | Hela testfilen går att spela, även i efterhand |
 | 4 | Låstyperna `word`, `coordinate`, `choice` och lapptyperna `svg`, `grid_map`, `photo_task` med uppladdning | Testdag 2 och 3 går att spela |
-| 5 | Finputs: animationer när lyktor tänds och låset öppnas, ”Kommer 1 december”-sidan, mobiltest, felhantering | Familjen kan köra en provlucka |
+| 5 | Finputs: animationer när lyktor tänds och låset öppnas, ”Kommer 1 december”-sidan, **resedagboken** (en vy där laget kan bläddra igenom alla lösta luckor i ordning, med berättelse, epilog och ”Så här gick det till”), mobiltest, felhantering | Familjen kan köra en provlucka |
 
 ---
 

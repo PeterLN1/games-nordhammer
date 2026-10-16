@@ -281,7 +281,7 @@ describe('ledtrådar', () => {
 
     await g.ev(1, 'sara', 'hint', null, at('2026-12-01', '09:00'));
     r = await g.get('/day/1', IDS.peter);
-    assert.deepEqual(r.body.hints, [{ n: 1, text: hints[0], by: 'sara' }]);
+    assert.deepEqual(r.body.hints, [{ n: 1, text: hints[0], taken: true, by: 'sara' }]);
     assert.ok(!r.text.includes(hints[1]) && !r.text.includes(hints[2]));
 
     await g.ev(1, 'peter', 'hint', null, at('2026-12-01', '09:05'));
@@ -666,7 +666,7 @@ describe('fas 3: ledtrådar, stjärnor, arkiv och föremål', () => {
   test('ledtrådar avslöjas en i taget och syns för alla', async () => {
     let r = await g.post('/day/1/hint', { profile: IDS.sara, n: 1 });
     assert.equal(r.status, 200);
-    assert.deepEqual(r.body.day.hints, [{ n: 1, text: hints[0], by: 'sara' }]);
+    assert.deepEqual(r.body.day.hints, [{ n: 1, text: hints[0], taken: true, by: 'sara' }]);
     assert.ok(!r.text.includes(hints[1]));
     const other = await g.get('/day/1', IDS.simon);
     assert.equal(other.body.hints[0].text, hints[0]);
@@ -750,4 +750,57 @@ test('Postgres: villkorad insert tar ett lås per lucka och lägger inte till n�
   const e = await st.insertEventIfCount({ day: 1, profileId: IDS.peter, kind: 'hint' }, { kind: 'hint', count: 0 });
   assert.equal(e.id, 7);
   assert.equal(sql.filter(q => q === 'commit').length, 2);
+});
+
+describe('löst lucka: hela gåtan skickas', () => {
+  let g;
+  before(async () => { g = await startGame(at('2026-12-01', '09:00')); });
+  after(() => g.close());
+
+  test('olöst idag: andras lappar och otagna ledtrådar skickas inte', async () => {
+    await g.ev(1, 'maria', 'fragment', null, at('2026-12-01', '08:00'));
+    await g.ev(1, 'simon', 'hint', null, at('2026-12-01', '08:30'));
+    const r = await g.get('/day/1', IDS.peter);
+    assert.deepEqual(Object.keys(r.body.fragments).sort(), ['maria', 'peter']);
+    assert.equal(r.body.hints.length, 1);
+    assert.ok(!r.text.includes(SAMPLE.days[0].hints[1]) && !r.text.includes(SAMPLE.days[0].hints[2]));
+    assert.ok(!r.text.includes(SAMPLE.days[0].fragments.sara.text));
+  });
+
+  test('när luckan är löst skickas alla fem lappar, hela tavlan och alla ledtrådar', async () => {
+    // Löst direkt i lagret, så att bara Maria lagt ut sin lapp.
+    await g.ev(1, 'sara', 'note', 'Udda siffror', at('2026-12-01', '08:40'));
+    await g.ev(1, 'vilma', 'attempt', '1397', at('2026-12-01', '08:50'));
+    await g.store.insertSolve({ day: 1, profileId: IDS.vilma, mode: 'archive', solvedAt: at('2026-12-01', '08:55') });
+    await g.ev(1, 'vilma', 'solve', null, at('2026-12-01', '08:55'));
+    for (const slot of Object.keys(IDS)) {
+      const r = await g.get('/day/1', IDS[slot]);
+      assert.equal(r.body.status, 'solved');
+      assert.deepEqual(Object.keys(r.body.fragments).sort(), Object.keys(IDS).sort());
+      for (const s of Object.keys(IDS)) assert.equal(r.body.fragments[s].text, SAMPLE.days[0].fragments[s].text);
+      assert.equal(r.body.fragments.maria.posted, true);
+      assert.equal(r.body.fragments.sara.posted, false);
+      assert.deepEqual(r.body.board.map(b => b.kind), ['fragment', 'hint', 'note', 'attempt', 'solve']);
+      assert.deepEqual(r.body.hints.map(h => [h.n, h.taken, h.by]), [[1, true, 'simon'], [2, false, null], [3, false, null]]);
+      assert.deepEqual(r.body.hints.map(h => h.text), SAMPLE.days[0].hints);
+      assert.equal(r.body.hintsUsed, 1);
+      assert.ok(!hasKeyDeep(r.body, 'answer'));
+    }
+  });
+
+  test('en löst fotolucka skickar reveal för alla, även utan uppladdning', async () => {
+    g.setNow(at('2026-12-03', '09:00'));
+    await g.ev(3, 'peter', 'photo', '1', at('2026-12-03', '08:00'));
+    let r = await g.get('/day/3', IDS.maria);
+    assert.equal(r.body.fragments.maria.reveal, undefined);
+    await g.store.insertSolve({ day: 3, profileId: IDS.peter, mode: 'archive', solvedAt: at('2026-12-03', '08:30') });
+    r = await g.get('/day/3', IDS.maria);
+    for (const s of Object.keys(IDS)) assert.equal(r.body.fragments[s].reveal, SAMPLE.days[2].fragments[s].reveal);
+    assert.equal(r.body.board.find(b => b.kind === 'photo').photoId, '1');
+  });
+
+  test('framtida luckor skickas fortfarande aldrig', async () => {
+    g.setNow(at('2026-12-01', '09:00'));
+    assert.equal((await g.get('/day/3', IDS.peter)).status, 403);
+  });
 });

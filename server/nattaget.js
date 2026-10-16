@@ -251,19 +251,26 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
   });
   const lit = litSlots(date, dayEvents, slotByProfile);
 
+  // En löst lucka är facit: då skickas hela gåtan — alla lappar (med
+  // reveal), hela tavlan och alla ledtrådar, även de som aldrig togs.
+  const showAll = archiveMode || !!solve;
   const fragments = {};
   SLOTS.forEach(slot => {
     const f = d.fragments[slot];
     const mine = slot === me;
-    if (!(mine || archiveMode || posted.has(slot))) return;
-    const pf = publicFragment(f, { withReveal: archiveMode || photoed.has(slot) });
+    if (!(mine || showAll || posted.has(slot))) return;
+    const pf = publicFragment(f, { withReveal: showAll || photoed.has(slot) });
     pf.posted = posted.has(slot);
     fragments[slot] = pf;
   });
 
   const hintEvents = dayEvents.filter(e => e.kind === 'hint');
-  const hints = hintEvents.slice(0, HINT_COUNT).map((e, i) => ({
-    n: i + 1, text: String((d.hints || [])[i] || ''), by: slotByProfile.get(e.profile_id) || null
+  const hintTexts = (d.hints || []).slice(0, HINT_COUNT).map(String);
+  const hintsUsed = Math.min(hintEvents.length, hintTexts.length);
+  // Olöst: bara tagna ledtrådar. Löst: alla, med taken: false på dem
+  // laget aldrig behövde.
+  const hints = hintTexts.slice(0, solve ? hintTexts.length : hintsUsed).map((text, i) => ({
+    n: i + 1, text, taken: i < hintsUsed, by: i < hintsUsed ? (slotByProfile.get(hintEvents[i].profile_id) || null) : null
   }));
 
   const board = dayEvents
@@ -304,7 +311,7 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
     litCount: lit.size, allLit,
     fragments,
     board,
-    hints, hintsUsed: hints.length, hintsTotal: Math.min(HINT_COUNT, (d.hints || []).length),
+    hints, hintsUsed, hintsTotal: hintTexts.length,
     lockOpen: !solve && (archiveMode || allLit),
     stars: computeStars(solves, events),
     attemptsLeft: Math.max(0, MAX_ATTEMPTS_PER_DAY - myAttempts)

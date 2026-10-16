@@ -201,6 +201,16 @@
   .hint-actions .btn { flex: 1; }
   .hint-confirm { color: var(--soft); font-size: 15px; margin-top: 12px; }
 
+  .hint-unused { border-top: 1px solid rgba(58,74,99,.6); }
+  .hint-unused summary {
+    display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; color: var(--muted); list-style: none;
+  }
+  .hint-unused summary::-webkit-details-marker { display: none; }
+  .hint-unused summary::after { content: ''; margin-left: auto; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .2s; }
+  .hint-unused[open] summary::after { transform: rotate(-135deg); }
+  .hint-unused .no { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--surface-dark); color: var(--muted); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .hint-unused .hint-text { padding: 0 0 12px 34px; color: var(--soft); }
+
   /* ---------- Löst lucka ---------- */
   .solved-meta { color: var(--glow); font-size: 14px; font-weight: 600; text-align: center; margin-top: 20px; }
   .solved-head { text-align: center; }
@@ -686,6 +696,7 @@
     }
   }
 
+  // Den lösta vyn är facit: servern skickar då hela gåtan.
   function renderSolved(d){
     var s = d.solved;
     var answer = String(d.solution || '').split('');
@@ -696,12 +707,50 @@
       el('header', { class: 'solved-head' },
         el('h1', { text: d.title }),
         el('div', { class: 'lock-boxes', 'aria-label': 'Svaret: ' + d.solution }, answer.map(function(ch){ return el('div', { class: 'lock-box static', text: ch }); }))),
-      el('section', null, el('p', { class: 'epilogue', text: d.epilogue.text })),
+      el('section', null, el('p', { class: 'intro', text: d.intro })),
+      el('section', null, el('h2', { class: 'section-title', text: 'Sedan' }), el('p', { class: 'epilogue', text: d.epilogue.text })),
       d.epilogue.item ? el('section', null, el('h2', { class: 'section-title', text: 'Nytt föremål' }), itemCard(d.epilogue.item, true)) : null,
       el('section', null, el('h2', { class: 'section-title', text: 'Så här gick det till' }),
         el('ul', { class: 'story' }, d.story.map(function(line){ return el('li', { text: line }); }))),
+      solvedFragmentsSection(d),
+      boardSection(d),
+      solvedHintsSection(d),
       el('section', null, el('a', { class: 'btn btn-primary btn-block', href: '#', text: 'Tillbaka till tåget' }))
     ]);
+  }
+  function solvedFragmentsSection(d){
+    return el('section', null,
+      el('h2', { class: 'section-title', text: 'Alla lappar' }),
+      el('div', { class: 'frag-list' }, d.players.map(function(p){
+        var f = d.fragments[p.slot];
+        if (!f) return null;
+        var mine = p.slot === d.me;
+        return el('div', { class: 'frag' },
+          el('div', { class: 'paper' }, el('div', { class: 'from', text: mine ? 'Din lapp' : 'Från ' + p.name }), fragmentBody(f)),
+          !f.posted ? el('div', { class: 'never', text: mine ? 'Du lade aldrig ut din lapp.' : p.name + ' lade aldrig ut sin lapp.' }) : null);
+      })));
+  }
+  // Tagna ledtrådar visas öppet; de laget inte behövde är hopfällda.
+  // Vilka som fällts ut minns vi, så att omritningen var 20:e sekund
+  // inte fäller ihop dem igen.
+  var openHints = {};
+  function solvedHintsSection(d){
+    if (!d.hints || !d.hints.length) return null;
+    var taken = d.hints.filter(function(h){ return h.taken; });
+    var unused = d.hints.filter(function(h){ return !h.taken; });
+    return el('section', null, el('div', { class: 'hints-box' },
+      el('h2', { class: 'section-title', text: 'Ledtrådar' }),
+      el('p', { class: 'count', text: taken.length ? 'Laget tog ' + taken.length + ' av ' + d.hints.length + '.' : 'Inga ledtrådar behövdes.' }),
+      taken.map(function(h){
+        return el('div', { class: 'hint-item' }, el('span', { class: 'no', text: h.n }),
+          el('div', null, el('div', { text: h.text }), h.by ? el('div', { class: 'by', text: 'Tagen av ' + playerName(d, h.by) }) : null));
+      }),
+      unused.map(function(h){
+        var key = d.day + ':' + h.n;
+        return el('details', { class: 'hint-unused', open: !!openHints[key], ontoggle: function(e){ openHints[key] = e.target.open; } },
+          el('summary', null, el('span', { class: 'no', text: h.n }), el('span', { text: 'Ledtråd ' + h.n + ' · behövdes inte' })),
+          el('div', { class: 'hint-text', text: h.text }));
+      })));
   }
 
   function takeHint(){
