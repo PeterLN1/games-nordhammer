@@ -29,3 +29,5 @@ schemalagd nattlig upplösning, flera samverkande regelsystem) och
 README:n innehåller arkitekturbeslut, kartans designprinciper och
 kända fallgropar (t.ex. att upplösningen är idempotent per dag) som
 inte är uppenbara direkt från koden.
+
+Nattåget: följ alltid nattaget/CLAUDE.md. Läs aldrig server/nattaget/content.enc eller CONTENT_KEY.
