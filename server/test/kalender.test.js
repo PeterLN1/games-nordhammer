@@ -1,4 +1,4 @@
-/* Tester för Nattågets säkerhetsregler (nattaget/SPEC.md, "Vad servern
+/* Tester för kalenderns säkerhetsregler (kalender/SPEC.md, "Vad servern
    får skicka"). Körs alltid mot testinnehållet — aldrig content.enc.
    Kör: cd server && npm test */
 import { test, describe, before, after } from 'node:test';
@@ -9,8 +9,8 @@ import os from 'os';
 import path from 'path';
 import express from 'express';
 import {
-  createNattaget, loadContent, makeNow, memStore, pgStore, SAMPLE_PATH, photoBodyParser, MAX_PHOTO_BYTES, normalizeAnswer, computeStars
-} from '../nattaget.js';
+  createKalender, loadContent, makeNow, memStore, pgStore, readEnv, publicTheme, DEFAULT_THEME, SAMPLE_PATH, photoBodyParser, MAX_PHOTO_BYTES, normalizeAnswer, computeStars
+} from '../kalender.js';
 
 const SAMPLE = JSON.parse(fs.readFileSync(SAMPLE_PATH, 'utf8'));
 const SECRET = 'testhemlighet';
@@ -25,17 +25,17 @@ const at = (date, time = '08:00') => new Date(date + 'T' + time + ':00+01:00');
 async function startGame(nowDate) {
   let current = nowDate;
   const store = memStore();
-  const game = await createNattaget(null, {
+  const game = await createKalender(null, {
     content: JSON.parse(JSON.stringify(SAMPLE)),
     store, adminSecret: SECRET, now: () => current, listProfiles: async () => PROFILES
   });
   // Samma montering som server/index.js: foto-parsern före den globala 8 kB-gränsen.
   const app = express();
-  app.use('/api/nattaget', photoBodyParser);
+  app.use('/api/kalender', photoBodyParser);
   app.use(express.json({ limit: '8kb' }));
-  app.use('/api/nattaget', game.router);
+  app.use('/api/kalender', game.router);
   const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
-  const base = 'http://127.0.0.1:' + server.address().port + '/api/nattaget';
+  const base = 'http://127.0.0.1:' + server.address().port + '/api/kalender';
   const responses = []; // alla svarskroppar, för "svaret läcker aldrig"-kontrollen
   const call = async (method, p, body) => {
     const r = await fetch(base + p, body ? { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { method });
@@ -335,8 +335,8 @@ describe('admin', () => {
     assert.equal((await g.post('/admin/reset', { secret: 'fel' })).status, 403);
   });
 
-  test('admin är avstängt utan NATTAGET_ADMIN_SECRET', async () => {
-    const game = await createNattaget(null, { content: SAMPLE, store: memStore(), adminSecret: '', now: () => new Date() });
+  test('admin är avstängt utan KALENDER_ADMIN_SECRET', async () => {
+    const game = await createKalender(null, { content: SAMPLE, store: memStore(), adminSecret: '', now: () => new Date() });
     const app = express(); app.use(express.json()); app.use('/n', game.router);
     const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
     const r = await fetch('http://127.0.0.1:' + server.address().port + '/n/admin/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"secret":""}' });
@@ -382,19 +382,11 @@ describe('admin/reset och foton', () => {
     assert.equal((await st.getPlayers()).length, 5);
   });
 
-  test('Postgres: reset tömmer nattaget_photos men inte nattaget_players', async () => {
-    const sql = [];
-    const fakePool = { query: async q => { sql.push(q); return { rows: [], rowCount: 0 }; } };
-    await pgStore(fakePool).reset();
-    assert.equal(sql.length, 1);
-    assert.match(sql[0], /^truncate\b/);
-    for (const t of ['nattaget_events', 'nattaget_photos', 'nattaget_solves']) assert.ok(sql[0].includes(t), t + ' töms inte');
-    assert.ok(!sql[0].includes('nattaget_players'));
-  });
+  // Postgres-varianten testas mot riktig SQL (PGlite) längre ned.
 });
 
 describe('tid', () => {
-  test('NATTAGET_FAKE_NOW används lokalt men ignoreras i produktion', () => {
+  test('KALENDER_FAKE_NOW används lokalt men ignoreras i produktion', () => {
     const fake = '2026-12-05T10:00:00+01:00';
     assert.equal(makeNow({ fakeNow: fake, nodeEnv: 'development' })().toISOString(), new Date(fake).toISOString());
     const real = makeNow({ fakeNow: fake, nodeEnv: 'production' })();
@@ -403,7 +395,7 @@ describe('tid', () => {
 });
 
 describe('innehållsladdning', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'nattaget-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kalender-'));
   const key = crypto.randomBytes(32).toString('base64');
   const encPath = path.join(tmp, 'content.enc');
   before(() => {
@@ -424,7 +416,7 @@ describe('innehållsladdning', () => {
   }
   const missingEnc = path.join(tmp, 'finns-inte.enc');
 
-  test('testinnehåll bara när NATTAGET_CONTENT=sample', () => {
+  test('testinnehåll bara när KALENDER_CONTENT=sample', () => {
     const { result } = captureLogs(() => loadContent({ mode: 'sample', key: '', encPath }));
     assert.equal(result.source, 'sample');
     assert.equal(result.content.start_date, SAMPLE.start_date);
@@ -435,8 +427,8 @@ describe('innehållsladdning', () => {
     assert.equal(result.source, 'encrypted');
     assert.equal(result.content.start_date, SAMPLE.start_date); // startdatumet flyttas inte
     assert.deepEqual(logged, [
-      'Nattåget: NATTAGET_CONTENT ignoreras eftersom CONTENT_KEY och content.enc finns.',
-      'Nattåget: NATTAGET_SAMPLE_START ignoreras eftersom CONTENT_KEY och content.enc finns.'
+      'Kalendern: KALENDER_CONTENT ignoreras eftersom CONTENT_KEY och den krypterade filen finns.',
+      'Kalendern: KALENDER_SAMPLE_START ignoreras eftersom CONTENT_KEY och den krypterade filen finns.'
     ]);
   });
 
@@ -451,15 +443,15 @@ describe('innehållsladdning', () => {
     assert.equal(r.result.source, 'sample');
     r = captureLogs(() => loadContent({ key, encPath: missingEnc }));
     assert.equal(r.result.content, null);
-    assert.deepEqual(r.logged, ['Nattåget: CONTENT_KEY är satt men content.enc saknas — spelet är inte redo.']);
+    assert.deepEqual(r.logged, ['Kalendern: CONTENT_KEY är satt men KALENDER_ACTIVE saknas — spelet är inte redo.']);
   });
 
-  test('NATTAGET_SAMPLE_START flyttar testinnehållets startdatum', () => {
+  test('KALENDER_SAMPLE_START flyttar testinnehållets startdatum', () => {
     const { result } = captureLogs(() => loadContent({ mode: 'sample', sampleStart: '2026-10-17', encPath: missingEnc }));
     assert.equal(result.content.start_date, '2026-10-17');
   });
 
-  test('NATTAGET_SAMPLE_START med fel format ignoreras med varning', () => {
+  test('KALENDER_SAMPLE_START med fel format ignoreras med varning', () => {
     for (const bad of ['17 oktober', '2026-13-45', '2026-10-1']) {
       const { result, logged } = captureLogs(() => loadContent({ mode: 'sample', sampleStart: bad, encPath: missingEnc }));
       assert.equal(result.content.start_date, SAMPLE.start_date);
@@ -467,8 +459,8 @@ describe('innehållsladdning', () => {
     }
   });
 
-  test('NATTAGET_SAMPLE_START öppnar luckor från det datumet', async () => {
-    const game = await createNattaget(null, { contentMode: 'sample', contentKey: '', sampleStart: '2026-10-17', encPath: missingEnc, store: memStore(), adminSecret: SECRET, now: () => at('2026-10-18', '12:00') });
+  test('KALENDER_SAMPLE_START öppnar luckor från det datumet', async () => {
+    const game = await createKalender(null, { contentMode: 'sample', contentKey: '', sampleStart: '2026-10-17', encPath: missingEnc, store: memStore(), adminSecret: SECRET, now: () => at('2026-10-18', '12:00') });
     await game.store.setPlayers(IDS);
     const app = express(); app.use('/n', game.router);
     const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
@@ -503,13 +495,13 @@ describe('innehållsladdning', () => {
       const r = loadContent({ key: crypto.randomBytes(32).toString('base64'), encPath });
       assert.equal(r.content, null);
     } finally { console.error = orig; }
-    assert.deepEqual(logged, ['Nattåget: kunde inte dekryptera innehållet.']);
+    assert.deepEqual(logged, ['Kalendern: kunde inte dekryptera innehållet.']);
   });
 
   test('utan innehåll svarar /state och /day/:n 503 "inte redo"', async () => {
     const orig = console.warn; console.warn = () => {};
     let game;
-    try { game = await createNattaget(null, { contentMode: '', contentKey: '', store: memStore(), adminSecret: SECRET, now: () => new Date() }); }
+    try { game = await createKalender(null, { contentMode: '', contentKey: '', store: memStore(), adminSecret: SECRET, now: () => new Date() }); }
     finally { console.warn = orig; }
     assert.equal(game.content, null);
     const app = express(); app.use('/n', game.router);
@@ -518,7 +510,7 @@ describe('innehållsladdning', () => {
     for (const p of ['/state', '/day/1']) {
       const r = await fetch(base + p + '?profile=' + IDS.peter);
       assert.equal(r.status, 503);
-      assert.deepEqual(await r.json(), { error: 'not_ready', message: 'Nattåget är inte redo än.' });
+      assert.deepEqual(await r.json(), { error: 'not_ready', message: 'Kalendern är inte redo än.' });
     }
     await new Promise(r => server.close(r));
   });
@@ -912,7 +904,7 @@ describe('fas 4: lås', () => {
     content.days[0].lock = { type: 'choice', options: ['Norr', 'Söder', 'Öster'] };
     content.days[0].answer = 'Söder';
     const store = memStore(); await store.setPlayers(IDS);
-    const game = await createNattaget(null, { content, store, adminSecret: SECRET, now: () => at('2026-12-01', '10:00'), listProfiles: async () => PROFILES });
+    const game = await createKalender(null, { content, store, adminSecret: SECRET, now: () => at('2026-12-01', '10:00'), listProfiles: async () => PROFILES });
     const app = express(); app.use(express.json()); app.use('/n', game.router);
     const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
     const base = 'http://127.0.0.1:' + server.address().port + '/n';
@@ -920,6 +912,97 @@ describe('fas 4: lås', () => {
     assert.deepEqual(d.lock, { type: 'choice', options: ['Norr', 'Söder', 'Öster'] });
     assert.ok(!hasKeyDeep(d, 'answer'));
     // Arkivläge så att låset är öppet utan lyktor.
+    await new Promise(r => server.close(r));
+  });
+});
+
+describe('kalendrar, miljövariabler och tema', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kalender-tema-'));
+  const quiet = fn => { const w = console.warn, e = console.error; const logged = []; console.warn = console.error = (...a) => logged.push(a.join(' ')); try { return { result: fn(), logged }; } finally { console.warn = w; console.error = e; } };
+  const writeSample = (name, mutate) => { const c = JSON.parse(JSON.stringify(SAMPLE)); mutate(c); const f = path.join(tmp, name); fs.writeFileSync(f, JSON.stringify(c)); return f; };
+
+  test('KALENDER_* gäller, NATTAGET_* används som reserv med varning', () => {
+    let r = quiet(() => readEnv({ KALENDER_CONTENT: 'sample', NATTAGET_CONTENT: 'x', NATTAGET_ADMIN_SECRET: 'gammal', KALENDER_ACTIVE: 'jul-2026' }));
+    assert.equal(r.result.CONTENT, 'sample');
+    assert.equal(r.result.ADMIN_SECRET, 'gammal');
+    assert.equal(r.result.ACTIVE, 'jul-2026');
+    assert.deepEqual(r.logged, ['Kalendern: NATTAGET_ADMIN_SECRET är föråldrad — döp om den till KALENDER_ADMIN_SECRET.']);
+    r = quiet(() => readEnv({}));
+    assert.deepEqual(r.result, {});
+  });
+
+  test('innehållet måste ha ett giltigt id och 1–24 luckor', () => {
+    const bad = [
+      writeSample('utan-id.json', c => { delete c.id; }),
+      writeSample('fel-id.json', c => { c.id = 'Jul 2026!'; }),
+      writeSample('noll.json', c => { c.days = []; }),
+      writeSample('for-manga.json', c => { c.days = Array.from({ length: 25 }, (_, i) => Object.assign({}, c.days[0], { day: i + 1 })); })
+    ];
+    for (const f of bad) assert.equal(quiet(() => loadContent({ mode: 'sample', samplePath: f })).result.content, null, f);
+    const sju = writeSample('sju.json', c => { c.days = Array.from({ length: 7 }, (_, i) => Object.assign({}, c.days[0], { day: i + 1 })); });
+    assert.equal(quiet(() => loadContent({ mode: 'sample', samplePath: sju })).result.content.days.length, 7);
+  });
+
+  test('den krypterade filen väljs med KALENDER_ACTIVE och id:t måste stämma', () => {
+    const key = crypto.randomBytes(32).toString('base64');
+    const enc = c => {
+      const iv = crypto.randomBytes(12);
+      const ci = crypto.createCipheriv('aes-256-gcm', Buffer.from(key, 'base64'), iv);
+      const data = Buffer.concat([ci.update(JSON.stringify(c), 'utf8'), ci.final()]);
+      return JSON.stringify({ v: 1, alg: 'aes-256-gcm', iv: iv.toString('base64'), tag: ci.getAuthTag().toString('base64'), data: data.toString('base64') });
+    };
+    const jul = Object.assign(JSON.parse(JSON.stringify(SAMPLE)), { id: 'jul-2026' });
+    const f = path.join(tmp, 'jul-2026.enc');
+    fs.writeFileSync(f, enc(jul));
+    let r = quiet(() => loadContent({ key, active: 'jul-2026', encPath: f }));
+    assert.equal(r.result.source, 'encrypted');
+    assert.equal(r.result.content.id, 'jul-2026');
+    r = quiet(() => loadContent({ key, active: 'halloween-2026', encPath: f }));
+    assert.equal(r.result.content, null);
+    assert.deepEqual(r.logged, ['Kalendern: innehållsfilens id stämmer inte med KALENDER_ACTIVE.']);
+    r = quiet(() => loadContent({ key, active: '../hemligt' }));
+    assert.equal(r.result.content, null);
+    assert.ok(r.logged[0].includes('KALENDER_ACTIVE har fel format'));
+  });
+
+  test('temat fylls på med Nattågets värden och bara #hex-färger släpps igenom', () => {
+    assert.deepEqual(publicTheme(undefined), DEFAULT_THEME);
+    const t = publicTheme({ colors: { background: '#110D17', text: 'red; background:url(x)', glow: '#fff' }, door: { singular: 'rum', plural: '' }, icon: 'skull', back: 'x'.repeat(41), extra: 1 });
+    assert.equal(t.colors.background, '#110D17');
+    assert.equal(t.colors.text, DEFAULT_THEME.colors.text);
+    assert.equal(t.colors.glow, '#fff');
+    assert.deepEqual(t.door, { singular: 'rum', plural: 'vagnar' });
+    assert.equal(t.icon, 'lantern');
+    assert.equal(t.back, DEFAULT_THEME.back);
+    assert.equal(t.extra, undefined);
+  });
+
+  test('state och luckor skickar kalender-id och tema; okänd profil får titel och tema men inget annat', async () => {
+    const g = await startGame(at('2026-12-01', '10:00'));
+    try {
+      const s = await g.get('/state', IDS.peter);
+      assert.equal(s.body.calendar, 'prov');
+      assert.equal(s.body.theme.icon, 'candle');
+      assert.deepEqual(s.body.theme.door, { singular: 'rum', plural: 'rum' });
+      assert.equal((await g.get('/day/1', IDS.peter)).body.theme.back, 'Tillbaka till huset');
+      const n = await g.get('/state', STRANGER);
+      assert.equal(n.status, 403);
+      assert.deepEqual(Object.keys(n.body).sort(), ['error', 'theme', 'title']);
+    } finally { await g.close(); }
+  });
+
+  test('valfritt antal luckor: totalDays följer innehållet', async () => {
+    const content = JSON.parse(JSON.stringify(SAMPLE));
+    content.days = Array.from({ length: 7 }, (_, i) => Object.assign({}, SAMPLE.days[0], { day: i + 1 }));
+    content.start_date = '2026-10-25';
+    const store = memStore('prov'); await store.setPlayers(IDS);
+    const game = await createKalender(null, { content, store, adminSecret: SECRET, now: () => at('2026-10-31', '12:00'), listProfiles: async () => PROFILES });
+    const app = express(); app.use('/k', game.router);
+    const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
+    const st = await (await fetch('http://127.0.0.1:' + server.address().port + '/k/state?profile=' + IDS.peter)).json();
+    assert.equal(st.totalDays, 7);
+    assert.equal(st.openedCount, 7);
+    assert.equal(st.days[6].status, 'today');
     await new Promise(r => server.close(r));
   });
 });

@@ -1,13 +1,19 @@
 /* ============================================================
-   Nattåget — familjens adventskalender med gåtor (Nordhammer Spel)
-   Se nattaget/SPEC.md (hela spelet) och nattaget/CLAUDE.md (regler
-   för den som bygger motorn — framför allt: inga spoilers).
+   Kalendern — familjens kalendrar med gåtor (Nordhammer Spel)
+   Första kalendern var Nattåget (jul 2026). Se kalender/SPEC.md (hela
+   spelet) och kalender/CLAUDE.md (regler för den som bygger motorn —
+   framför allt: inga spoilers).
 
-   Innehållet (berättelse, lappar, ledtrådar, svar) ligger antingen i
-   klartext i nattaget/content.sample.json (testinnehåll) eller
-   krypterat i nattaget/content.enc (det riktiga). Servern dekrypterar
-   en gång vid start och håller det i minnet. Innehållet loggas ALDRIG
-   — felmeddelanden säger bara att något gick fel, aldrig vad.
+   Varje kalender har ett id (t.ex. "halloween-2026", "jul-2026"). Det
+   riktiga innehållet (berättelse, lappar, ledtrådar, svar) ligger
+   krypterat i server/kalender/<id>.enc; testinnehållet i klartext i
+   server/kalender/sample.json. KALENDER_ACTIVE väljer vilken kalender
+   som är aktiv. Servern dekrypterar en gång vid start och håller
+   innehållet i minnet. Innehållet loggas ALDRIG — felmeddelanden säger
+   bara att något gick fel, aldrig vad.
+
+   All data (händelser, foton, lösningar, spelare) lagras per kalender,
+   så tidigare kalendrar finns kvar när en ny blir aktiv.
 
    All spoilerskydd sker här på servern: buildDayView() är det enda
    stället som bestämmer vad en spelare får se av en lucka (se SPEC.md,
@@ -19,16 +25,38 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'nattaget');
-export const SAMPLE_PATH = path.join(DIR, 'content.sample.json');
-export const ENC_PATH = path.join(DIR, 'content.enc');
+export const CONTENT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'kalender');
+export const SAMPLE_PATH = path.join(CONTENT_DIR, 'sample.json');
+export function encPathFor(id) { return path.join(CONTENT_DIR, id + '.enc'); }
 
 export const SLOTS = ['peter', 'maria', 'sara', 'vilma', 'simon'];
 const TIMEZONE = 'Europe/Stockholm';
 const HINT_COUNT = 3;
+export const MAX_DAYS = 24;
 export const MAX_ATTEMPTS_PER_DAY = 10;
 const STARS_TOGETHER = 3;
 const STARS_ARCHIVE = 1;
+const CALENDAR_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+// Data som spelades innan kalendrar fick id (provkörningen av Nattåget
+// med testinnehållet) hamnar under testinnehållets id.
+export const LEGACY_CALENDAR = 'prov';
+
+/* ---------- Miljövariabler ----------
+   KALENDER_* gäller. De gamla NATTAGET_* läses som reserv (med en
+   varning) så att en driftsättning inte slår ut en pågående provkörning
+   innan variablerna hunnit döpas om i Railway. */
+export function readEnv(env = process.env) {
+  const out = {};
+  for (const name of ['CONTENT', 'SAMPLE_START', 'ADMIN_SECRET', 'FAKE_NOW', 'ACTIVE']) {
+    const now = env['KALENDER_' + name], old = env['NATTAGET_' + name];
+    if (now != null && now !== '') out[name] = now;
+    else if (old != null && old !== '') {
+      out[name] = old;
+      console.warn('Kalendern: NATTAGET_' + name + ' är föråldrad — döp om den till KALENDER_' + name + '.');
+    }
+  }
+  return out;
+}
 
 /* ---------- Innehåll ---------- */
 export function decryptContent(file, keyB64) {
@@ -43,8 +71,9 @@ export function decryptContent(file, keyB64) {
 // med generiska meddelanden (inga värden ur filen).
 function validateContent(c) {
   if (!c || typeof c !== 'object') throw new Error('innehållet är inte ett objekt');
+  if (typeof c.id !== 'string' || !CALENDAR_ID.test(c.id)) throw new Error('id saknas eller har fel format');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(c.start_date || '')) throw new Error('start_date saknas eller har fel format');
-  if (!Array.isArray(c.days) || !c.days.length) throw new Error('days saknas');
+  if (!Array.isArray(c.days) || c.days.length < 1 || c.days.length > MAX_DAYS) throw new Error('days måste ha 1–' + MAX_DAYS + ' luckor');
   c.days.forEach((d, i) => {
     if (!d || d.day !== i + 1) throw new Error('dagarna är inte numrerade 1, 2, 3 …');
     if (!d.lock || typeof d.lock.type !== 'string') throw new Error('lucka ' + (i + 1) + ' saknar lock');
@@ -58,45 +87,92 @@ function readSample(samplePath, sampleStart) {
   let c;
   try { c = validateContent(JSON.parse(fs.readFileSync(samplePath, 'utf8'))); }
   catch (e) {
-    console.error('Nattåget: kunde inte läsa testinnehållet.');
+    console.error('Kalendern: kunde inte läsa testinnehållet.');
     return { content: null, source: 'sample' };
   }
   if (sampleStart) {
     if (/^\d{4}-\d{2}-\d{2}$/.test(sampleStart) && !Number.isNaN(Date.parse(sampleStart + 'T00:00:00Z'))) c.start_date = sampleStart;
-    else console.warn('Nattåget: NATTAGET_SAMPLE_START har fel format (ska vara ÅÅÅÅ-MM-DD) och ignoreras.');
+    else console.warn('Kalendern: KALENDER_SAMPLE_START har fel format (ska vara ÅÅÅÅ-MM-DD) och ignoreras.');
   }
   return { content: c, source: 'sample' };
 }
 
 // Väljer källa, i den här ordningen:
-//  1. CONTENT_KEY satt och content.enc finns → alltid det riktiga
-//     innehållet. NATTAGET_CONTENT och NATTAGET_SAMPLE_START ignoreras
-//     (med en varning), så att testinställningar som glömts kvar i
-//     Railway aldrig kan ersätta det riktiga innehållet.
-//  2. NATTAGET_CONTENT=sample → testinnehållet, med startdatumet flyttat
-//     till NATTAGET_SAMPLE_START om den är satt.
-//  3. Annars inget innehåll → spelet svarar 503 ("Nattåget är inte redo än").
+//  1. CONTENT_KEY satt och server/kalender/<KALENDER_ACTIVE>.enc finns →
+//     alltid det riktiga innehållet. KALENDER_CONTENT och
+//     KALENDER_SAMPLE_START ignoreras (med en varning), så att
+//     testinställningar som glömts kvar i Railway aldrig kan ersätta det
+//     riktiga innehållet. Filens id måste vara samma som KALENDER_ACTIVE.
+//  2. KALENDER_CONTENT=sample → testinnehållet, med startdatumet flyttat
+//     till KALENDER_SAMPLE_START om den är satt.
+//  3. Annars inget innehåll → spelet svarar 503 ("inte redo än").
 // Går dekrypteringen fel blir det också inget innehåll — aldrig testinnehåll.
-export function loadContent({ mode, key, sampleStart, encPath = ENC_PATH, samplePath = SAMPLE_PATH } = {}) {
-  if (key && fs.existsSync(encPath)) {
-    if (mode) console.warn('Nattåget: NATTAGET_CONTENT ignoreras eftersom CONTENT_KEY och content.enc finns.');
-    if (sampleStart) console.warn('Nattåget: NATTAGET_SAMPLE_START ignoreras eftersom CONTENT_KEY och content.enc finns.');
+export function loadContent({ mode, key, sampleStart, active, encPath, samplePath = SAMPLE_PATH } = {}) {
+  const validActive = typeof active === 'string' && CALENDAR_ID.test(active);
+  if (active && !validActive) console.warn('Kalendern: KALENDER_ACTIVE har fel format och ignoreras.');
+  const enc = encPath || (validActive ? encPathFor(active) : null);
+  if (key && enc && fs.existsSync(enc)) {
+    if (mode) console.warn('Kalendern: KALENDER_CONTENT ignoreras eftersom CONTENT_KEY och den krypterade filen finns.');
+    if (sampleStart) console.warn('Kalendern: KALENDER_SAMPLE_START ignoreras eftersom CONTENT_KEY och den krypterade filen finns.');
     let file;
-    try { file = JSON.parse(fs.readFileSync(encPath, 'utf8')); }
+    try { file = JSON.parse(fs.readFileSync(enc, 'utf8')); }
     catch (e) {
-      console.error('Nattåget: kunde inte läsa den krypterade innehållsfilen.');
+      console.error('Kalendern: kunde inte läsa den krypterade innehållsfilen.');
       return { content: null, source: 'encrypted' };
     }
-    try { return { content: validateContent(decryptContent(file, key)), source: 'encrypted' }; }
+    let c;
+    try { c = validateContent(decryptContent(file, key)); }
     catch (e) {
-      console.error('Nattåget: kunde inte dekryptera innehållet.');
+      console.error('Kalendern: kunde inte dekryptera innehållet.');
       return { content: null, source: 'encrypted' };
     }
+    if (validActive && c.id !== active) {
+      console.error('Kalendern: innehållsfilens id stämmer inte med KALENDER_ACTIVE.');
+      return { content: null, source: 'encrypted' };
+    }
+    return { content: c, source: 'encrypted' };
   }
   if (mode === 'sample') return readSample(samplePath, sampleStart);
-  if (key) console.warn('Nattåget: CONTENT_KEY är satt men content.enc saknas — spelet är inte redo.');
-  else console.warn('Nattåget: CONTENT_KEY saknas och NATTAGET_CONTENT=sample är inte satt — spelet är inte redo.');
+  if (key && !validActive) console.warn('Kalendern: CONTENT_KEY är satt men KALENDER_ACTIVE saknas — spelet är inte redo.');
+  else if (key) console.warn('Kalendern: CONTENT_KEY är satt men den krypterade filen för den aktiva kalendern saknas — spelet är inte redo.');
+  else console.warn('Kalendern: CONTENT_KEY saknas och KALENDER_CONTENT=sample är inte satt — spelet är inte redo.');
   return { content: null, source: 'none' };
+}
+
+/* ---------- Tema ----------
+   Färgerna, ordet för en lucka, tillbakaknappens text och ikonen för de
+   fem. Saknas något används Nattågets värden. Färgerna kontrolleras här
+   (bara #hex) eftersom klienten sätter dem som CSS-variabler. */
+export const DEFAULT_THEME = {
+  colors: {
+    background: '#0F1A2B', surface: '#17253B', surface_dark: '#0B1422', border: '#3A4A63',
+    text: '#E8EEF5', text_muted: '#A9B6C8', text_soft: '#C9D3E0',
+    glow: '#F2B544', flame: '#FFD27A', off: '#5B6B84', paper: '#F4EBDD', paper_text: '#2A2118'
+  },
+  door: { singular: 'vagn', plural: 'vagnar' },
+  back: 'Tillbaka till tåget',
+  icon: 'lantern'
+};
+const ICONS = ['lantern', 'candle'];
+const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+const shortText = (v, max) => typeof v === 'string' && v.trim() && v.length <= max ? v.trim() : null;
+export function publicTheme(theme) {
+  const t = theme && typeof theme === 'object' ? theme : {};
+  const colors = {};
+  for (const k of Object.keys(DEFAULT_THEME.colors)) {
+    const v = t.colors && t.colors[k];
+    colors[k] = typeof v === 'string' && HEX.test(v) ? v : DEFAULT_THEME.colors[k];
+  }
+  const door = t.door || {};
+  return {
+    colors,
+    door: {
+      singular: shortText(door.singular, 20) || DEFAULT_THEME.door.singular,
+      plural: shortText(door.plural, 20) || DEFAULT_THEME.door.plural
+    },
+    back: shortText(t.back, 40) || DEFAULT_THEME.back,
+    icon: ICONS.includes(t.icon) ? t.icon : DEFAULT_THEME.icon
+  };
 }
 
 /* ---------- Tid ---------- */
@@ -110,7 +186,7 @@ function addDays(dateStr, n) {
 }
 export function dayDate(content, n) { return addDays(content.start_date, n - 1); }
 
-// NATTAGET_FAKE_NOW får bara användas lokalt — i produktion ignoreras den.
+// KALENDER_FAKE_NOW får bara användas lokalt — i produktion ignoreras den.
 export function makeNow({ fakeNow, nodeEnv } = {}) {
   if (fakeNow && nodeEnv !== 'production' && !Number.isNaN(Date.parse(fakeNow))) {
     const t = Date.parse(fakeNow);
@@ -299,6 +375,7 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
   const myAttempts = dayEvents.filter(e => e.kind === 'attempt' && e.profile_id === myProfile).length;
 
   const view = {
+    calendar: content.id, theme: publicTheme(content.theme),
     day: n, date, status,
     title: d.title || '', intro: d.intro || '',
     lock: publicLock(d.lock),
@@ -346,7 +423,8 @@ export function buildStateView({ content, today, me, players, profiles, events, 
     return out;
   });
   const state = {
-    title: content.title || 'Nattåget',
+    calendar: content.id, theme: publicTheme(content.theme),
+    title: content.title || 'Kalendern',
     subtitle: content.subtitle || '',
     startDate: content.start_date,
     today, started,
@@ -366,45 +444,84 @@ export function buildStateView({ content, today, me, players, profiles, events, 
   return state;
 }
 
-/* ---------- Lagring (Postgres eller minne, samma dubbla mönster som Ghost Trains) ---------- */
-async function initSchema(pool) {
-  await pool.query(`create table if not exists nattaget_players (
-    slot text primary key,
-    profile_id text not null unique
-  );`);
-  await pool.query(`create table if not exists nattaget_events (
-    id bigserial primary key,
-    day int not null,
-    profile_id text not null,
-    kind text not null,
-    body text,
-    created_at timestamptz not null default now()
-  );`);
-  await pool.query(`create index if not exists nattaget_events_day_idx on nattaget_events (day, created_at);`);
-  await pool.query(`create table if not exists nattaget_photos (
-    id bigserial primary key,
-    day int not null,
-    profile_id text not null,
-    mime text not null,
-    data bytea not null,
-    created_at timestamptz not null default now()
-  );`);
-  await pool.query(`create table if not exists nattaget_solves (
-    day int primary key,
-    profile_id text not null,
-    mode text not null,
-    solved_at timestamptz not null default now()
-  );`);
-  for (const t of ['nattaget_players', 'nattaget_events', 'nattaget_photos', 'nattaget_solves']) {
-    await pool.query(`alter table ${t} enable row level security;`);
-  }
+/* ---------- Lagring (Postgres eller minne, samma dubbla mönster som Ghost Trains) ----------
+   Fyra tabeller, alla med kolumnen `calendar`. Före kalendrarna hette de
+   nattaget_* och saknade kolumnen; migrateSchema() döper om dem, lägger
+   till kolumnen (befintliga rader får LEGACY_CALENDAR) och byter
+   nycklarna. Allt i en transaktion, och den går att köra hur många gånger
+   som helst. */
+const TABLES = ['players', 'events', 'photos', 'solves'];
+export async function migrateSchema(pool) {
+  const client = await pool.connect();
+  const q = (sql, params) => client.query(sql, params);
+  const exists = async name => (await q('select 1 from pg_constraint where conname = $1', [name])).rows.length > 0;
+  try {
+    await q('begin');
+    for (const t of TABLES) {
+      const [oldReg, newReg] = (await q('select to_regclass($1) as o, to_regclass($2) as n', ['nattaget_' + t, 'kalender_' + t])).rows.map(r => [r.o, r.n])[0];
+      if (oldReg && !newReg) await q(`alter table nattaget_${t} rename to kalender_${t}`);
+    }
+    await q(`create table if not exists kalender_players (
+      calendar text not null,
+      slot text not null,
+      profile_id text not null,
+      primary key (calendar, slot),
+      unique (calendar, profile_id)
+    )`);
+    await q(`create table if not exists kalender_events (
+      id bigserial primary key,
+      calendar text not null,
+      day int not null,
+      profile_id text not null,
+      kind text not null,
+      body text,
+      created_at timestamptz not null default now()
+    )`);
+    await q(`create table if not exists kalender_photos (
+      id bigserial primary key,
+      calendar text not null,
+      day int not null,
+      profile_id text not null,
+      mime text not null,
+      data bytea not null,
+      created_at timestamptz not null default now()
+    )`);
+    await q(`create table if not exists kalender_solves (
+      calendar text not null,
+      day int not null,
+      profile_id text not null,
+      mode text not null,
+      solved_at timestamptz not null default now(),
+      primary key (calendar, day)
+    )`);
+    // Omdöpta tabeller från före kalendrarna: lägg till kolumnen och byt nycklar.
+    for (const t of TABLES) {
+      await q(`alter table kalender_${t} add column if not exists calendar text not null default '${LEGACY_CALENDAR}'`);
+      await q(`alter table kalender_${t} alter column calendar drop default`);
+    }
+    if (await exists('nattaget_players_pkey')) await q('alter table kalender_players drop constraint nattaget_players_pkey');
+    if (await exists('nattaget_players_profile_id_key')) await q('alter table kalender_players drop constraint nattaget_players_profile_id_key');
+    if (!(await exists('kalender_players_pkey'))) await q('alter table kalender_players add constraint kalender_players_pkey primary key (calendar, slot)');
+    if (!(await exists('kalender_players_calendar_profile_id_key'))) await q('alter table kalender_players add constraint kalender_players_calendar_profile_id_key unique (calendar, profile_id)');
+    if (await exists('nattaget_solves_pkey')) await q('alter table kalender_solves drop constraint nattaget_solves_pkey');
+    if (!(await exists('kalender_solves_pkey'))) await q('alter table kalender_solves add constraint kalender_solves_pkey primary key (calendar, day)');
+    await q('drop index if exists nattaget_events_day_idx');
+    await q('create index if not exists kalender_events_cal_day_idx on kalender_events (calendar, day, created_at)');
+    await q('create index if not exists kalender_photos_cal_idx on kalender_photos (calendar, id)');
+    for (const t of TABLES) await q(`alter table kalender_${t} enable row level security`);
+    await q('commit');
+  } catch (e) { await q('rollback'); throw e; }
+  finally { client.release(); }
 }
 
-export function pgStore(pool) {
+// Ett lager bundet till en kalender: alla frågor gäller bara den.
+export function pgStore(pool, calendar) {
   const ev = r => ({ id: Number(r.id), day: r.day, profile_id: r.profile_id, kind: r.kind, body: r.body, created_at: r.created_at });
+  const INSERT_EVENT = 'insert into kalender_events (calendar, day, profile_id, kind, body, created_at) values ($1,$2,$3,$4,$5, coalesce($6, now())) returning id, day, profile_id, kind, body, created_at';
   return {
+    calendar,
     async getPlayers() {
-      const r = await pool.query('select slot, profile_id from nattaget_players');
+      const r = await pool.query('select slot, profile_id from kalender_players where calendar = $1', [calendar]);
       return r.rows.map(x => ({ slot: x.slot, profileId: x.profile_id }));
     },
     async setPlayers(map) {
@@ -412,42 +529,36 @@ export function pgStore(pool) {
       try {
         await client.query('begin');
         for (const [slot, pid] of Object.entries(map)) {
-          await client.query('delete from nattaget_players where slot = $1 or profile_id = $2', [slot, pid]);
-          await client.query('insert into nattaget_players (slot, profile_id) values ($1, $2)', [slot, pid]);
+          await client.query('delete from kalender_players where calendar = $1 and (slot = $2 or profile_id = $3)', [calendar, slot, pid]);
+          await client.query('insert into kalender_players (calendar, slot, profile_id) values ($1, $2, $3)', [calendar, slot, pid]);
         }
         await client.query('commit');
       } catch (e) { await client.query('rollback'); throw e; }
       finally { client.release(); }
     },
     async listEvents() {
-      const r = await pool.query('select id, day, profile_id, kind, body, created_at from nattaget_events order by created_at, id');
+      const r = await pool.query('select id, day, profile_id, kind, body, created_at from kalender_events where calendar = $1 order by created_at, id', [calendar]);
       return r.rows.map(ev);
     },
     async insertEvent({ day, profileId, kind, body, createdAt }) {
-      const r = await pool.query(
-        'insert into nattaget_events (day, profile_id, kind, body, created_at) values ($1,$2,$3,$4, coalesce($5, now())) returning id, day, profile_id, kind, body, created_at',
-        [day, profileId, kind, body ?? null, createdAt ?? null]
-      );
+      const r = await pool.query(INSERT_EVENT, [calendar, day, profileId, kind, body ?? null, createdAt ?? null]);
       return ev(r.rows[0]);
     },
     // Lägger bara till händelsen om det finns exakt `count` händelser av
     // typen `kind` för luckan (och profilen, om given). Ett transaktionslås
-    // per lucka gör att två samtidiga anrop inte båda kan lyckas.
+    // per kalender och lucka gör att två samtidiga anrop inte båda kan lyckas.
     async insertEventIfCount({ day, profileId, kind, body, createdAt }, guard) {
       const client = await pool.connect();
       try {
         await client.query('begin');
-        await client.query("select pg_advisory_xact_lock(hashtext('nattaget'), $1)", [day]);
+        await client.query('select pg_advisory_xact_lock(hashtext($1), $2)', ['kalender:' + calendar, day]);
         const c = await client.query(
-          'select count(*)::int as c from nattaget_events where day = $1 and kind = $2 and ($3::text is null or profile_id = $3)',
-          [day, guard.kind, guard.profileId ?? null]
+          'select count(*)::int as c from kalender_events where calendar = $1 and day = $2 and kind = $3 and ($4::text is null or profile_id = $4)',
+          [calendar, day, guard.kind, guard.profileId ?? null]
         );
         let row = null;
         if (c.rows[0].c === guard.count) {
-          const r = await client.query(
-            'insert into nattaget_events (day, profile_id, kind, body, created_at) values ($1,$2,$3,$4, coalesce($5, now())) returning id, day, profile_id, kind, body, created_at',
-            [day, profileId, kind, body ?? null, createdAt ?? null]
-          );
+          const r = await client.query(INSERT_EVENT, [calendar, day, profileId, kind, body ?? null, createdAt ?? null]);
           row = ev(r.rows[0]);
         }
         await client.query('commit');
@@ -456,66 +567,81 @@ export function pgStore(pool) {
       finally { client.release(); }
     },
     async listSolves() {
-      const r = await pool.query('select day, profile_id, mode, solved_at from nattaget_solves order by day');
+      const r = await pool.query('select day, profile_id, mode, solved_at from kalender_solves where calendar = $1 order by day', [calendar]);
       return r.rows;
     },
     async insertSolve({ day, profileId, mode, solvedAt }) {
       const r = await pool.query(
-        'insert into nattaget_solves (day, profile_id, mode, solved_at) values ($1,$2,$3, coalesce($4, now())) on conflict (day) do nothing returning day',
-        [day, profileId, mode, solvedAt ?? null]
+        'insert into kalender_solves (calendar, day, profile_id, mode, solved_at) values ($1,$2,$3,$4, coalesce($5, now())) on conflict (calendar, day) do nothing returning day',
+        [calendar, day, profileId, mode, solvedAt ?? null]
       );
       return r.rowCount > 0;
     },
     async insertPhoto({ day, profileId, mime, data }) {
-      const r = await pool.query('insert into nattaget_photos (day, profile_id, mime, data) values ($1,$2,$3,$4) returning id', [day, profileId, mime, data]);
+      const r = await pool.query('insert into kalender_photos (calendar, day, profile_id, mime, data) values ($1,$2,$3,$4,$5) returning id', [calendar, day, profileId, mime, data]);
       return Number(r.rows[0].id);
     },
     async getPhoto(id) {
-      const r = await pool.query('select id, day, profile_id, mime, data from nattaget_photos where id = $1', [id]);
+      const r = await pool.query('select id, day, profile_id, mime, data from kalender_photos where calendar = $1 and id = $2', [calendar, id]);
       return r.rows[0] || null;
     },
-    async deletePhoto(id) { await pool.query('delete from nattaget_photos where id = $1', [id]); },
-    // Tömmer allt utom nattaget_players (kopplingen plats → profil).
+    async deletePhoto(id) { await pool.query('delete from kalender_photos where calendar = $1 and id = $2', [calendar, id]); },
+    // Tömmer den här kalenderns händelser, foton och lösningar — inte
+    // spelarna, och inget från andra kalendrar.
     async reset() {
-      await pool.query('truncate nattaget_events, nattaget_photos, nattaget_solves restart identity');
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        for (const t of ['events', 'photos', 'solves']) await client.query(`delete from kalender_${t} where calendar = $1`, [calendar]);
+        await client.query('commit');
+      } catch (e) { await client.query('rollback'); throw e; }
+      finally { client.release(); }
     }
   };
 }
 
-export function memStore() {
-  let players = [], events = [], solves = [], photos = [], nextId = 1;
+// Minnesläge (lokalt utan DATABASE_URL). Flera kalendrar kan dela samma db.
+export function memDb() { return { players: [], events: [], solves: [], photos: [], nextId: 1, nextPhoto: 1 }; }
+export function memStore(calendar = LEGACY_CALENDAR, db = memDb()) {
+  const mine = x => x.calendar === calendar;
+  const strip = x => { const o = Object.assign({}, x); delete o.calendar; return o; };
   return {
-    async getPlayers() { return players.map(p => Object.assign({}, p)); },
+    calendar,
+    async getPlayers() { return db.players.filter(mine).map(p => ({ slot: p.slot, profileId: p.profileId })); },
     async setPlayers(map) {
       for (const [slot, pid] of Object.entries(map)) {
-        players = players.filter(p => p.slot !== slot && p.profileId !== pid);
-        players.push({ slot, profileId: pid });
+        db.players = db.players.filter(p => !(mine(p) && (p.slot === slot || p.profileId === pid)));
+        db.players.push({ calendar, slot, profileId: pid });
       }
     },
-    async listEvents() { return events.map(e => Object.assign({}, e)); },
+    async listEvents() { return db.events.filter(mine).map(strip); },
     async insertEvent({ day, profileId, kind, body, createdAt }) {
-      const e = { id: nextId++, day, profile_id: profileId, kind, body: body ?? null, created_at: createdAt ? new Date(createdAt) : new Date() };
-      events.push(e);
-      return Object.assign({}, e);
+      const e = { calendar, id: db.nextId++, day, profile_id: profileId, kind, body: body ?? null, created_at: createdAt ? new Date(createdAt) : new Date() };
+      db.events.push(e);
+      return strip(e);
     },
     async insertEventIfCount(e, guard) {
-      const c = events.filter(x => x.day === e.day && x.kind === guard.kind && (guard.profileId == null || x.profile_id === guard.profileId)).length;
+      const c = db.events.filter(x => mine(x) && x.day === e.day && x.kind === guard.kind && (guard.profileId == null || x.profile_id === guard.profileId)).length;
       return c === guard.count ? this.insertEvent(e) : null;
     },
-    async listSolves() { return solves.map(s => Object.assign({}, s)); },
+    async listSolves() { return db.solves.filter(mine).map(strip); },
     async insertSolve({ day, profileId, mode, solvedAt }) {
-      if (solves.some(s => s.day === day)) return false;
-      solves.push({ day, profile_id: profileId, mode, solved_at: solvedAt ? new Date(solvedAt) : new Date() });
+      if (db.solves.some(s => mine(s) && s.day === day)) return false;
+      db.solves.push({ calendar, day, profile_id: profileId, mode, solved_at: solvedAt ? new Date(solvedAt) : new Date() });
       return true;
     },
     async insertPhoto({ day, profileId, mime, data }) {
-      const p = { id: (photos.length ? photos[photos.length - 1].id : 0) + 1, day, profile_id: profileId, mime, data };
-      photos.push(p);
+      const p = { calendar, id: db.nextPhoto++, day, profile_id: profileId, mime, data };
+      db.photos.push(p);
       return p.id;
     },
-    async getPhoto(id) { return photos.find(p => p.id === Number(id)) || null; },
-    async deletePhoto(id) { photos = photos.filter(p => p.id !== Number(id)); },
-    async reset() { events = []; solves = []; photos = []; nextId = 1; }
+    async getPhoto(id) { const p = db.photos.find(x => mine(x) && x.id === Number(id)); return p ? strip(p) : null; },
+    async deletePhoto(id) { db.photos = db.photos.filter(x => !(mine(x) && x.id === Number(id))); },
+    async reset() {
+      db.events = db.events.filter(x => !mine(x));
+      db.solves = db.solves.filter(x => !mine(x));
+      db.photos = db.photos.filter(x => !mine(x));
+    }
   };
 }
 
@@ -571,12 +697,14 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
   // Gemensamt för alla spelaranrop: innehållet måste finnas och profilen
   // måste vara kopplad till en plats. Okänd profil → 403.
   async function player(req, res) {
-    if (!content) { res.status(503).json({ error: 'not_ready', message: 'Nattåget är inte redo än.' }); return null; }
+    if (!content) { res.status(503).json({ error: 'not_ready', message: 'Kalendern är inte redo än.' }); return null; }
+    // Titel och tema är inga spoilers; de behövs för att visa "välj din profil"-sidan i rätt utseende.
+    const notPlayer = () => res.status(403).json({ error: 'not_player', title: content.title || 'Kalendern', theme: publicTheme(content.theme) });
     const profileId = req.method === 'GET' ? req.query.profile : (req.body && req.body.profile);
-    if (!validProfileId(profileId)) { res.status(403).json({ error: 'not_player' }); return null; }
+    if (!validProfileId(profileId)) { notPlayer(); return null; }
     const players = await store.getPlayers();
     const me = players.find(p => p.profileId === profileId);
-    if (!me) { res.status(403).json({ error: 'not_player' }); return null; }
+    if (!me) { notPlayer(); return null; }
     return { slot: me.slot, profileId, players };
   }
 
@@ -585,7 +713,7 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
       const p = await player(req, res); if (!p) return;
       const [events, solves, profiles] = await Promise.all([store.listEvents(), store.listSolves(), profilesSafe()]);
       res.json(buildStateView({ content, today: today(), me: p.slot, players: p.players, profiles, events, solves }));
-    } catch (e) { console.error('Nattåget: fel i /state:', e.message); res.status(500).json({ error: 'serverfel' }); }
+    } catch (e) { console.error('Kalendern: fel i /state:', e.message); res.status(500).json({ error: 'serverfel' }); }
   });
 
   // Luckans nummer ur URL:en. Svarar själv 404/403 och returnerar null
@@ -606,7 +734,7 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
       const p = await player(req, res); if (!p) return;
       const n = openDayNumber(req, res); if (n == null) return;
       await fn(req, res, p, n);
-    } catch (e) { console.error('Nattåget: fel i ' + name + ':', e.message); res.status(500).json({ error: 'serverfel' }); }
+    } catch (e) { console.error('Kalendern: fel i ' + name + ':', e.message); res.status(500).json({ error: 'serverfel' }); }
   };
 
   router.get('/day/:n', dayRoute('/day', async (req, res, p, n) => {
@@ -655,7 +783,7 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
       res.setHeader('Content-Type', photo.mime);
       res.setHeader('Cache-Control', 'private, max-age=86400');
       res.end(Buffer.from(photo.data));
-    } catch (e) { console.error('Nattåget: fel i /photo:', e.message); res.status(500).json({ error: 'serverfel' }); }
+    } catch (e) { console.error('Kalendern: fel i /photo:', e.message); res.status(500).json({ error: 'serverfel' }); }
   });
 
   router.post('/day/:n/note', dayRoute('/note', async (req, res, p, n) => {
@@ -719,50 +847,55 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
       await store.setPlayers(map);
       const players = await store.getPlayers();
       res.json({ ok: true, players: Object.fromEntries(players.map(p => [p.slot, p.profileId])) });
-    } catch (e) { console.error('Nattåget: fel i /admin/players:', e.message); res.status(500).json({ error: 'serverfel' }); }
+    } catch (e) { console.error('Kalendern: fel i /admin/players:', e.message); res.status(500).json({ error: 'serverfel' }); }
   });
 
   router.post('/admin/reset', async (req, res) => {
     if (!secretOk(adminSecret, (req.body || {}).secret)) return res.status(403).json({ error: 'fel hemlighet' });
     try { await store.reset(); res.json({ ok: true }); }
-    catch (e) { console.error('Nattåget: fel i /admin/reset:', e.message); res.status(500).json({ error: 'serverfel' }); }
+    catch (e) { console.error('Kalendern: fel i /admin/reset:', e.message); res.status(500).json({ error: 'serverfel' }); }
   });
 
   return router;
 }
 
 /* ---------- Uppstart ---------- */
-// Alla val kan skickas in (används av testerna); annars läses miljön.
-export async function createNattaget(pool, opts = {}) {
-  const env = process.env;
+// Alla val kan skickas in (används av testerna); annars läses miljön
+// (KALENDER_*, med NATTAGET_* som reserv — se readEnv).
+export async function createKalender(pool, opts = {}) {
+  const env = opts.env ? readEnv(opts.env) : readEnv();
+  const nodeEnv = (opts.env || process.env).NODE_ENV;
   const { content, source } = opts.content !== undefined
     ? { content: opts.content, source: 'given' }
     : loadContent({
-      mode: opts.contentMode ?? env.NATTAGET_CONTENT,
-      key: opts.contentKey ?? env.CONTENT_KEY,
-      sampleStart: opts.sampleStart ?? env.NATTAGET_SAMPLE_START,
+      mode: opts.contentMode ?? env.CONTENT,
+      key: opts.contentKey ?? (opts.env || process.env).CONTENT_KEY,
+      sampleStart: opts.sampleStart ?? env.SAMPLE_START,
+      active: opts.active ?? env.ACTIVE,
       encPath: opts.encPath
     });
-  const now = opts.now || makeNow({ fakeNow: env.NATTAGET_FAKE_NOW, nodeEnv: env.NODE_ENV });
-  if (env.NATTAGET_FAKE_NOW && env.NODE_ENV === 'production') console.warn('Nattåget: NATTAGET_FAKE_NOW ignoreras i produktion.');
+  const now = opts.now || makeNow({ fakeNow: env.FAKE_NOW, nodeEnv });
+  if (env.FAKE_NOW && nodeEnv === 'production') console.warn('Kalendern: KALENDER_FAKE_NOW ignoreras i produktion.');
+  const calendar = content ? content.id : LEGACY_CALENDAR;
 
   let store = opts.store || null;
   if (!store) {
     let usablePool = pool;
     if (usablePool) {
-      try { await initSchema(usablePool); }
+      try { await migrateSchema(usablePool); }
       catch (e) {
-        console.error('Nattåget: kunde inte initiera schema (kors i minneslage):', e.message);
+        console.error('Kalendern: kunde inte initiera schema (kors i minneslage):', e.message);
         usablePool = null;
       }
     }
-    store = usablePool ? pgStore(usablePool) : memStore();
+    store = usablePool ? pgStore(usablePool, calendar) : memStore(calendar);
   }
-  if (content) console.log('Nattåget: innehåll laddat (' + (source === 'sample' ? 'testinnehåll' : source === 'encrypted' ? 'krypterat' : 'givet') + ').');
+  // Id:t är inget innehåll och får loggas.
+  if (content) console.log('Kalendern: "' + content.id + '" laddad (' + (source === 'sample' ? 'testinnehåll' : source === 'encrypted' ? 'krypterat' : 'givet') + ').');
 
   const router = createRouter({
     store, content, now,
-    adminSecret: opts.adminSecret ?? env.NATTAGET_ADMIN_SECRET ?? '',
+    adminSecret: opts.adminSecret ?? env.ADMIN_SECRET ?? '',
     listProfiles: opts.listProfiles
   });
   return { router, store, content };

@@ -30,4 +30,4 @@ README:n innehåller arkitekturbeslut, kartans designprinciper och
 kända fallgropar (t.ex. att upplösningen är idempotent per dag) som
 inte är uppenbara direkt från koden.
 
-Nattåget: följ alltid nattaget/CLAUDE.md. Läs aldrig server/nattaget/content.enc eller CONTENT_KEY.
+Kalendern (Nattåget, Halloween och kommande kalendrar): följ alltid kalender/CLAUDE.md. Läs aldrig någon .enc-fil (server/kalender/*.enc) eller CONTENT_KEY.

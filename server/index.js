@@ -13,7 +13,7 @@ import express from 'express';
 import pg from 'pg';
 import { createGhostTrains } from './ghosttrains.js';
 import { createFlashback } from './flashback.js';
-import { createNattaget, photoBodyParser as nattagetPhotoBody } from './nattaget.js';
+import { createKalender, photoBodyParser as kalenderPhotoBody } from './kalender.js';
 
 const PORT = process.env.PORT || 3000;
 const DATABASE_URL = process.env.DATABASE_URL || '';
@@ -377,9 +377,9 @@ if (DATABASE_URL) {
 
 /* ---------- App ---------- */
 const app = express();
-// Nattågets foto-endpoint får större kroppar; måste ligga före den globala
+// Kalenderns foto-endpoint får större kroppar; måste ligga före den globala
 // 8 kB-gränsen (som sedan hoppar över redan tolkade kroppar).
-app.use('/api/nattaget', nattagetPhotoBody);
+app.use(['/api/kalender', '/api/nattaget'], kalenderPhotoBody);
 app.use(express.json({ limit: '8kb' }));
 
 // CORS
@@ -663,9 +663,12 @@ app.use('/api/ghosttrains', ghostTrains.router);
 const flashback = await createFlashback(pool, { anthropicApiKey: ANTHROPIC_API_KEY, generateSecret: FLASHBACK_GENERATE_SECRET });
 app.use('/api/flashback', flashback.router);
 
-// Nattåget: innehåll, regler och miljövariabler — se nattaget/SPEC.md.
-// Profilnamn och -färger hämtas från den gemensamma profiltabellen.
-const nattaget = await createNattaget(pool, { listProfiles: () => (store ? store.listProfiles() : []) });
-app.use('/api/nattaget', nattaget.router);
+// Kalendern (först Nattåget): innehåll, regler och miljövariabler — se
+// kalender/SPEC.md. Profilnamn och -färger hämtas från den gemensamma
+// profiltabellen. /api/nattaget finns kvar som alias för sidor som
+// telefonerna fortfarande har i cacheminnet.
+const kalender = await createKalender(pool, { listProfiles: () => (store ? store.listProfiles() : []) });
+app.use('/api/kalender', kalender.router);
+app.use('/api/nattaget', kalender.router);
 
 app.listen(PORT, () => console.log('Topplista-API lyssnar pa port ' + PORT));

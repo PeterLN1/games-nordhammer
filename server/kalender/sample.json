@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "id": "prov",
+  "title": "Nattåget",
+  "subtitle": "24 vagnar genom snöstormen. Fem resenärer. En väg hem till julafton.",
+  "start_date": "2026-12-01",
+  "timezone": "Europe/Stockholm",
+  "theme": {
+    "colors": {
+      "background": "#110D17",
+      "surface": "#1B1524",
+      "surface_dark": "#0A0710",
+      "border": "#3A2F4D",
+      "text": "#ECE6F3",
+      "text_muted": "#A69CB8",
+      "text_soft": "#CEC5DC",
+      "glow": "#E3C77A",
+      "flame": "#FFE9A8",
+      "off": "#574C68",
+      "paper": "#E6DFCF",
+      "paper_text": "#221A12"
+    },
+    "door": {
+      "singular": "rum",
+      "plural": "rum"
+    },
+    "back": "Tillbaka till huset",
+    "icon": "candle"
+  },
+  "prologue": "TESTINNEHÅLL. Det är kväll på centralstationen. Nattåget mot norr ska avgå, och ni har fått fem biljetter i varsin kupé. Ingen vet vem som skickade dem.",
+  "days": [
+    {
+      "day": 1,
+      "title": "Förrådsvagnens kodlås",
+      "intro": "Tåget står stilla i snön och värmen sjunker. Filtarna finns i förrådsvagnen, men dörren har ett fyrsiffrigt lås. Konduktören har gömt koden på fem lappar, en i varje kupé.",
+      "lock": {
+        "type": "digits",
+        "length": 4
+      },
+      "answer": "9137",
+      "requires_items": [],
+      "fragments": {
+        "peter": {
+          "kind": "text",
+          "text": "Koden har fyra olika siffror, och alla är udda."
+        },
+        "maria": {
+          "kind": "text",
+          "text": "Sista siffran är 7."
+        },
+        "sara": {
+          "kind": "text",
+          "text": "Första siffran är större än den sista."
+        },
+        "vilma": {
+          "kind": "text",
+          "text": "Femman fastnade i frosten, den används inte."
+        },
+        "simon": {
+          "kind": "text",
+          "text": "De två mittersta siffrorna bildar ett tal som är delbart med 13."
+        }
+      },
+      "hints": [
+        "Börja med att ta reda på vilka fyra siffror koden består av.",
+        "Siffrorna är 1, 3, 7 och 9. Vilka tvåsiffriga tal av dem är delbara med 13?",
+        "Mitten kan vara 13, 39 eller 91. Sista siffran är 7 och den första är större."
+      ],
+      "epilogue": {
+        "text": "Värmen strömmade ut ur förrådsvagnen. Under filtarna låg något ingen väntat sig: en gammal mässingsnyckel, märkt med siffran 12.",
+        "item": {
+          "id": "nyckel12",
+          "name": "Mässingsnyckel nr 12",
+          "description": "Tung och kall. Någonstans på tåget finns ett lås som passar."
+        }
+      }
+    },
+    {
+      "day": 2,
+      "title": "Kartan i snöstormen",
+      "intro": "Någon måste ta sig till signalstugan och ringa efter hjälp. Kartan i konduktörens skåp är ofullständig, och stormen gör att man inte ser längre än en meter.",
+      "lock": {
+        "type": "coordinate",
+        "cols": 5,
+        "rows": 5
+      },
+      "answer": "C5",
+      "requires_items": [],
+      "fragments": {
+        "peter": {
+          "kind": "text",
+          "text": "Kompassnålen darrar men är tydlig: norr på kartan pekar åt höger, inte uppåt."
+        },
+        "maria": {
+          "kind": "text",
+          "text": "Konduktörens anteckning: ”Gå alltid ut från vattentornet.”"
+        },
+        "sara": {
+          "kind": "text",
+          "text": "Vägbeskrivning: 2 rutor norrut, 2 rutor österut, sedan 1 ruta söderut."
+        },
+        "vilma": {
+          "kind": "text",
+          "text": "Teckenförklaring: △ vattentorn, ◇ signalstuga, ≈ is som inte bär, ● sten."
+        },
+        "simon": {
+          "kind": "grid_map",
+          "text": "Kartan. Kolumner A–E från vänster, rader 1–5 uppifrån.",
+          "cols": 5,
+          "rows": 5,
+          "cells": {
+            "A1": "●",
+            "B3": "△",
+            "D2": "≈",
+            "E4": "●",
+            "C5": "◇",
+            "A5": "≈"
+          }
+        }
+      },
+      "hints": [
+        "Hitta startpunkten och målet på kartan med hjälp av teckenförklaringen.",
+        "Om norr pekar åt höger, åt vilket håll pekar då öster?",
+        "Norr är åt höger, öster är nedåt och söder är åt vänster. Starta i B3."
+      ],
+      "epilogue": {
+        "text": "I signalstugan hängde en telefon med vev. Linjen sprakade, och en röst sa bara: ”Ni är inte de första som försökt.”"
+      }
+    },
+    {
+      "day": 3,
+      "title": "Lyktorna i restaurangvagnen",
+      "intro": "Restaurangvagnen är mörk. På bordet står fem tomma lyktor med varsin lapp. Varje lapp ber om något från en annan plats.",
+      "lock": {
+        "type": "word",
+        "length": 5
+      },
+      "answer": "LYKTA",
+      "requires_items": [
+        "nyckel12"
+      ],
+      "fragments": {
+        "peter": {
+          "kind": "photo_task",
+          "text": "Fota något i ditt hem som är rött.",
+          "reveal": "Bokstav 4: T"
+        },
+        "maria": {
+          "kind": "photo_task",
+          "text": "Fota något som lyser.",
+          "reveal": "Bokstav 1: L"
+        },
+        "sara": {
+          "kind": "photo_task",
+          "text": "Fota utsikten från ditt fönster.",
+          "reveal": "Bokstav 5: A"
+        },
+        "vilma": {
+          "kind": "photo_task",
+          "text": "Fota något som är äldre än du.",
+          "reveal": "Bokstav 2: Y"
+        },
+        "simon": {
+          "kind": "photo_task",
+          "text": "Fota något som är runt.",
+          "reveal": "Bokstav 3: K"
+        }
+      },
+      "hints": [
+        "Varje foto avslöjar en bokstav och dess plats i ordet.",
+        "Ordet har med restaurangvagnen att göra.",
+        "Ordet är det som står tomt på bordet."
+      ],
+      "epilogue": {
+        "text": "Mässingsnyckeln passade i ett skåp under bordet. Där inne brann redan en sjätte lykta."
+      }
+    }
+  ]
+}

@@ -1,8 +1,10 @@
-# Nattåget – specifikation
+# Kalendern – specifikation
 
-En digital adventskalender med gåtor för familjen Nordhammer på games.nordhammer.se. Fem spelare (Peter, Maria, Sara, Vilma, Simon) löser varje dag en lucka tillsammans från sina egna telefoner, när det passar dem under dagen.
+Digitala kalendrar med gåtor för familjen Nordhammer på games.nordhammer.se. Fem spelare (Peter, Maria, Sara, Vilma, Simon) löser varje dag en lucka tillsammans från sina egna telefoner, när det passar dem under dagen.
 
-Den här filen beskriver spelmotorn. Det riktiga innehållet (berättelse, gåtor, svar) levereras separat som en krypterad fil och ska **aldrig** läsas av den som bygger motorn. Se `CLAUDE.md`.
+Motorn byggdes för **Nattåget** (julkalendern 2026) och kör nu flera kalendrar, till exempel `halloween-2026` (7 luckor, 25–31 oktober) och `jul-2026`. En kalender i taget är aktiv; data från tidigare kalendrar finns kvar. Varje kalender har 1–24 luckor och kan ha ett eget tema (se 5.1).
+
+Den här filen beskriver spelmotorn. Det riktiga innehållet (berättelse, gåtor, svar) levereras separat som krypterade filer och ska **aldrig** läsas av den som bygger motorn. Se `CLAUDE.md`.
 
 ---
 
@@ -69,15 +71,15 @@ Varje inlägg har spelarens namn och profilfärg.
 
 - Spelet använder sajtens befintliga profilsystem (`shared/profile.js`). Spelare identifieras alltid med **profilens id**, aldrig namnet.
 - Innehållsfilen använder fasta platser (`slot`): `peter`, `maria`, `sara`, `vilma`, `simon`.
-- Kopplingen mellan plats och profil-id lagras i tabellen `nattaget_players` och sätts via en admin-endpoint (se nedan).
-- En profil som inte är kopplad till en plats ser en vänlig sida: ”Nattåget är familjens julkalender. Välj din profil för att spela.”
+- Kopplingen mellan plats och profil-id lagras per kalender i tabellen `kalender_players` och sätts via en admin-endpoint (se nedan). En ny kalender behöver alltså kopplas en gång.
+- En profil som inte är kopplad till en plats ser en vänlig sida: ”<Kalenderns titel> är familjens kalender. Välj din profil för att spela.”
 - Det finns ingen inloggning på sajten. Det är medvetet och accepterat.
 
 ---
 
 ## 3. Skärmar (mobil först, 390 px bredd)
 
-Designen finns som mockup. Färger och typsnitt:
+Designen finns som mockup. Färger och typsnitt (Nattågets tema, som används när innehållsfilen saknar `theme`; se 5.1):
 
 | Token | Värde | Användning |
 |---|---|---|
@@ -99,15 +101,17 @@ Designen finns som mockup. Färger och typsnitt:
 - Knappar och tryckytor minst 44 px.
 
 ### 3.1 Kalendern
-- Titel ”Nattåget” och en rad berättelse (`subtitle` från innehållet).
-- Två rutor: **Lagets stjärnor** och **Vagnar öppnade X / 24**.
+- Titeln (`title`) och en rad berättelse (`subtitle` från innehållet).
+- Två rutor: **Lagets stjärnor** och **Öppnade <plural> X / N**, där N är antalet luckor och ordet kommer från temat (”Öppnade vagnar 3 / 24”, ”Öppnade rum 3 / 7”).
+- Luckorna i rader om fyra; en ofullständig sista rad centreras (7 luckor = 4 + 3).
 - Ett rutnät 4 × 6 med luckorna:
   - **Idag:** lyktsken-färg, glöd, och ”Idag · 3/5” (antal tända lyktor).
   - **Löst:** mörk med guldkant och etiketten ”Alla fem” eller ”Arkiv”.
   - **Olöst arkiv:** som löst men utan guldkant, etikett ”Olöst”.
   - **Låst (framtida):** dämpad med hänglås.
 - Under rutnätet: lagets packning (föremål), om det finns några.
-- Före startdatum: en ”Kommer 1 december”-sida med prologen (`prologue`).
+- Före startdatum: en ”Kommer <startdatum>”-sida med prologen (`prologue`).
+- Luckan heter i texterna temats ord i singular (”Vagn 3”, ”Rum 3”), och tillbakaknappen har temats text.
 
 ### 3.2 Dagens lucka
 Uppifrån och ned:
@@ -172,10 +176,12 @@ Ingen lapp får renderas som rå HTML.
 ```json
 {
   "version": 1,
+  "id": "jul-2026",
   "title": "Nattåget",
   "subtitle": "En rad som visas på kalendern",
   "start_date": "2026-12-01",
   "timezone": "Europe/Stockholm",
+  "theme": { "…": "se 5.1, valfritt" },
   "prologue": "Texten som visas före start",
   "days": [
     {
@@ -201,15 +207,37 @@ Ingen lapp får renderas som rå HTML.
   ]
 }
 ```
+- `id`: kalenderns id, små bokstäver, siffror och bindestreck (`halloween-2026`, `jul-2026`). All data lagras under det.
 - `epilogue.item` är valfritt.
-- `days` innehåller 24 element i den riktiga filen. Testfilen har färre.
+- `days` innehåller 1–24 luckor, numrerade 1, 2, 3 … Lucka *N* öppnas `start_date` + *N* − 1 dagar.
+
+### 5.1 Tema (`theme`, valfritt)
+```json
+"theme": {
+  "colors": {
+    "background": "#110D17", "surface": "#1B1524", "surface_dark": "#0A0710", "border": "#3A2F4D",
+    "text": "#ECE6F3", "text_muted": "#A69CB8", "text_soft": "#CEC5DC",
+    "glow": "#E3C77A", "flame": "#FFE9A8", "off": "#574C68",
+    "paper": "#E6DFCF", "paper_text": "#221A12"
+  },
+  "door": { "singular": "rum", "plural": "rum" },
+  "back": "Tillbaka till huset",
+  "icon": "candle"
+}
+```
+- Färgerna motsvarar tabellen i avsnitt 3 (bakgrund, yta, yta-mörk, kant, text, text-dämpad, text-mjuk, lyktsken, låga, släckt, papper och papperstext). Bara `#rgb` och `#rrggbb` godtas; allt annat ersätts med Nattågets värde. Text på knappar i glödfärgen blir mörk eller ljus beroende på hur ljus glöden är.
+- `door`: ordet för en lucka i singular och plural (”vagn”/”vagnar”, ”rum”/”rum”).
+- `back`: texten på tillbakaknappen (”Tillbaka till tåget”).
+- `icon`: `lantern` (lyktor som lyser) eller `candle` (ljus som brinner). Texterna om de fem följer ikonen (”Tre lyktor lyser.” / ”Tre ljus brinner.”).
+- Saknas `theme`, eller en del av det, används Nattågets värden.
+- **Spöktemat** (exemplet ovan, och i testinnehållet): nästan svart med en ton av violett, levande ljus i stället för lyktor och ett svagt gult sken.
 
 ### Filer
-- `server/nattaget/content.sample.json` – testinnehåll i klartext. Används **bara** när `NATTAGET_CONTENT=sample` är satt (och det riktiga innehållet inte finns, se nedan).
-- `server/nattaget/content.enc` – det riktiga innehållet, krypterat. Levereras separat.
+- `server/kalender/sample.json` – testinnehåll i klartext (id `prov`, med spöktemat). Används **bara** när `KALENDER_CONTENT=sample` är satt (och det riktiga innehållet inte finns, se nedan).
+- `server/kalender/<id>.enc` – det riktiga innehållet för kalendern `<id>`, krypterat. Levereras separat. Alla `.enc`-filer omfattas av reglerna i `CLAUDE.md`.
 
 ### Kryptering
-`content.enc` är JSON:
+Varje `<id>.enc` är JSON:
 ```json
 { "v": 1, "alg": "aes-256-gcm", "iv": "<base64, 12 byte>", "tag": "<base64, 16 byte>", "data": "<base64, krypterad text>" }
 ```
@@ -228,39 +256,42 @@ Servern dekrypterar en gång vid start och håller innehållet i minnet. Innehå
 
 ### Vilket innehåll som används
 Servern väljer i den här ordningen:
-1. **`CONTENT_KEY` är satt och `content.enc` finns** → alltid det riktiga innehållet. `NATTAGET_CONTENT` och `NATTAGET_SAMPLE_START` ignoreras, med en varning i loggen. Testinställningar som glömts kvar i Railway kan alltså aldrig ersätta det riktiga innehållet.
-2. **`NATTAGET_CONTENT=sample`** → testinnehållet. Är `NATTAGET_SAMPLE_START` satt (`ÅÅÅÅ-MM-DD`) flyttas testinnehållets `start_date` dit, så att testluckor kan öppnas på riktigt i produktion före december. Klockan går som vanligt. Fel format ignoreras med en varning.
+1. **`CONTENT_KEY` är satt och `server/kalender/<KALENDER_ACTIVE>.enc` finns** → alltid det riktiga innehållet för den kalendern. Filens `id` måste vara samma som `KALENDER_ACTIVE`, annars har servern inget innehåll. `KALENDER_CONTENT` och `KALENDER_SAMPLE_START` ignoreras, med en varning i loggen. Testinställningar som glömts kvar i Railway kan alltså aldrig ersätta det riktiga innehållet.
+2. **`KALENDER_CONTENT=sample`** → testinnehållet. Är `KALENDER_SAMPLE_START` satt (`ÅÅÅÅ-MM-DD`) flyttas testinnehållets `start_date` dit, så att testluckor kan öppnas på riktigt i produktion före december. Klockan går som vanligt. Fel format ignoreras med en varning.
 3. **Annars** har servern inget innehåll.
 
 ### När innehållet saknas
-- Saknas `CONTENT_KEY` (eller `content.enc`) utan `NATTAGET_CONTENT=sample`, eller går dekrypteringen fel, har servern inget innehåll. Då svarar `/state` och `/day/:n` med **503** och `{"error": "not_ready", "message": "Nattåget är inte redo än."}`. Testinnehållet används aldrig som reserv.
-- Sidan visar då ”Nattåget är inte redo än”.
+- Saknas `CONTENT_KEY`, `KALENDER_ACTIVE` eller den aktiva kalenderns `.enc`-fil utan `KALENDER_CONTENT=sample`, eller går dekrypteringen fel, har servern inget innehåll. Då svarar `/state` och `/day/:n` med **503** och `{"error": "not_ready", "message": "Kalendern är inte redo än."}`. Testinnehållet används aldrig som reserv.
+- Sidan visar då ”Kalendern är inte redo än”.
 
 ---
 
-## 6. Backend (`server/nattaget.js`, monterad på `/api/nattaget`)
+## 6. Backend (`server/kalender.js`, monterad på `/api/kalender`)
 
-Samma mönster som Ghost Trains: egen modul, tabeller skapas med `create table if not exists` vid start.
+Samma mönster som Ghost Trains: egen modul, tabellerna skapas (eller migreras) vid start. `/api/nattaget` finns kvar som alias för sidor som telefonerna har i cacheminnet.
 
 ### Tabeller
+Alla tabeller har kolumnen `calendar` (kalenderns `id`). Varje fråga gäller bara den aktiva kalendern.
 ```
-nattaget_players   (slot text primary key, profile_id text not null unique)
-nattaget_events    (id bigserial primary key, day int not null, profile_id text not null,
+kalender_players   (calendar, slot, profile_id; primary key (calendar, slot), unique (calendar, profile_id))
+kalender_events    (id bigserial primary key, calendar text not null, day int not null, profile_id text not null,
                     kind text not null,            -- fragment | photo | note | attempt | hint | solve
                     body text, created_at timestamptz not null default now())
-nattaget_photos    (id bigserial primary key, day int not null, profile_id text not null,
+kalender_photos    (id bigserial primary key, calendar text not null, day int not null, profile_id text not null,
                     mime text not null, data bytea not null, created_at timestamptz not null default now())
-nattaget_solves    (day int primary key, profile_id text not null, mode text not null, -- together | archive
-                    solved_at timestamptz not null default now())
+kalender_solves    (calendar, day, profile_id, mode, -- together | archive
+                    solved_at; primary key (calendar, day))
 ```
-Stjärnor och föremål räknas fram från händelserna och `nattaget_solves`; de lagras inte separat.
+Stjärnor och föremål räknas fram från händelserna och `kalender_solves`; de lagras inte separat.
+
+**Migrering:** före kalendrarna hette tabellerna `nattaget_*` och saknade `calendar`. Vid start döps de om, får kolumnen (befintliga rader hamnar i kalendern `prov`, testinnehållets id) och nya nycklar. Allt sker i en transaktion och går att köra flera gånger. Migreringen testas mot riktig Postgres (PGlite) i `server/test/kalender-db.test.js`.
 
 ### Endpoints
 Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 
 | Metod | Sökväg | Beskrivning |
 |---|---|---|
-| GET | `/state?profile=` | Kalendern: titel, undertitel, prolog (före start), vilka dagar som är öppna, status per dag, antal lyktor idag, stjärnor, föremål |
+| GET | `/state?profile=` | Kalendern: `calendar` (id), `theme`, titel, undertitel, prolog (före start), antal luckor, vilka dagar som är öppna, status per dag, antal lyktor idag, stjärnor, föremål. Okänd profil → 403 med bara `title` och `theme` |
 | GET | `/day/:n?profile=` | En lucka: se *Vad servern får skicka* nedan |
 | POST | `/day/:n/fragment` | `{profile}`. Lägger ut spelarens lapp. Bara i dagens lucka (annars 409), inte för `photo_task` (400). Går att anropa flera gånger utan att lappen läggs ut igen. Svarar `{ok, day}` |
 | POST | `/day/:n/photo` | `{profile, mime, data}` (base64, eventuellt med `data:`-prefix, `image/jpeg` eller `image/png`, högst 600 kB avkodat efter klientens nedskalning till 1280 px). Lägger ut fotot och lappen och tänder lyktan. Servern kontrollerar bildens första byte mot typen. Bara i dagens lucka (409), bara för `photo_task` (400), ett foto per spelare och lucka (409 `already_posted`), för stor bild → 413. Svarar `{ok, day}`. Det här är den enda endpointen som får större kroppar än sajtens 8 kB (gränsen är 900 kB, se `photoBodyParser`) |
@@ -268,8 +299,8 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 | POST | `/day/:n/note` | `{profile, text}`, högst 280 tecken. Radbrytningar och kontrolltecken blir mellanslag. Svarar `{ok, day}` |
 | POST | `/day/:n/hint` | `{profile, n}` där `n` är numret på ledtråden spelaren vill ta (nästa i tur). Om någon hann före svarar servern 409 `hint_already_taken` med den nya vyn, så att två samtidiga tryck bara kostar en stjärna. Inga fler → 409 `no_more_hints`. Löst lucka → 409 `already_solved`. Går i dagens lucka och i arkivluckor. Svarar `{ok, day}` |
 | POST | `/day/:n/solve` | `{profile, answer}` → `{correct: bool, day}`. Felaktigt försök sparas som `attempt`. Högst 10 försök per spelare och dag (429). Stängt lås → 409 `lock_closed`, saknade föremål → 409 `missing_items`, redan löst → 409 `already_solved` |
-| POST | `/admin/players` | `{secret, players: {peter: "<id>", …}}`. Skyddas av `NATTAGET_ADMIN_SECRET` |
-| POST | `/admin/reset` | `{secret}`. Tömmer `nattaget_events`, `nattaget_photos` och `nattaget_solves`, men inte `nattaget_players`. Bara för test |
+| POST | `/admin/players` | `{secret, players: {peter: "<id>", …}}`. Kopplar platserna i den aktiva kalendern. Skyddas av `KALENDER_ADMIN_SECRET` |
+| POST | `/admin/reset` | `{secret}`. Tömmer den aktiva kalenderns händelser, foton och lösningar, men inte spelarna och inget från andra kalendrar. Bara för test |
 
 ### Vad servern får skicka för en lucka
 - Aldrig en framtida lucka (inte ens till admin).
@@ -286,23 +317,28 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 
 ### Tid
 - Aktuellt datum beräknas i `Europe/Stockholm`.
-- `NATTAGET_FAKE_NOW` (ISO-tid) får sättas lokalt för test. Den ska ignoreras när `NODE_ENV=production`.
+- `KALENDER_FAKE_NOW` (ISO-tid) får sättas lokalt för test. Den ska ignoreras när `NODE_ENV=production`.
 
 ### Miljövariabler (lägg till i `server/.env.example`)
 ```
-CONTENT_KEY=              # base64, 32 byte. Saknas → 503 "inte redo" (om inte sample)
-NATTAGET_CONTENT=         # "sample" tvingar testinnehåll
-NATTAGET_ADMIN_SECRET=
-NATTAGET_SAMPLE_START=    # ÅÅÅÅ-MM-DD, flyttar testinnehållets startdatum (bara med sample)
-NATTAGET_FAKE_NOW=        # bara lokalt
+CONTENT_KEY=              # base64, 32 byte, samma för alla kalendrar. Saknas → 503 "inte redo" (om inte sample)
+KALENDER_ACTIVE=          # id för den aktiva kalendern, t.ex. halloween-2026 → server/kalender/halloween-2026.enc
+KALENDER_CONTENT=         # "sample" = testinnehållet
+KALENDER_ADMIN_SECRET=
+KALENDER_SAMPLE_START=    # ÅÅÅÅ-MM-DD, flyttar testinnehållets startdatum (bara med sample)
+KALENDER_FAKE_NOW=        # bara lokalt
 ```
+De gamla namnen `NATTAGET_*` läses fortfarande som reserv, med en varning i loggen, tills de döpts om i Railway.
 
 ---
 
-## 7. Frontend (`nattaget/index.html`)
+## 7. Frontend (`kalender/index.html`, på `/kalender/`)
+
+- `/nattaget/` omdirigerar till `/kalender/` (och behåller `#dag-N`).
+- Temat från servern sätts som CSS-variabler och sparas i `localStorage`, så att sidan inte blinkar i fel färger nästa gång.
 
 - Samma upplägg som övriga spel: ren HTML/CSS/JS utan byggsteg, `shared/theme.js` och `shared/profile.js` i `<head>`.
-- Spelet har alltid sitt mörka tema oavsett sajtens tema.
+- Spelet har alltid kalenderns eget tema oavsett sajtens ljusa eller mörka läge.
 - En enda sida med vyerna kalender, lucka och löst lucka. Navigering med `#dag-3` i URL:en.
 - Uppdatering: hämtar luckan var 20:e sekund medan sidan är synlig (`visibilitychange`), så att lyktor och tavla uppdateras.
 - Foto: `<input type="file" accept="image/*" capture="environment">`, skalas ned i klienten med canvas innan uppladdning.

@@ -10,12 +10,12 @@
       "port": 8934
     },
     {
-      "name": "nattaget-api",
+      "name": "kalender-api",
       "runtimeExecutable": "env",
       "runtimeArgs": [
-        "NATTAGET_CONTENT=sample",
-        "NATTAGET_ADMIN_SECRET=lokal",
-        "NATTAGET_FAKE_NOW=2026-12-03T09:00:00+01:00",
+        "KALENDER_CONTENT=sample",
+        "KALENDER_ADMIN_SECRET=lokal",
+        "KALENDER_FAKE_NOW=2026-12-03T09:00:00+01:00",
         "PORT=3917",
         "node",
         "server/index.js"
