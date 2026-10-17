@@ -14,6 +14,14 @@ Peter spelar själv. Det riktiga innehållet (berättelse, lappar, ledtrådar, s
 - I produktion får du anropa `/state` och `/day/:n` bara när testinnehållet är aktivt (`KALENDER_CONTENT=sample` och ingen `CONTENT_KEY`). När en riktig kalender är aktiv: anropa bara endpoints som inte returnerar innehåll (t.ex. `/admin/check`, som bara svarar OK eller ett fel).
 - Om du någon gång ser riktigt innehåll av misstag: säg det till Peter direkt och upprepa det inte.
 
+## Ny kalender (t.ex. halloween-2026, jul-2026)
+1. Peter lägger `server/kalender/<id>.enc` i repot. Öppna den inte.
+2. I Railway: `KALENDER_ACTIVE=<id>` (och `CONTENT_KEY`, som Peter sätter själv). Ta bort `KALENDER_CONTENT` och `KALENDER_SAMPLE_START` när provkörningen är över.
+3. `POST /api/kalender/admin/check` med hemligheten ska svara OK. Felen säger bara var något är fel; be Peter rätta filen.
+4. Koppla spelarna för den nya kalendern med `POST /api/kalender/admin/players` (kopplingen gäller per kalender).
+
+Felmeddelanden från `checkContent()` och innehållsladdningen får **aldrig** innehålla något ur filen — bara dag, plats, fält och låstyp. Det finns tester som kontrollerar det; håll dem gröna.
+
 ## Säkerhetsreglerna i servern
 Reglerna i SPEC.md under *Vad servern får skicka* är det som gör spelet möjligt att spela. Skriv tester för dem i fas 1:
 - en framtida lucka returnerar 403

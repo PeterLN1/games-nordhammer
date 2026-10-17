@@ -272,6 +272,53 @@
   .message p { color: var(--soft); max-width: 340px; margin: 0 auto 24px; }
   .message .prologue { color: var(--soft); font-size: 17px; text-align: left; background: var(--surface); padding: 18px; border-radius: 14px; margin: 0 auto 24px; max-width: 420px; }
 
+  /* ---------- Före start: nedräkning ---------- */
+  .prestart { text-align: center; padding-top: 6vh; }
+  .prestart .hero { display: flex; justify-content: center; margin-bottom: 14px; }
+  .prestart .hero svg { width: 64px; height: 90px; color: var(--glow); filter: drop-shadow(0 0 18px rgba(var(--glow-rgb),.55)); }
+  .prestart .hero .flame { fill: var(--flame); }
+  .prestart .hero svg.candle { color: var(--soft); filter: drop-shadow(0 -8px 18px rgba(var(--flame-rgb),.5)); }
+  .prestart .kicker { color: var(--glow); font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  .prestart h1 { font-size: 40px; line-height: 1.1; margin: 8px 0 6px; }
+  .prestart .sub { color: var(--soft); margin-bottom: 22px; }
+  .countdown { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 auto 24px; max-width: 360px; }
+  .countdown .u { background: var(--surface); border-radius: 14px; padding: 12px 4px 10px; }
+  .countdown .v { font-family: var(--serif); font-size: 32px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .countdown .l { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .countdown-done { color: var(--glow); font-weight: 600; margin-bottom: 24px; min-height: 24px; }
+  .prestart .prologue { text-align: left; color: var(--soft); font-size: 17px; background: var(--surface); padding: 18px; border-radius: 14px; white-space: pre-wrap; }
+
+  /* ---------- Rörelse: ljus tänds, låset öppnas ---------- */
+  .lantern .flame { transform-box: fill-box; transform-origin: 50% 100%; }
+  .lantern.lit .flame { animation: flicker 2.6s ease-in-out infinite alternate; }
+  .lantern.ignite .flame { animation: ignite .9s cubic-bezier(.2,.9,.3,1.3) both, flicker 2.6s ease-in-out .9s infinite alternate; }
+  .lantern.ignite svg { animation: flare 1.4s ease-out both; }
+  @keyframes flicker { 0% { transform: scale(1, 1); } 40% { transform: scale(.96, 1.04) skewX(-2deg); } 70% { transform: scale(1.03, .97) skewX(1.5deg); } 100% { transform: scale(.98, 1.02); } }
+  @keyframes ignite { 0% { transform: scale(.1); opacity: 0; } 60% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1); } }
+  @keyframes flare { 0% { filter: drop-shadow(0 0 0 rgba(var(--flame-rgb), 0)); } 35% { filter: drop-shadow(0 0 22px rgba(var(--flame-rgb), .95)); } 100% { } }
+  .lock.just-opened { animation: lockglow 1.6s ease-out both; }
+  .lock.just-opened .lock-head svg, .lock.unlocking .lock-head svg { animation: shackle .7s cubic-bezier(.3,1.4,.5,1) both; transform-origin: 50% 70%; }
+  @keyframes lockglow { 0% { box-shadow: 0 0 0 0 rgba(var(--glow-rgb), .0); } 30% { box-shadow: 0 0 0 3px rgba(var(--glow-rgb), .55), 0 0 40px rgba(var(--glow-rgb), .35); } 100% { box-shadow: 0 0 0 0 rgba(var(--glow-rgb), 0); } }
+  @keyframes shackle { 0% { transform: translateY(0) rotate(0); } 40% { transform: translateY(-4px) rotate(-12deg); } 100% { transform: translateY(-2px) rotate(-8deg); } }
+  .lock.unlocking { animation: lockglow 1s ease-out both; }
+  .lock.unlocking .lock-box, .lock.unlocking .coord button[aria-pressed="true"], .lock.unlocking .choices button[aria-pressed="true"] {
+    border-color: var(--glow); color: var(--glow); box-shadow: 0 0 16px rgba(var(--glow-rgb), .6); transition: all .25s;
+  }
+  .enter { animation: enter .6s ease-out both; }
+  @keyframes enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  .pop .lock-box.static { animation: pop .5s cubic-bezier(.2,.9,.3,1.4) both; animation-delay: calc(var(--i) * 90ms + .25s); }
+  @keyframes pop { from { opacity: 0; transform: scale(.6) translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+
+  /* ---------- Nätfel ---------- */
+  .net {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 40; text-align: center;
+    padding: calc(env(safe-area-inset-top) + 8px) 16px 8px; font-size: 14px;
+    background: var(--surface-dark); color: var(--soft); border-bottom: 1px solid var(--border);
+  }
+  body.has-net #app { padding-top: calc(env(safe-area-inset-top) + 52px); }
   .toast {
     position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 20px); transform: translateX(-50%);
     background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 12px 16px; border-radius: 12px;
@@ -298,6 +345,10 @@
     var opts = { method: method };
     if (method === 'GET') path += (path.indexOf('?') < 0 ? '?' : '&') + 'profile=' + encodeURIComponent(pid);
     else { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(Object.assign({ profile: pid }, body || {})); }
+    // Ger upp efter 15 s (20 s för foton), så att sidan aldrig hänger på
+    // ett anrop som inte svarar; anroparen behandlar det som ett nätfel.
+    var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    if (ctrl) { opts.signal = ctrl.signal; setTimeout(function(){ ctrl.abort(); }, /\/photo$/.test(path) ? 20000 : 15000); }
     return fetch(apiBase() + '/api/kalender' + path, opts).then(function(r){
       return r.json().catch(function(){ return {}; }).then(function(d){ return { status: r.status, body: d }; });
     });
@@ -410,9 +461,38 @@
   /* ---------- Vyer ---------- */
   var view = { name: null, day: null, data: null };
 
+  // Diskret rad överst när servern inte svarar; sidan behåller det den har.
+  var netBar = null;
+  function showNet(on){
+    if (on && !netBar) { netBar = el('div', { class: 'net', role: 'status', text: 'Ingen kontakt med servern. Försöker igen …' }); document.body.appendChild(netBar); }
+    if (!on && netBar) { netBar.remove(); netBar = null; }
+    document.body.classList.toggle('has-net', !!on);
+  }
+  window.addEventListener('offline', function(){ showNet(true); });
+  window.addEventListener('online', function(){ refresh(); });
+  // Oväntade fel i sidan: säg till en gång i stället för att tyst sluta fungera.
+  var lastCrash = 0;
+  function crashed(){
+    if (Date.now() - lastCrash < 10000) return;
+    lastCrash = Date.now();
+    toast('Något gick fel. Ladda om sidan om det inte fungerar.');
+  }
+  window.addEventListener('error', crashed);
+  window.addEventListener('unhandledrejection', crashed);
+
+  var enterTimer;
   function setScreen(nodes){
+    app.classList.remove('enter', 'pop');
     app.textContent = '';
     add(app, nodes);
+  }
+  // Spelar inträdet (och svarsrutornas "pop") en gång; tas bort efteråt så
+  // att omritningen var 20:e sekund inte spelar det igen.
+  function playEnter(){
+    void app.offsetWidth;
+    app.classList.add('enter', 'pop');
+    clearTimeout(enterTimer);
+    enterTimer = setTimeout(function(){ app.classList.remove('enter', 'pop'); }, 2500);
   }
 
   function messagePage(title, text, actions, extra){
@@ -433,18 +513,14 @@
     }
     if (res.status === 403 && res.body && res.body.error === 'locked') { toast(doorName(route().day || '') + ' går inte att öppna än.'); location.hash = ''; return true; }
     if (res.status === 404) { location.hash = ''; return true; }
-    if (res.status >= 400) { messagePage('Något gick fel', 'Kunde inte hämta tåget just nu.', el('button', { class: 'btn btn-primary', text: 'Försök igen', onclick: function(){ refresh(); } })); return true; }
+    if (res.status >= 400) { messagePage('Något gick fel', 'Kunde inte hämta kalendern just nu.', el('button', { class: 'btn btn-primary', text: 'Försök igen', onclick: function(){ refresh(); } })); return true; }
     return false;
   }
 
   /* --- Kalendern --- */
   function renderCalendar(s){
-    if (!s.started) {
-      var sd = new Date(s.startDate + 'T12:00:00Z');
-      return messagePage('Kommer ' + sd.getUTCDate() + ' ' + MONTHS[sd.getUTCMonth()], null, null,
-        el('div', { class: 'prologue', text: s.prologue || '' }));
-    }
     var me = s.players.filter(function(p){ return p.slot === s.me; })[0];
+    if (!s.started) return renderPrestart(s, me);
     var cells = s.days.map(function(d){
       if (d.status === 'locked') {
         return el('div', { class: 'cell locked', 'aria-label': doorName(d.day) + ', låst' }, el('span', { class: 'num', text: d.day }), icon('lock'));
@@ -466,6 +542,50 @@
       el('p', { class: 'who' }, 'Du spelar som ', el('b', { text: me ? me.name : '' }), ' · ', el('button', { text: 'Byt profil', onclick: function(){ NordhammerProfile.openSwitcher(function(){ refresh(); }); } }))
     ]);
   }
+  // Före start: prologen och en nedräkning till midnatt (svensk tid) det
+  // första datumet. Serverns klocka gäller: skillnaden mot telefonens
+  // klocka räknas in, så en felställd telefon räknar ändå rätt.
+  function stockholmMidnight(dateStr){
+    var p = dateStr.split('-').map(Number), guess = Date.UTC(p[0], p[1] - 1, p[2]);
+    var parts = {};
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Stockholm', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      .formatToParts(new Date(guess)).forEach(function(x){ parts[x.type] = +x.value; });
+    var asLocal = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute);
+    return guess - (asLocal - guess);
+  }
+  var countdown = null;
+  function renderPrestart(s, me){
+    var sd = new Date(s.startDate + 'T12:00:00Z');
+    var units = ['dagar', 'timmar', 'minuter', 'sekunder'].map(function(l){ return el('div', { class: 'u' }, el('div', { class: 'v', text: '–' }), el('div', { class: 'l', text: l })); });
+    var done = el('p', { class: 'countdown-done', 'aria-live': 'polite' });
+    countdown = { target: stockholmMidnight(s.startDate), skew: s.now ? Date.parse(s.now) - Date.now() : 0, units: units, done: done, fired: false };
+    setScreen(el('div', { class: 'prestart' },
+      el('div', { class: 'topbar' }, el('a', { class: 'icon-btn', href: '/', 'aria-label': 'Till startsidan' }, icon('back'))),
+      el('div', { class: 'hero' }, icon(T.icon)),
+      el('div', { class: 'kicker', text: s.title }),
+      el('h1', { text: 'Kommer ' + sd.getUTCDate() + ' ' + MONTHS[sd.getUTCMonth()] }),
+      s.subtitle ? el('p', { class: 'sub', text: s.subtitle }) : null,
+      el('div', { class: 'countdown', role: 'timer', 'aria-label': 'Tid kvar till start' }, units),
+      done,
+      s.prologue ? el('div', { class: 'prologue', text: s.prologue }) : null,
+      el('p', { class: 'who' }, 'Du spelar som ', el('b', { text: me ? me.name : '' }), ' · ', el('button', { text: 'Byt profil', onclick: function(){ NordhammerProfile.openSwitcher(function(){ refresh(); }); } }))));
+    tickCountdown();
+  }
+  function tickCountdown(){
+    var c = countdown;
+    if (!c || !document.body.contains(c.done)) { countdown = null; return; }
+    var left = Math.max(0, c.target - (Date.now() + c.skew));
+    var sec = Math.floor(left / 1000);
+    var vals = [Math.floor(sec / 86400), Math.floor(sec % 86400 / 3600), Math.floor(sec % 3600 / 60), sec % 60];
+    c.units.forEach(function(u, i){ u.firstChild.textContent = i === 0 ? String(vals[0]) : String(vals[i]).padStart(2, '0'); });
+    if (left === 0 && !c.fired) {
+      c.fired = true;
+      c.done.textContent = 'Nu öppnas ' + T.door.singular + ' 1 …';
+      setTimeout(refresh, 1500); // servern avgör; öppnar den inte än försöker 20-sekundersuppdateringen igen
+    }
+  }
+  setInterval(tickCountdown, 1000);
+
   function itemCard(it, isNew){
     return el('div', { class: 'item' + (isNew ? ' new-item' : '') }, icon('bag'),
       el('div', null, el('div', { class: 'name', text: it.name }), it.description ? el('div', { class: 'desc', text: it.description }) : null));
@@ -478,9 +598,17 @@
       el('div', { class: 'date', text: prettyDate(d.date) }),
       el('div', { class: 'stars-pill', 'aria-label': d.stars + ' stjärnor' }, icon('star'), String(d.stars)));
   }
+  // Vad som visades förra gången, per kalender och lucka, så att ett ljus
+  // som just tänts (eller ett lås som just öppnats) kan animeras — men inte
+  // allt som redan lyste när sidan öppnades.
+  var seen = {};
+  function seenFor(d){ var k = d.calendar + ':' + d.day; return seen[k] || (seen[k] = { lit: null, lockOpen: null }); }
   function lanternRow(d){
+    var mem = seenFor(d), before = mem.lit;
+    mem.lit = d.players.filter(function(p){ return p.lit; }).map(function(p){ return p.slot; });
     return el('div', { class: 'lanterns' }, d.players.map(function(p){
-      return el('div', { class: 'lantern' + (p.lit ? ' lit' : '') }, icon(T.icon), el('span', { class: 'name', text: p.name }));
+      var ignite = p.lit && before && before.indexOf(p.slot) < 0;
+      return el('div', { class: 'lantern' + (p.lit ? ' lit' : '') + (ignite ? ' ignite' : '') }, icon(T.icon), el('span', { class: 'name', text: p.name }));
     }));
   }
   function lanternSentence(d){
@@ -769,7 +897,9 @@
         el('button', { class: 'btn btn-primary btn-block', type: 'submit', text: 'Öppna låset' }),
         el('p', { class: 'lock-foot', id: 'lock-foot', text: d.attemptsLeft < 10 ? 'Du har ' + d.attemptsLeft + ' försök kvar idag.' : '' }));
     }
-    return el('section', null, el('div', { class: 'lock' + (open ? '' : ' closed') },
+    var mem = seenFor(d), justOpened = open && mem.lockOpen === false;
+    mem.lockOpen = open;
+    return el('section', null, el('div', { class: 'lock' + (open ? '' : ' closed') + (justOpened ? ' just-opened' : ''), id: 'lock' },
       el('div', { class: 'lock-head' }, icon(open ? 'unlock' : 'lock'), el('h2', { text: 'Låset' })), body));
   }
 
@@ -910,7 +1040,9 @@
   }
 
   // Den lösta vyn är facit: servern skickar då hela gåtan.
+  var justSolved = false;
   function renderSolved(d){
+    var animate = justSolved; justSolved = false;
     var s = d.solved;
     var answer = Array.from(String(d.solution || ''));
     setScreen([
@@ -920,8 +1052,8 @@
       el('header', { class: 'solved-head' },
         el('h1', { text: d.title }),
         el('div', { class: 'lock-boxes', 'aria-label': 'Svaret: ' + d.solution },
-          d.lock.type === 'choice' ? el('div', { class: 'lock-box static wide', text: d.solution })
-            : answer.map(function(ch){ return el('div', { class: 'lock-box static', text: ch }); }))),
+          d.lock.type === 'choice' ? el('div', { class: 'lock-box static wide', style: '--i:0', text: d.solution })
+            : answer.map(function(ch, i){ return el('div', { class: 'lock-box static', style: '--i:' + i, text: ch }); }))),
       el('section', null, el('p', { class: 'intro', text: d.intro })),
       el('section', null, el('h2', { class: 'section-title', text: 'Ni löste uppgiften' }), el('p', { class: 'epilogue', text: d.epilogue.text })),
       d.epilogue.item ? el('section', null, el('h2', { class: 'section-title', text: 'Nytt föremål' }), itemCard(d.epilogue.item, true)) : null,
@@ -932,6 +1064,7 @@
       solvedHintsSection(d),
       el('section', null, el('a', { class: 'btn btn-primary btn-block', href: '#', text: T.back }))
     ]);
+    if (animate) playEnter();
   }
   function solvedFragmentsSection(d){
     return el('section', null,
@@ -988,7 +1121,7 @@
     if (busy) return Promise.resolve(null);
     busy = true;
     return api('POST', '/day/' + view.day + path, body).then(function(res){ busy = false; return res; },
-      function(){ busy = false; toast('Ingen kontakt med tåget. Försök igen.'); return null; });
+      function(){ busy = false; toast('Ingen kontakt med servern. Försök igen.'); return null; });
   }
   function postFragment(){
     act('/fragment').then(function(res){
@@ -1013,7 +1146,17 @@
     act('/solve', { answer: answer }).then(function(res){
       if (!res) return;
       var b = res.body || {};
-      if (res.status === 200 && b.correct) { delete lockPick[view.day]; view.data = b.day; window.scrollTo(0, 0); renderDay(view.data); return; }
+      if (res.status === 200 && b.correct) {
+        delete lockPick[view.day];
+        var lock = document.getElementById('lock');
+        var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (lock && !calm) lock.classList.add('unlocking');
+        setTimeout(function(){
+          view.data = b.day; justSolved = true;
+          window.scrollTo(0, 0); renderDay(view.data);
+        }, lock && !calm ? 900 : 0);
+        return;
+      }
       if (res.status === 200) {
         input.clear();
         view.data = b.day; renderDay(view.data);
@@ -1110,6 +1253,9 @@
     var req = r.name === 'day' ? api('GET', '/day/' + r.day) : api('GET', '/state');
     req.then(function(res){
       if (seq !== loadSeq) return; // en nyare hämtning har startat
+      // Serverfel under en tyst uppdatering: behåll vyn, visa raden överst.
+      if (res.status >= 500 && res.status !== 503 && view.data) { showNet(true); return; }
+      showNet(false);
       if (handleError(res)) return;
       view.data = res.body;
       applyTheme(res.body.theme);
@@ -1118,8 +1264,8 @@
       if (r.name === 'day') renderDay(res.body); else renderCalendar(res.body);
     }, function(){
       if (seq !== loadSeq) return;
-      if (view.data) return; // behåll det vi har vid tillfälligt nätfel
-      messagePage('Ingen kontakt', 'Kunde inte nå tåget. Kontrollera uppkopplingen.', el('button', { class: 'btn btn-primary', text: 'Försök igen', onclick: function(){ refresh(); } }));
+      if (view.data) { showNet(true); return; } // behåll det vi har vid tillfälligt nätfel
+      messagePage('Ingen kontakt', 'Kunde inte nå servern. Kontrollera uppkopplingen.', el('button', { class: 'btn btn-primary', text: 'Försök igen', onclick: function(){ refresh(); } }));
     });
   }
 
@@ -1132,7 +1278,9 @@
   document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') refresh(); });
   window.addEventListener('hashchange', function(){ refresh(); });
 
-  NordhammerProfile.ensurePicker(function(){ refresh(); });
+  if (!window.NordhammerProfile) {
+    messagePage('Något gick fel', 'Sidan kunde inte laddas helt. Ladda om sidan.', el('button', { class: 'btn btn-primary', text: 'Ladda om', onclick: function(){ location.reload(); } }));
+  } else NordhammerProfile.ensurePicker(function(){ refresh(); });
 })();
 </script>
 </body>

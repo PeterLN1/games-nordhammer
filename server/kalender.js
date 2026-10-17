@@ -67,18 +67,24 @@ export function decryptContent(file, keyB64) {
   return JSON.parse(plain.toString('utf8'));
 }
 
-// Kontrollerar bara formen, aldrig innehållet i texterna. Kastar fel
-// med generiska meddelanden (inga värden ur filen).
+// Fel med våra egna, innehållsfria meddelanden. Bara de får visas
+// (t.ex. i /admin/check) — andra fel, som JSON.parse, kan citera filen.
+class ContentError extends Error {}
+const safeError = (e, fallback) => e instanceof ContentError ? e.message : fallback;
+
+// Kontrollerar bara formen som servern behöver för att starta, aldrig
+// innehållet i texterna. Den fullständiga kontrollen är checkContent().
 function validateContent(c) {
-  if (!c || typeof c !== 'object') throw new Error('innehållet är inte ett objekt');
-  if (typeof c.id !== 'string' || !CALENDAR_ID.test(c.id)) throw new Error('id saknas eller har fel format');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(c.start_date || '')) throw new Error('start_date saknas eller har fel format');
-  if (!Array.isArray(c.days) || c.days.length < 1 || c.days.length > MAX_DAYS) throw new Error('days måste ha 1–' + MAX_DAYS + ' luckor');
+  const fail = m => { throw new ContentError(m); };
+  if (!c || typeof c !== 'object') fail('innehållet är inte ett objekt');
+  if (typeof c.id !== 'string' || !CALENDAR_ID.test(c.id)) fail('id saknas eller har fel format');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(c.start_date || '')) fail('start_date saknas eller har fel format');
+  if (!Array.isArray(c.days) || c.days.length < 1 || c.days.length > MAX_DAYS) fail('days måste ha 1–' + MAX_DAYS + ' luckor');
   c.days.forEach((d, i) => {
-    if (!d || d.day !== i + 1) throw new Error('dagarna är inte numrerade 1, 2, 3 …');
-    if (!d.lock || typeof d.lock.type !== 'string') throw new Error('lucka ' + (i + 1) + ' saknar lock');
-    if (typeof d.answer !== 'string' || !d.answer) throw new Error('lucka ' + (i + 1) + ' saknar svar');
-    if (!d.fragments || SLOTS.some(s => !d.fragments[s])) throw new Error('lucka ' + (i + 1) + ' saknar lappar');
+    if (!d || d.day !== i + 1) fail('dagarna är inte numrerade 1, 2, 3 …');
+    if (!d.lock || typeof d.lock.type !== 'string') fail('dag ' + (i + 1) + ': lock saknas');
+    if (typeof d.answer !== 'string' || !d.answer) fail('dag ' + (i + 1) + ': svar saknas');
+    if (!d.fragments || SLOTS.some(s => !d.fragments[s])) fail('dag ' + (i + 1) + ': lappar saknas');
   });
   return c;
 }
@@ -88,7 +94,7 @@ function readSample(samplePath, sampleStart) {
   try { c = validateContent(JSON.parse(fs.readFileSync(samplePath, 'utf8'))); }
   catch (e) {
     console.error('Kalendern: kunde inte läsa testinnehållet.');
-    return { content: null, source: 'sample' };
+    return { content: null, source: 'sample', error: 'testinnehållet: ' + safeError(e, 'kunde inte läsas') };
   }
   if (sampleStart) {
     if (/^\d{4}-\d{2}-\d{2}$/.test(sampleStart) && !Number.isNaN(Date.parse(sampleStart + 'T00:00:00Z'))) c.start_date = sampleStart;
@@ -118,25 +124,137 @@ export function loadContent({ mode, key, sampleStart, active, encPath, samplePat
     try { file = JSON.parse(fs.readFileSync(enc, 'utf8')); }
     catch (e) {
       console.error('Kalendern: kunde inte läsa den krypterade innehållsfilen.');
-      return { content: null, source: 'encrypted' };
+      return { content: null, source: 'encrypted', error: 'den krypterade filen kunde inte läsas' };
     }
-    let c;
-    try { c = validateContent(decryptContent(file, key)); }
+    let raw;
+    try { raw = decryptContent(file, key); }
     catch (e) {
       console.error('Kalendern: kunde inte dekryptera innehållet.');
-      return { content: null, source: 'encrypted' };
+      return { content: null, source: 'encrypted', error: 'kunde inte dekryptera innehållet' };
+    }
+    let c;
+    try { c = validateContent(raw); }
+    catch (e) {
+      // Samma loggrad som tidigare; orsaken (innehållsfri) visas i /admin/check.
+      console.error('Kalendern: kunde inte dekryptera innehållet.');
+      return { content: null, source: 'encrypted', error: safeError(e, 'innehållet har fel form') };
     }
     if (validActive && c.id !== active) {
       console.error('Kalendern: innehållsfilens id stämmer inte med KALENDER_ACTIVE.');
-      return { content: null, source: 'encrypted' };
+      return { content: null, source: 'encrypted', error: 'filens id stämmer inte med KALENDER_ACTIVE' };
     }
     return { content: c, source: 'encrypted' };
   }
   if (mode === 'sample') return readSample(samplePath, sampleStart);
-  if (key && !validActive) console.warn('Kalendern: CONTENT_KEY är satt men KALENDER_ACTIVE saknas — spelet är inte redo.');
-  else if (key) console.warn('Kalendern: CONTENT_KEY är satt men den krypterade filen för den aktiva kalendern saknas — spelet är inte redo.');
-  else console.warn('Kalendern: CONTENT_KEY saknas och KALENDER_CONTENT=sample är inte satt — spelet är inte redo.');
-  return { content: null, source: 'none' };
+  let error;
+  if (key && !validActive) error = 'CONTENT_KEY är satt men KALENDER_ACTIVE saknas';
+  else if (key) error = 'CONTENT_KEY är satt men den krypterade filen för den aktiva kalendern saknas';
+  else error = 'CONTENT_KEY saknas och KALENDER_CONTENT=sample är inte satt';
+  console.warn('Kalendern: ' + error + ' — spelet är inte redo.');
+  return { content: null, source: 'none', error };
+}
+
+/* ---------- Kontroll av innehållsfilen (POST /admin/check) ----------
+   Går igenom hela filen och returnerar en lista med fel, eller [] om allt
+   är OK. Felen säger bara VAR något är fel (dag, plats, fält, låstyp),
+   aldrig VAD som står i filen — inga texter, svar, föremålsnamn eller id:n
+   ur innehållet. Så kan den köras mot det riktiga innehållet utan spoilers. */
+const LOCK_TYPES = ['digits', 'word', 'coordinate', 'choice'];
+const FRAGMENT_KINDS = ['text', 'svg', 'grid_map', 'photo_task'];
+const nonEmpty = v => typeof v === 'string' && v.trim().length > 0;
+const intIn = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+const COORD = /^([A-Z])([1-9][0-9]?)$/;
+function coordInside(key, cols, rows) {
+  const m = COORD.exec(key);
+  return !!m && m[1].charCodeAt(0) - 64 <= cols && Number(m[2]) <= rows;
+}
+export function checkContent(c) {
+  const errors = [];
+  const err = (where, msg) => errors.push(where ? where + ': ' + msg : msg);
+  if (!c || typeof c !== 'object') return ['innehållet är inte ett objekt'];
+  if (typeof c.id !== 'string' || !CALENDAR_ID.test(c.id)) err('', 'id saknas eller har fel format (små bokstäver, siffror och bindestreck)');
+  if (!nonEmpty(c.title)) err('', 'title saknas');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(c.start_date || '') || Number.isNaN(Date.parse(c.start_date + 'T00:00:00Z'))) err('', 'start_date saknas eller är inget giltigt datum');
+  if (!nonEmpty(c.prologue)) err('', 'prologue saknas');
+  if (c.theme !== undefined) {
+    const t = c.theme;
+    if (!t || typeof t !== 'object') err('theme', 'är inget objekt');
+    else {
+      if (t.colors !== undefined) {
+        for (const [k, v] of Object.entries(t.colors || {})) {
+          if (!(k in DEFAULT_THEME.colors)) err('theme', 'okänd färg ' + k);
+          else if (!(typeof v === 'string' && HEX.test(v))) err('theme', 'färgen ' + k + ' är ingen #hex-färg');
+        }
+      }
+      if (t.icon !== undefined && !ICONS.includes(t.icon)) err('theme', 'icon måste vara ' + ICONS.join(' eller '));
+      if (t.door !== undefined && !(t.door && nonEmpty(t.door.singular) && nonEmpty(t.door.plural))) err('theme', 'door behöver singular och plural');
+      if (t.back !== undefined && !(nonEmpty(t.back) && t.back.length <= 40)) err('theme', 'back måste vara en text på högst 40 tecken');
+    }
+  }
+  if (!Array.isArray(c.days)) { err('', 'days saknas'); return errors; }
+  if (c.days.length < 1 || c.days.length > MAX_DAYS) err('', 'antalet dagar är ' + c.days.length + ', ska vara 1–' + MAX_DAYS);
+
+  const givenBy = new Map(); // föremålets id → dagen som ger det
+  c.days.forEach((d, i) => {
+    const n = i + 1, where = 'dag ' + n;
+    if (!d || typeof d !== 'object') { err(where, 'saknas'); return; }
+    if (d.day !== n) err(where, 'har fel nummer i fältet day');
+    if (!nonEmpty(d.title)) err(where, 'title saknas');
+    if (!nonEmpty(d.intro)) err(where, 'intro saknas');
+
+    // Låset och svaret
+    const lock = d.lock;
+    if (!lock || !LOCK_TYPES.includes(lock.type)) err(where, 'ogiltig låstyp (ska vara ' + LOCK_TYPES.join(', ') + ')');
+    else if ((lock.type === 'digits' || lock.type === 'word') && !intIn(lock.length, 1, 12)) err(where, 'låset ' + lock.type + ' behöver length 1–12');
+    else if (lock.type === 'coordinate' && !(intIn(lock.cols, 1, 26) && intIn(lock.rows, 1, 30))) err(where, 'koordinatlåset behöver cols 1–26 och rows 1–30');
+    else if (lock.type === 'choice' && !(Array.isArray(lock.options) && lock.options.length >= 2 && lock.options.every(nonEmpty) && new Set(lock.options.map(o => o.trim())).size === lock.options.length)) err(where, 'vallåset behöver minst två olika alternativ');
+    if (!nonEmpty(d.answer)) err(where, 'svar saknas');
+    else if (lock && LOCK_TYPES.includes(lock.type)) {
+      const a = normalizeAnswer(lock, d.answer);
+      if (lock.type === 'digits' && !(/^\d+$/.test(a) && a.length === lock.length && a === d.answer.trim())) err(where, 'svaret passar inte låstypen digits (' + lock.length + ' siffror)');
+      if (lock.type === 'word' && !(/^[A-ZÅÄÖ]+$/.test(a) && a.length === lock.length)) err(where, 'svaret passar inte låstypen word (' + lock.length + ' bokstäver A–Ö)');
+      if (lock.type === 'coordinate' && !coordInside(a, lock.cols, lock.rows)) err(where, 'svaret passar inte koordinatlåset (en ruta inom ' + lock.cols + ' × ' + lock.rows + ')');
+      if (lock.type === 'choice' && Array.isArray(lock.options) && !lock.options.map(o => String(o).trim()).includes(a)) err(where, 'svaret är inte ett av alternativen');
+    }
+
+    // Lapparna
+    const f = d.fragments;
+    if (!f || typeof f !== 'object') err(where, 'fragments saknas');
+    else {
+      for (const slot of SLOTS) {
+        const fr = f[slot], w = where + ': lapp för ' + slot;
+        if (!fr || typeof fr !== 'object') { err('', w + ' saknas'); continue; }
+        if (!FRAGMENT_KINDS.includes(fr.kind)) { err('', w + ' har ogiltig typ (ska vara ' + FRAGMENT_KINDS.join(', ') + ')'); continue; }
+        if (fr.kind === 'text' && !nonEmpty(fr.text)) err('', w + ' saknar text');
+        if (fr.kind === 'svg' && !(typeof fr.svg === 'string' && /^\s*<svg[\s>]/i.test(fr.svg))) err('', w + ' saknar en giltig svg');
+        if (fr.kind === 'photo_task' && !(nonEmpty(fr.text) && nonEmpty(fr.reveal))) err('', w + ' behöver text och reveal');
+        if (fr.kind === 'grid_map') {
+          if (!(intIn(fr.cols, 1, 26) && intIn(fr.rows, 1, 30))) err('', w + ' behöver cols 1–26 och rows 1–30');
+          else if (!fr.cells || typeof fr.cells !== 'object' || Object.keys(fr.cells).some(k => !coordInside(k, fr.cols, fr.rows))) err('', w + ' har rutor utanför kartan');
+        }
+      }
+      for (const slot of Object.keys(f)) if (!SLOTS.includes(slot)) err(where, 'okänd plats i fragments');
+    }
+
+    // Ledtrådar
+    if (!(Array.isArray(d.hints) && d.hints.length === HINT_COUNT && d.hints.every(nonEmpty))) err(where, 'ska ha exakt ' + HINT_COUNT + ' ledtrådar');
+
+    // Föremål som krävs måste ges av en tidigare lucka
+    if (d.requires_items !== undefined && !Array.isArray(d.requires_items)) err(where, 'requires_items är ingen lista');
+    (Array.isArray(d.requires_items) ? d.requires_items : []).forEach((id, k) => {
+      if (!givenBy.has(id)) err(where, 'föremål nr ' + (k + 1) + ' i requires_items ges inte av någon tidigare lucka');
+    });
+
+    // Epilog och föremål
+    if (!d.epilogue || !nonEmpty(d.epilogue.text)) err(where, 'epilogue.text saknas');
+    const item = d.epilogue && d.epilogue.item;
+    if (item !== undefined) {
+      if (!item || !nonEmpty(item.id) || !nonEmpty(item.name)) err(where, 'föremålet i epilogue behöver id och name');
+      else if (givenBy.has(item.id)) err(where, 'föremålet i epilogue har samma id som dag ' + givenBy.get(item.id));
+      else givenBy.set(item.id, n);
+    }
+  });
+  return errors;
 }
 
 /* ---------- Tema ----------
@@ -407,7 +525,7 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
   return view;
 }
 
-export function buildStateView({ content, today, me, players, profiles, events, solves }) {
+export function buildStateView({ content, today, now = new Date(), me, players, profiles, events, solves }) {
   const solvedDays = new Set(solves.map(s => s.day));
   const started = today >= content.start_date;
   const slotByProfile = new Map(players.map(p => [p.profileId, p.slot]));
@@ -428,6 +546,7 @@ export function buildStateView({ content, today, me, players, profiles, events, 
     subtitle: content.subtitle || '',
     startDate: content.start_date,
     today, started,
+    now: now.toISOString(),
     totalDays: content.days.length,
     openedCount: days.filter(d => d.status !== 'locked').length,
     days,
@@ -687,7 +806,7 @@ function secretOk(expected, given) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-function createRouter({ store, content, now, adminSecret, listProfiles }) {
+function createRouter({ store, content, now, adminSecret, listProfiles, loadError }) {
   const router = express.Router();
   const today = () => stockholmDate(now());
   const profilesSafe = async () => {
@@ -712,7 +831,7 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
     try {
       const p = await player(req, res); if (!p) return;
       const [events, solves, profiles] = await Promise.all([store.listEvents(), store.listSolves(), profilesSafe()]);
-      res.json(buildStateView({ content, today: today(), me: p.slot, players: p.players, profiles, events, solves }));
+      res.json(buildStateView({ content, today: today(), now: now(), me: p.slot, players: p.players, profiles, events, solves }));
     } catch (e) { console.error('Kalendern: fel i /state:', e.message); res.status(500).json({ error: 'serverfel' }); }
   });
 
@@ -850,6 +969,15 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
     } catch (e) { console.error('Kalendern: fel i /admin/players:', e.message); res.status(500).json({ error: 'serverfel' }); }
   });
 
+  // Kontrollerar den aktiva innehållsfilen. Svarar bara OK eller en lista
+  // med fel som inte innehåller något ur filen (se checkContent).
+  router.post('/admin/check', (req, res) => {
+    if (!secretOk(adminSecret, (req.body || {}).secret)) return res.status(403).json({ error: 'fel hemlighet' });
+    if (!content) return res.json({ ok: false, errors: ['inget innehåll laddat: ' + (loadError || 'okänd orsak')] });
+    const errors = checkContent(content);
+    res.json(errors.length ? { ok: false, calendar: content.id, errors } : { ok: true, calendar: content.id, days: content.days.length, message: 'OK' });
+  });
+
   router.post('/admin/reset', async (req, res) => {
     if (!secretOk(adminSecret, (req.body || {}).secret)) return res.status(403).json({ error: 'fel hemlighet' });
     try { await store.reset(); res.json({ ok: true }); }
@@ -865,7 +993,7 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
 export async function createKalender(pool, opts = {}) {
   const env = opts.env ? readEnv(opts.env) : readEnv();
   const nodeEnv = (opts.env || process.env).NODE_ENV;
-  const { content, source } = opts.content !== undefined
+  const { content, source, error: loadError } = opts.content !== undefined
     ? { content: opts.content, source: 'given' }
     : loadContent({
       mode: opts.contentMode ?? env.CONTENT,
@@ -891,12 +1019,18 @@ export async function createKalender(pool, opts = {}) {
     store = usablePool ? pgStore(usablePool, calendar) : memStore(calendar);
   }
   // Id:t är inget innehåll och får loggas.
-  if (content) console.log('Kalendern: "' + content.id + '" laddad (' + (source === 'sample' ? 'testinnehåll' : source === 'encrypted' ? 'krypterat' : 'givet') + ').');
+  if (content) {
+    console.log('Kalendern: "' + content.id + '" laddad (' + (source === 'sample' ? 'testinnehåll' : source === 'encrypted' ? 'krypterat' : 'givet') + ').');
+    // Felen är innehållsfria och får loggas.
+    const problems = checkContent(content);
+    if (problems.length) console.warn('Kalendern: innehållsfilen har ' + problems.length + ' fel: ' + problems.join('; '));
+  }
 
   const router = createRouter({
     store, content, now,
     adminSecret: opts.adminSecret ?? env.ADMIN_SECRET ?? '',
-    listProfiles: opts.listProfiles
+    listProfiles: opts.listProfiles,
+    loadError
   });
   return { router, store, content };
 }

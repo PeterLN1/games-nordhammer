@@ -9,7 +9,7 @@ import os from 'os';
 import path from 'path';
 import express from 'express';
 import {
-  createKalender, loadContent, makeNow, memStore, pgStore, readEnv, publicTheme, DEFAULT_THEME, SAMPLE_PATH, photoBodyParser, MAX_PHOTO_BYTES, normalizeAnswer, computeStars
+  createKalender, loadContent, makeNow, memStore, pgStore, readEnv, publicTheme, DEFAULT_THEME, checkContent, SAMPLE_PATH, photoBodyParser, MAX_PHOTO_BYTES, normalizeAnswer, computeStars
 } from '../kalender.js';
 
 const SAMPLE = JSON.parse(fs.readFileSync(SAMPLE_PATH, 'utf8'));
@@ -1004,5 +1004,96 @@ describe('kalendrar, miljövariabler och tema', () => {
     assert.equal(st.openedCount, 7);
     assert.equal(st.days[6].status, 'today');
     await new Promise(r => server.close(r));
+  });
+});
+
+describe('punkt 7: /admin/check', () => {
+  const clone = () => JSON.parse(JSON.stringify(SAMPLE));
+  // Alla strängar i innehållet (utom korta tecken som kartsymboler och
+  // plats-/typnamn) — inga av dem får förekomma i ett felmeddelande.
+  function contentStrings(c) {
+    const out = [];
+    const walk = v => { if (typeof v === 'string') { if (v.length >= 4) out.push(v); } else if (v && typeof v === 'object') Object.values(v).forEach(walk); };
+    c.days.forEach(walk); walk(c.title); walk(c.subtitle); walk(c.prologue);
+    return out.filter(x => !['text', 'photo_task', 'grid_map', 'digits', 'word', 'coordinate', 'choice', 'svg'].includes(x));
+  }
+  const noLeak = (c, errors) => {
+    const secrets = contentStrings(c).concat(c.days.map(d => d.answer)).concat(c.days.flatMap(d => (d.epilogue && d.epilogue.item) ? [d.epilogue.item.id, d.epilogue.item.name] : []));
+    for (const e of errors) for (const x of secrets) if (x && x.length >= 2) assert.ok(!e.includes(x), 'felet "' + e + '" innehåller text ur filen');
+  };
+
+  test('testinnehållet är OK', () => {
+    assert.deepEqual(checkContent(SAMPLE), []);
+  });
+
+  test('varje sorts fel hittas, med plats men utan innehåll', () => {
+    const cases = [
+      [c => { delete c.days[1].fragments.simon; }, 'dag 2: lapp för simon saknas'],
+      [c => { c.days[0].fragments.maria.kind = 'video'; }, 'dag 1: lapp för maria har ogiltig typ (ska vara text, svg, grid_map, photo_task)'],
+      [c => { c.days[0].fragments.sara.text = ''; }, 'dag 1: lapp för sara saknar text'],
+      [c => { delete c.days[2].fragments.vilma.reveal; }, 'dag 3: lapp för vilma behöver text och reveal'],
+      [c => { c.days[1].fragments.simon.cells.F9 = 'x'; }, 'dag 2: lapp för simon har rutor utanför kartan'],
+      [c => { c.days[0].fragments.peter = { kind: 'svg', svg: '<script>' }; }, 'dag 1: lapp för peter saknar en giltig svg'],
+      [c => { c.days[0].hints.pop(); }, 'dag 1: ska ha exakt 3 ledtrådar'],
+      [c => { c.days[0].lock.type = 'safe'; }, 'dag 1: ogiltig låstyp (ska vara digits, word, coordinate, choice)'],
+      [c => { c.days[0].answer = '91370'; }, 'dag 1: svaret passar inte låstypen digits (4 siffror)'],
+      [c => { c.days[0].answer = '91a7'; }, 'dag 1: svaret passar inte låstypen digits (4 siffror)'],
+      [c => { c.days[2].answer = 'LYKT4'; }, 'dag 3: svaret passar inte låstypen word (5 bokstäver A–Ö)'],
+      [c => { c.days[1].answer = 'F2'; }, 'dag 2: svaret passar inte koordinatlåset (en ruta inom 5 × 5)'],
+      [c => { c.days[0].lock = { type: 'choice', options: ['Norr', 'Söder'] }; c.days[0].answer = 'Väster'; }, 'dag 1: svaret är inte ett av alternativen'],
+      [c => { c.days[0].lock = { type: 'choice', options: ['Norr'] }; c.days[0].answer = 'Norr'; }, 'dag 1: vallåset behöver minst två olika alternativ'],
+      [c => { c.days[2].requires_items = ['finns-inte']; }, 'dag 3: föremål nr 1 i requires_items ges inte av någon tidigare lucka'],
+      [c => { c.days[0].requires_items = ['nyckel12']; }, 'dag 1: föremål nr 1 i requires_items ges inte av någon tidigare lucka'],
+      [c => { c.days = c.days.concat(Array.from({ length: 22 }, (_, i) => Object.assign(JSON.parse(JSON.stringify(c.days[1])), { day: i + 4 }))); }, 'antalet dagar är 25, ska vara 1–24'],
+      [c => { c.days[1].day = 7; }, 'dag 2: har fel nummer i fältet day'],
+      [c => { c.theme.colors.glow = 'yellow'; }, 'theme: färgen glow är ingen #hex-färg'],
+      [c => { c.theme.icon = 'pumpkin'; }, 'theme: icon måste vara lantern eller candle'],
+      [c => { delete c.id; }, 'id saknas eller har fel format (små bokstäver, siffror och bindestreck)']
+    ];
+    for (const [mutate, expected] of cases) {
+      const c = clone(); mutate(c);
+      const errors = checkContent(c);
+      assert.ok(errors.includes(expected), 'väntade "' + expected + '", fick ' + JSON.stringify(errors));
+      noLeak(clone(), errors);
+    }
+  });
+
+  test('ett föremål från en senare lucka räknas inte', () => {
+    const c = clone();
+    c.days[0].requires_items = []; c.days[2].requires_items = [];
+    c.days[1].requires_items = ['nyckel12'];
+    assert.deepEqual(checkContent(c), []);
+    c.days[0].epilogue.item.id = 'annan';
+    assert.deepEqual(checkContent(c), ['dag 2: föremål nr 1 i requires_items ges inte av någon tidigare lucka']);
+  });
+
+  test('endpointen kräver hemligheten och svarar OK eller felen', async () => {
+    const g = await startGame(at('2026-12-01'));
+    try {
+      assert.equal(await g.postStatus('/admin/check', { secret: 'fel' }), 403);
+      const ok = await g.post('/admin/check', { secret: SECRET });
+      assert.deepEqual(ok.body, { ok: true, calendar: 'prov', days: 3, message: 'OK' });
+    } finally { await g.close(); }
+    const c = clone(); delete c.days[3 - 1].fragments.simon; c.days[0].answer = '1';
+    const store = memStore(); await store.setPlayers(IDS);
+    const game = await createKalender(null, { content: c, store, adminSecret: SECRET, now: () => new Date() });
+    const app = express(); app.use(express.json()); app.use('/k', game.router);
+    const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
+    const r = await (await fetch('http://127.0.0.1:' + server.address().port + '/k/admin/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: SECRET }) })).json();
+    assert.deepEqual(r, { ok: false, calendar: 'prov', errors: ['dag 1: svaret passar inte låstypen digits (4 siffror)', 'dag 3: lapp för simon saknas'] });
+    await new Promise(res => server.close(res));
+  });
+
+  test('utan innehåll säger kontrollen varför, utan att citera filen', () => {
+    const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'kalender-check-'));
+    const broken = path.join(tmp2, 'sample.json');
+    fs.writeFileSync(broken, '{"id": "prov", "hemlig text som inte får synas');
+    const w = console.warn, e = console.error; console.warn = console.error = () => {};
+    try {
+      const res = loadContent({ mode: 'sample', samplePath: broken });
+      assert.equal(res.error, 'testinnehållet: kunde inte läsas');
+      assert.ok(!res.error.includes('hemlig'));
+      assert.equal(loadContent({}).error, 'CONTENT_KEY saknas och KALENDER_CONTENT=sample är inte satt');
+    } finally { console.warn = w; console.error = e; fs.rmSync(tmp2, { recursive: true, force: true }); }
   });
 });

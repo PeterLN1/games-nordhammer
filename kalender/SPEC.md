@@ -110,7 +110,7 @@ Designen finns som mockup. Färger och typsnitt (Nattågets tema, som används n
   - **Olöst arkiv:** som löst men utan guldkant, etikett ”Olöst”.
   - **Låst (framtida):** dämpad med hänglås.
 - Under rutnätet: lagets packning (föremål), om det finns några.
-- Före startdatum: en ”Kommer <startdatum>”-sida med prologen (`prologue`).
+- Före startdatum: en ”Kommer <startdatum>”-sida med kalenderns titel, en tänd lykta eller ett ljus, en nedräkning (dagar, timmar, minuter, sekunder) till midnatt svensk tid det första datumet, och prologen (`prologue`). Nedräkningen utgår från serverns klocka (`now` i `/state`), så en felställd telefon räknar ändå rätt. Vid noll står det ”Nu öppnas <lucka> 1 …” och sidan frågar servern igen.
 - Luckan heter i texterna temats ord i singular (”Vagn 3”, ”Rum 3”), och tillbakaknappen har temats text.
 
 ### 3.2 Dagens lucka
@@ -300,6 +300,7 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 | POST | `/day/:n/hint` | `{profile, n}` där `n` är numret på ledtråden spelaren vill ta (nästa i tur). Om någon hann före svarar servern 409 `hint_already_taken` med den nya vyn, så att två samtidiga tryck bara kostar en stjärna. Inga fler → 409 `no_more_hints`. Löst lucka → 409 `already_solved`. Går i dagens lucka och i arkivluckor. Svarar `{ok, day}` |
 | POST | `/day/:n/solve` | `{profile, answer}` → `{correct: bool, day}`. Felaktigt försök sparas som `attempt`. Högst 10 försök per spelare och dag (429). Stängt lås → 409 `lock_closed`, saknade föremål → 409 `missing_items`, redan löst → 409 `already_solved` |
 | POST | `/admin/players` | `{secret, players: {peter: "<id>", …}}`. Kopplar platserna i den aktiva kalendern. Skyddas av `KALENDER_ADMIN_SECRET` |
+| POST | `/admin/check` | `{secret}`. Kontrollerar den aktiva innehållsfilen och svarar `{ok: true, calendar, days, message: "OK"}` eller `{ok: false, errors: [...]}`. Felen säger bara *var* något är fel, aldrig *vad* som står i filen (inga texter, svar, föremål eller id:n ur innehållet), till exempel ”dag 4: lapp för simon saknas”. Kontrollerar: id, titel, startdatum, prolog, tema, 1–24 dagar numrerade i ordning, titel och intro per dag, giltig låstyp med rätt parametrar, att svaret passar låstypen (antal siffror eller bokstäver A–Ö, en ruta inom rutnätet, ett av alternativen), fem lappar med giltig typ och det typen behöver, exakt tre ledtrådar, epilog, unika föremål och att varje `requires_items` ges av en tidigare lucka. Saknas innehållet säger svaret varför (t.ex. att `KALENDER_ACTIVE` saknas). Samma kontroll körs vid start och felen loggas. Svarar aldrig med innehåll, så den får anropas även när en riktig kalender är aktiv |
 | POST | `/admin/reset` | `{secret}`. Tömmer den aktiva kalenderns händelser, foton och lösningar, men inte spelarna och inget från andra kalendrar. Bara för test |
 
 ### Vad servern får skicka för en lucka
@@ -316,6 +317,7 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 - Lyktorna, tavlan och status (`today` | `archive` | `solved`).
 
 ### Tid
+- `/state` skickar serverns klocka som `now` (ISO-tid), för nedräkningen före start.
 - Aktuellt datum beräknas i `Europe/Stockholm`.
 - `KALENDER_FAKE_NOW` (ISO-tid) får sättas lokalt för test. Den ska ignoreras när `NODE_ENV=production`.
 
@@ -340,7 +342,9 @@ De gamla namnen `NATTAGET_*` läses fortfarande som reserv, med en varning i log
 - Samma upplägg som övriga spel: ren HTML/CSS/JS utan byggsteg, `shared/theme.js` och `shared/profile.js` i `<head>`.
 - Spelet har alltid kalenderns eget tema oavsett sajtens ljusa eller mörka läge.
 - En enda sida med vyerna kalender, lucka och löst lucka. Navigering med `#dag-3` i URL:en.
-- Uppdatering: hämtar luckan var 20:e sekund medan sidan är synlig (`visibilitychange`), så att lyktor och tavla uppdateras.
+- Uppdatering: hämtar luckan var 20:e sekund medan sidan är synlig (`visibilitychange`), så att lyktor och tavla uppdateras. Inte medan någon skriver, skrapar frost eller laddar upp ett foto.
+- Rörelse: en lykta eller ett ljus som tänds medan man tittar flammar upp (bara de som just tänts, inte de som redan lyste när sidan öppnades), och tända lågor fladdrar svagt. När låset öppnas glöder låsrutan och bygeln slår upp. Vid rätt svar lyser rutorna, låset öppnas och den lösta vyn glider in med svaret ruta för ruta. Allt stängs av med `prefers-reduced-motion`.
+- Felhantering: varje anrop ger upp efter 15 s (20 s för foton). Svarar servern inte, eller svarar med ett serverfel, under en tyst uppdatering ligger vyn kvar och en rad överst säger ”Ingen kontakt med servern. Försöker igen …”; raden försvinner vid nästa lyckade hämtning eller när telefonen är online igen. Misslyckade åtgärder visar ett kort meddelande. Oväntade fel i sidan ger ”Något gick fel. Ladda om sidan om det inte fungerar.”
 - Foto: `<input type="file" accept="image/*" capture="environment">`, skalas ned i klienten med canvas innan uppladdning.
 - Länk till spelet läggs i sajtens meny först när allt är klart.
 
@@ -354,7 +358,8 @@ De gamla namnen `NATTAGET_*` läses fortfarande som reserv, med en varning i log
 | 2 | Kalendervyn och luckvyn med `text`-lappar, lyktor, tavla, anteckningar, `digits`-lås, löst vy, epilog och ”Så här gick det till” | Testdag 1 går att spela igenom med fem profiler |
 | 3 | Arkivläge med frosteffekt, ledtrådar, stjärnor, föremål och `requires_items` | Hela testfilen går att spela, även i efterhand |
 | 4 | Låstyperna `word`, `coordinate`, `choice` och lapptyperna `svg`, `grid_map`, `photo_task` med uppladdning | Testdag 2 och 3 går att spela |
-| 5 | Finputs: animationer när lyktor tänds och låset öppnas, ”Kommer 1 december”-sidan, **resedagboken** (en vy där laget kan bläddra igenom alla lösta luckor i ordning, med berättelse, epilog och ”Så här gick det till”), mobiltest, felhantering | Familjen kan köra en provlucka |
+| 5 | Finputs: animationer när lyktor tänds och låset öppnas, ”Kommer <startdatum>”-sidan med nedräkning, mobiltest, felhantering. **Resedagboken** (en vy där laget kan bläddra igenom alla lösta luckor i ordning, med berättelse, epilog och ”Så här gick det till”) väntar till julen | Familjen kan köra en provlucka |
+| Kalendrar | Flera kalendrar med `id` och kolumnen `calendar` i alla tabeller, `KALENDER_ACTIVE`, sidan på `/kalender/`, 1–24 luckor, `theme` (spöktemat i testinnehållet), `/admin/check` | Halloween-kalendern (7 luckor, 25–31 oktober) kan köras, klar senast 22 oktober |
 
 ---
 
