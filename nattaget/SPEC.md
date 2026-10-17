@@ -150,7 +150,7 @@ En löst lucka är facit: hela gåtan visas. Uppifrån och ned:
 | `digits` | `lock.length` rutor med siffertangentbord | bara siffror |
 | `word` | `lock.length` rutor, bokstäver A–Ö | versaler, mellanslag bort |
 | `coordinate` | rutnät `lock.cols` × `lock.rows`, tryck på en ruta; kolumner A, B, C …, rader 1, 2, 3 … | t.ex. `C5` |
-| `choice` | knappar med `lock.options` | exakt alternativ |
+| `choice` | knappar med `lock.options`; tryck för att välja, sedan ”Öppna låset” | exakt alternativ (bara mellanslag runt om tas bort) |
 
 Svaret jämförs efter normalisering på servern.
 
@@ -160,7 +160,7 @@ Svaret jämförs efter normalisering på servern.
 | `text` | `text` |
 | `svg` | `text` (valfri) och `svg` (en SVG-sträng). Visas med `<img src="data:image/svg+xml;base64,…">`, aldrig som inline-HTML |
 | `grid_map` | `text` (valfri), `cols`, `rows`, `cells` (`{"B3": "△", …}`). Ritas som ett rutnät med symbolerna, kolumner A– och rader 1– |
-| `photo_task` | `text` (uppgiften) och `reveal` (visas efter uppladdning) |
+| `photo_task` | `text` (uppgiften) och `reveal` (visas efter uppladdning). Knappen ”Ta foto” öppnar kameran; klienten skalar ned bilden (längsta sidan högst 1280 px) och sparar som JPEG under 600 kB. Fotot visas på tavlan |
 
 Ingen lapp får renderas som rå HTML.
 
@@ -263,8 +263,8 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 | GET | `/state?profile=` | Kalendern: titel, undertitel, prolog (före start), vilka dagar som är öppna, status per dag, antal lyktor idag, stjärnor, föremål |
 | GET | `/day/:n?profile=` | En lucka: se *Vad servern får skicka* nedan |
 | POST | `/day/:n/fragment` | `{profile}`. Lägger ut spelarens lapp. Bara i dagens lucka (annars 409), inte för `photo_task` (400). Går att anropa flera gånger utan att lappen läggs ut igen. Svarar `{ok, day}` |
-| POST | `/day/:n/photo` | `{profile, mime, data}` (base64, jpeg/png, högst 600 kB efter klientens nedskalning till 1280 px). Lägger ut fotot och lappen |
-| GET | `/photo/:id?profile=` | Hämtar ett foto |
+| POST | `/day/:n/photo` | `{profile, mime, data}` (base64, eventuellt med `data:`-prefix, `image/jpeg` eller `image/png`, högst 600 kB avkodat efter klientens nedskalning till 1280 px). Lägger ut fotot och lappen och tänder lyktan. Servern kontrollerar bildens första byte mot typen. Bara i dagens lucka (409), bara för `photo_task` (400), ett foto per spelare och lucka (409 `already_posted`), för stor bild → 413. Svarar `{ok, day}`. Det här är den enda endpointen som får större kroppar än sajtens 8 kB (gränsen är 900 kB, se `photoBodyParser`) |
+| GET | `/photo/:id?profile=` | Hämtar ett foto (rätt `Content-Type`, cachas privat i ett dygn). Bara för kopplade spelare (annars 403) och bara från öppnade luckor (annars 404) |
 | POST | `/day/:n/note` | `{profile, text}`, högst 280 tecken. Radbrytningar och kontrolltecken blir mellanslag. Svarar `{ok, day}` |
 | POST | `/day/:n/hint` | `{profile, n}` där `n` är numret på ledtråden spelaren vill ta (nästa i tur). Om någon hann före svarar servern 409 `hint_already_taken` med den nya vyn, så att två samtidiga tryck bara kostar en stjärna. Inga fler → 409 `no_more_hints`. Löst lucka → 409 `already_solved`. Går i dagens lucka och i arkivluckor. Svarar `{ok, day}` |
 | POST | `/day/:n/solve` | `{profile, answer}` → `{correct: bool, day}`. Felaktigt försök sparas som `attempt`. Högst 10 försök per spelare och dag (429). Stängt lås → 409 `lock_closed`, saknade föremål → 409 `missing_items`, redan löst → 409 `already_solved` |

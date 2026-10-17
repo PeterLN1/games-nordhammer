@@ -15,7 +15,7 @@
       "runtimeArgs": [
         "NATTAGET_CONTENT=sample",
         "NATTAGET_ADMIN_SECRET=lokal",
-        "NATTAGET_FAKE_NOW=2026-12-02T09:00:00+01:00",
+        "NATTAGET_FAKE_NOW=2026-12-03T09:00:00+01:00",
         "PORT=3917",
         "node",
         "server/index.js"

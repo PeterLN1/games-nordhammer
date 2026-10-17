@@ -9,7 +9,7 @@ import os from 'os';
 import path from 'path';
 import express from 'express';
 import {
-  createNattaget, loadContent, makeNow, memStore, pgStore, SAMPLE_PATH, normalizeAnswer, computeStars
+  createNattaget, loadContent, makeNow, memStore, pgStore, SAMPLE_PATH, photoBodyParser, MAX_PHOTO_BYTES, normalizeAnswer, computeStars
 } from '../nattaget.js';
 
 const SAMPLE = JSON.parse(fs.readFileSync(SAMPLE_PATH, 'utf8'));
@@ -29,7 +29,9 @@ async function startGame(nowDate) {
     content: JSON.parse(JSON.stringify(SAMPLE)),
     store, adminSecret: SECRET, now: () => current, listProfiles: async () => PROFILES
   });
+  // Samma montering som server/index.js: foto-parsern före den globala 8 kB-gränsen.
   const app = express();
+  app.use('/api/nattaget', photoBodyParser);
   app.use(express.json({ limit: '8kb' }));
   app.use('/api/nattaget', game.router);
   const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
@@ -41,12 +43,14 @@ async function startGame(nowDate) {
     responses.push(text);
     return { status: r.status, body: JSON.parse(text), text };
   };
+  const raw = async (p, profile) => fetch(base + p + '?profile=' + encodeURIComponent(profile));
+  const postStatus = async (p, body) => (await fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).status;
   const get = (p, profile) => call('GET', p + (p.includes('?') ? '&' : '?') + 'profile=' + encodeURIComponent(profile));
   const post = (p, body) => call('POST', p, body);
   const ev = (day, slot, kind, body, createdAt) => store.insertEvent({ day, profileId: IDS[slot], kind, body, createdAt });
   const r = await post('/admin/players', { secret: SECRET, players: IDS });
   assert.equal(r.status, 200);
-  return { server, store, get, post, ev, responses, setNow: d => { current = d; }, close: () => new Promise(r => server.close(r)) };
+  return { server, store, get, post, raw, postStatus, ev, responses, setNow: d => { current = d; }, close: () => new Promise(r => server.close(r)) };
 }
 
 function hasKeyDeep(obj, key) {
@@ -802,5 +806,120 @@ describe('löst lucka: hela gåtan skickas', () => {
   test('framtida luckor skickas fortfarande aldrig', async () => {
     g.setNow(at('2026-12-01', '09:00'));
     assert.equal((await g.get('/day/3', IDS.peter)).status, 403);
+  });
+});
+
+// Minsta giltiga bilder: rätt "magiska" byte i början, resten utfyllnad.
+const JPEG = n => Buffer.concat([Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]), Buffer.alloc(n)]);
+const PNG = n => Buffer.concat([Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]), Buffer.alloc(n)]);
+
+describe('fas 4: fotouppgifter', () => {
+  let g;
+  const D3 = SAMPLE.days[2];
+  before(async () => { g = await startGame(at('2026-12-03', '09:00')); });
+  after(() => g.close());
+
+  test('uppladdning lägger ut fotot, tänder lyktan och visar reveal', async () => {
+    const r = await g.post('/day/3/photo', { profile: IDS.peter, mime: 'image/jpeg', data: JPEG(400 * 1024).toString('base64') });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.day.fragments.peter.posted, true);
+    assert.equal(r.body.day.fragments.peter.reveal, D3.fragments.peter.reveal);
+    assert.equal(r.body.day.players.find(p => p.slot === 'peter').lit, true);
+    const photo = r.body.day.board.find(b => b.kind === 'photo');
+    assert.equal(photo.slot, 'peter');
+    // Maria ser Peters foto och reveal, men inte sin egen reveal.
+    const m = await g.get('/day/3', IDS.maria);
+    assert.equal(m.body.fragments.peter.reveal, D3.fragments.peter.reveal);
+    assert.equal(m.body.fragments.maria.reveal, undefined);
+    // Fotot går att hämta för spelare, inte för andra.
+    const img = await g.raw('/photo/' + photo.photoId, IDS.maria);
+    assert.equal(img.status, 200);
+    assert.equal(img.headers.get('content-type'), 'image/jpeg');
+    assert.equal((await img.arrayBuffer()).byteLength, 400 * 1024 + 4);
+    assert.equal((await g.raw('/photo/' + photo.photoId, STRANGER)).status, 403);
+    assert.equal((await g.raw('/photo/999', IDS.maria)).status, 404);
+  });
+
+  test('png med data-URL-prefix går också bra', async () => {
+    const r = await g.post('/day/3/photo', { profile: IDS.maria, mime: 'image/png', data: 'data:image/png;base64,' + PNG(1000).toString('base64') });
+    assert.equal(r.status, 200);
+  });
+
+  test('ett foto per spelare och lucka', async () => {
+    const r = await g.post('/day/3/photo', { profile: IDS.peter, mime: 'image/jpeg', data: JPEG(10).toString('base64') });
+    assert.equal(r.status, 409);
+    assert.equal(r.body.error, 'already_posted');
+    assert.equal((await g.get('/day/3', IDS.peter)).body.board.filter(b => b.kind === 'photo').length, 2);
+  });
+
+  test('fel typ, trasig bild och för stor bild avvisas', async () => {
+    const bad = [
+      [{ mime: 'image/gif', data: JPEG(10).toString('base64') }, 400],
+      [{ mime: 'image/jpeg', data: PNG(10).toString('base64') }, 400],
+      [{ mime: 'image/jpeg', data: 'inte base64!' }, 400],
+      [{ mime: 'image/jpeg' }, 400],
+      [{ mime: 'image/jpeg', data: JPEG(MAX_PHOTO_BYTES).toString('base64') }, 413]
+    ];
+    for (const [body, status] of bad) {
+      const r = await g.post('/day/3/photo', Object.assign({ profile: IDS.sara }, body));
+      assert.equal(r.status, status, JSON.stringify(body).slice(0, 60));
+    }
+    assert.equal((await g.get('/day/3', IDS.sara)).body.fragments.sara.posted, false);
+  });
+
+  test('foton bara för fotouppgifter och bara samma dag', async () => {
+    g.setNow(at('2026-12-01', '09:00'));
+    assert.equal((await g.post('/day/1/photo', { profile: IDS.sara, mime: 'image/jpeg', data: JPEG(10).toString('base64') })).status, 400);
+    assert.equal((await g.post('/day/3/photo', { profile: IDS.sara, mime: 'image/jpeg', data: JPEG(10).toString('base64') })).status, 403);
+    g.setNow(at('2026-12-04', '09:00'));
+    assert.equal((await g.post('/day/3/photo', { profile: IDS.sara, mime: 'image/jpeg', data: JPEG(10).toString('base64') })).status, 409);
+  });
+
+  test('den stora gränsen gäller bara foto-endpointen', async () => {
+    g.setNow(at('2026-12-03', '09:00'));
+    const big = 'x'.repeat(20 * 1024);
+    assert.equal(await g.postStatus('/day/3/note', { profile: IDS.sara, text: big }), 413);
+    assert.equal(await g.postStatus('/day/3/hint', { profile: IDS.sara, padding: big }), 413);
+  });
+
+  test('med alla fem foton öppnas ordlåset och löses', async () => {
+    for (const s of ['sara', 'vilma', 'simon']) {
+      assert.equal((await g.post('/day/3/photo', { profile: IDS[s], mime: 'image/jpeg', data: JPEG(10).toString('base64') })).status, 200);
+    }
+    // Lucka 3 kräver nyckeln från lucka 1.
+    let r = await g.post('/day/3/solve', { profile: IDS.vilma, answer: 'lykta' });
+    assert.equal(r.body.error, 'missing_items');
+    await g.store.insertSolve({ day: 1, profileId: IDS.peter, mode: 'archive' });
+    r = await g.post('/day/3/solve', { profile: IDS.vilma, answer: 'LYK TX' });
+    assert.equal(r.body.correct, false);
+    r = await g.post('/day/3/solve', { profile: IDS.vilma, answer: ' ly kta ' });
+    assert.equal(r.body.correct, true);
+    assert.equal(r.body.day.solved.mode, 'together');
+    assert.equal(r.body.day.solution, 'LYKTA');
+  });
+});
+
+describe('fas 4: lås', () => {
+  test('koordinat och val normaliseras', () => {
+    assert.equal(normalizeAnswer({ type: 'coordinate' }, ' c 5'), 'C5');
+    assert.equal(normalizeAnswer({ type: 'word' }, 'åsa öl'), 'ÅSAÖL');
+    assert.equal(normalizeAnswer({ type: 'choice', options: ['Norr', 'Söder'] }, ' Norr '), 'Norr');
+    assert.notEqual(normalizeAnswer({ type: 'choice' }, 'norr'), 'Norr');
+  });
+
+  test('ett valfritt lås skickar sina alternativ men inte svaret', async () => {
+    const content = JSON.parse(JSON.stringify(SAMPLE));
+    content.days[0].lock = { type: 'choice', options: ['Norr', 'Söder', 'Öster'] };
+    content.days[0].answer = 'Söder';
+    const store = memStore(); await store.setPlayers(IDS);
+    const game = await createNattaget(null, { content, store, adminSecret: SECRET, now: () => at('2026-12-01', '10:00'), listProfiles: async () => PROFILES });
+    const app = express(); app.use(express.json()); app.use('/n', game.router);
+    const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
+    const base = 'http://127.0.0.1:' + server.address().port + '/n';
+    const d = await (await fetch(base + '/day/1?profile=' + IDS.peter)).json();
+    assert.deepEqual(d.lock, { type: 'choice', options: ['Norr', 'Söder', 'Öster'] });
+    assert.ok(!hasKeyDeep(d, 'answer'));
+    // Arkivläge så att låset är öppet utan lyktor.
+    await new Promise(r => server.close(r));
   });
 });

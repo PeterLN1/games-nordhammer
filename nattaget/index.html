@@ -172,6 +172,39 @@
   .shake { animation: shake .35s; }
   @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 
+  /* ---------- Lapptyper ---------- */
+  .frag-text { white-space: pre-wrap; }
+  .frag-text + .frag-svg, .frag-text + .grid-map { margin-top: 10px; }
+  .frag-svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  .reveal { margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: rgba(242,181,68,.22); font-weight: 600; }
+  .grid-map { display: grid; gap: 2px; font-variant-numeric: tabular-nums; margin: 0 auto; max-width: 340px; }
+  .grid-map .lbl { font-size: 12px; font-weight: 600; opacity: .6; display: flex; align-items: center; justify-content: center; }
+  .grid-map .c {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 20px;
+    background: rgba(42,33,24,.06); border: 1px solid rgba(42,33,24,.18); border-radius: 3px;
+  }
+  .photo { display: block; width: 100%; max-height: 420px; object-fit: cover; border-radius: 8px; margin-top: 8px; background: var(--surface-dark); }
+  .photo-actions { display: flex; flex-direction: column; gap: 8px; }
+  .photo-status { color: var(--muted); font-size: 14px; text-align: center; min-height: 20px; }
+
+  /* ---------- Lås: koordinat och val ---------- */
+  .coord { display: grid; gap: 4px; margin: 0 auto 16px; max-width: 360px; }
+  .coord .lbl { font-size: 13px; color: var(--muted); display: flex; align-items: center; justify-content: center; font-weight: 600; }
+  .coord button {
+    aspect-ratio: 1; min-height: 44px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-dark);
+    cursor: pointer; font-size: 13px; color: transparent; padding: 0;
+  }
+  .coord button[aria-pressed="true"] { background: var(--glow); border-color: var(--glow); color: #1A1406; font-weight: 700; }
+  .coord-picked { text-align: center; color: var(--soft); margin-bottom: 12px; min-height: 24px; }
+  .choices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+  .choices button {
+    min-height: 48px; padding: 10px 16px; text-align: left; border-radius: 12px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface-dark); font-size: 16px;
+  }
+  .choices button[aria-pressed="true"] { border-color: var(--glow); box-shadow: inset 0 0 0 1px var(--glow); color: var(--glow); font-weight: 600; }
+  .lock-boxes .lock-box { flex: 0 1 52px; min-width: 0; }
+  .lock-box.wide { flex: 0 1 auto; width: auto; padding: 0 18px; font-size: 22px; }
+
   /* ---------- Arkivlappar med frost ---------- */
   .frag-list { display: flex; flex-direction: column; gap: 14px; }
   .frag .paper-wrap { position: relative; }
@@ -288,6 +321,7 @@
     lock: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/></svg>',
     unlock: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 017.6-1.7"/></svg>',
     check: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    camera: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
     bag: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1.2 12H6.2z"/><path d="M9 8V6a3 3 0 016 0v2"/></svg>',
     train: '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14M9 21l-2 0M15 21h2M8 17l-2 4M16 17l2 4"/><circle cx="9" cy="14" r=".8" fill="currentColor"/><circle cx="15" cy="14" r=".8" fill="currentColor"/></svg>',
     lantern: '<svg viewBox="0 0 40 56" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 9a6 6 0 0112 0" stroke-linecap="round"/><path d="M12 13h16l-2-4H14z" fill="currentColor"/><path class="pane" d="M12 13h16v28H12z"/><path d="M10 41h20v5H10z" fill="currentColor"/><path class="flame" stroke="none" d="M20 22c3 4 4 6.5 4 9a4 4 0 01-8 0c0-2.5 1-5 4-9z"/><path d="M20 41v-4" stroke-linecap="round"/></svg>'
@@ -397,13 +431,41 @@
   }
   function playerName(d, slot){ var p = d.players.filter(function(x){ return x.slot === slot; })[0]; return p ? p.name : slot; }
 
-  function fragmentBody(f){
-    // Fas 2: textlappar. Övriga typer (svg, grid_map, foto) kommer i fas 4.
-    var parts = [];
-    if (f.text) parts.push(f.text);
-    if (f.reveal) parts.push(f.reveal);
-    if (!parts.length) parts.push('(Den här lappen kan inte visas än.)');
-    return parts.join('\n\n');
+  // Lappens innehåll som DOM. Aldrig rå HTML: SVG visas som <img> med
+  // data-URL, kartor ritas som rutnät, text sätts som text.
+  function colName(i){ return String.fromCharCode(65 + i); }
+  function svgDataUri(svg){
+    var bytes = new TextEncoder().encode(svg), bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return 'data:image/svg+xml;base64,' + btoa(bin);
+  }
+  function gridMap(f){
+    var cols = Math.max(1, Math.min(26, f.cols | 0)), rows = Math.max(1, Math.min(30, f.rows | 0)), cells = f.cells || {};
+    var g = el('div', { class: 'grid-map', role: 'table', 'aria-label': 'Karta, ' + cols + ' kolumner och ' + rows + ' rader',
+      style: 'grid-template-columns: 20px repeat(' + cols + ', 1fr)' });
+    add(g, el('span', { class: 'lbl' }));
+    for (var c = 0; c < cols; c++) add(g, el('span', { class: 'lbl', text: colName(c) }));
+    for (var r = 1; r <= rows; r++) {
+      add(g, el('span', { class: 'lbl', text: r }));
+      for (var k = 0; k < cols; k++) {
+        var key = colName(k) + r, sym = cells[key];
+        add(g, el('span', { class: 'c', role: 'cell', 'aria-label': key + (sym ? ': ' + sym : ''), text: sym ? String(sym) : '' }));
+      }
+    }
+    return g;
+  }
+  function fragmentContent(f){
+    var out = [];
+    if (f.text) out.push(el('div', { class: 'frag-text', text: f.text }));
+    if (f.kind === 'svg' && f.svg) out.push(el('img', { class: 'frag-svg', src: svgDataUri(f.svg), alt: 'Bild på lappen' }));
+    if (f.kind === 'grid_map') out.push(gridMap(f));
+    if (f.reveal) out.push(el('div', { class: 'reveal', text: f.reveal }));
+    if (!out.length) out.push(el('div', { class: 'frag-text', text: '(Tom lapp)' }));
+    return out;
+  }
+  function photoUrl(id){
+    var p = NordhammerProfile.current();
+    return apiBase() + '/api/nattaget/photo/' + encodeURIComponent(id) + '?profile=' + encodeURIComponent(p ? p.id : '');
   }
 
   function myFragmentSection(d){
@@ -411,11 +473,24 @@
     var canPost = d.status === 'today' && !f.posted && f.kind !== 'photo_task';
     return el('section', null,
       el('h2', { class: 'section-title', text: 'Din lapp' }),
-      el('div', { class: 'paper' }, el('div', { class: 'from', text: 'Till ' + playerName(d, d.me) }), fragmentBody(f)),
+      el('div', { class: 'paper' }, el('div', { class: 'from', text: 'Till ' + playerName(d, d.me) }), fragmentContent(f)),
       el('div', { class: 'mine-actions' },
-        f.posted ? el('div', { class: 'on-board' }, icon('check'), 'Ligger på tavlan')
+        f.posted ? el('div', { class: 'on-board' }, icon('check'), f.kind === 'photo_task' ? 'Fotot ligger på tavlan' : 'Ligger på tavlan')
           : canPost ? el('button', { class: 'btn btn-primary btn-block', text: 'Lägg ut på tavlan', onclick: postFragment })
-          : f.kind === 'photo_task' && d.status === 'today' ? el('p', { class: 'empty', text: 'Fotouppgifter kommer snart.' }) : null));
+          : f.kind === 'photo_task' && d.status === 'today' ? photoPicker() : null));
+  }
+
+  // "Ta foto": kameran (eller biblioteket) via ett vanligt filfält.
+  function photoPicker(){
+    var input = el('input', { type: 'file', accept: 'image/*', capture: 'environment', class: 'sr', id: 'photo-input', tabindex: '-1' });
+    var status = el('p', { class: 'photo-status', id: 'photo-status', 'aria-live': 'polite' });
+    var btn = el('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: function(){ input.click(); } }, icon('camera'), 'Ta foto');
+    input.addEventListener('change', function(){
+      var file = input.files && input.files[0];
+      input.value = '';
+      if (file) uploadPhoto(file, btn, status);
+    });
+    return el('div', { class: 'photo-actions' }, btn, input, status);
   }
 
   // Arkivläge: alla fem lappar. Lappar som aldrig lades ut är frosttäckta
@@ -431,7 +506,7 @@
         var frosted = !f.posted && !mine && !isScratched(key);
         return el('div', { class: 'frag' },
           el('div', { class: 'paper-wrap' },
-            el('div', { class: 'paper' }, el('div', { class: 'from', text: mine ? 'Din lapp' : 'Från ' + p.name }), fragmentBody(f)),
+            el('div', { class: 'paper' }, el('div', { class: 'from', text: mine ? 'Din lapp' : 'Från ' + p.name }), fragmentContent(f)),
             frosted ? frostCanvas(key, genitive(p.name) + ' lapp') : null),
           !f.posted ? el('div', { class: 'never', text: mine ? 'Du lade aldrig ut din lapp.' : p.name + ' lade aldrig ut sin lapp.' }) : null);
       })));
@@ -567,7 +642,10 @@
       var head = el('div', { class: 'meta' }, el('span', { class: 'n', style: colorStyle(b.color), text: b.name }), el('span', { class: 't', text: clock(b.at) }));
       if (b.kind === 'fragment' || b.kind === 'photo') {
         var f = d.fragments[b.slot];
-        return el('div', { class: 'post' }, head, el('div', { class: 'body', text: 'lade ut sin lapp' }), f ? el('div', { class: 'fragment', text: fragmentBody(f) }) : null);
+        return el('div', { class: 'post' }, head,
+          el('div', { class: 'body', text: b.kind === 'photo' ? 'lade ut ett foto' : 'lade ut sin lapp' }),
+          b.kind === 'photo' && b.photoId ? el('img', { class: 'photo', src: photoUrl(b.photoId), alt: 'Foto från ' + b.name, loading: 'lazy' }) : null,
+          f ? el('div', { class: 'fragment' }, fragmentContent(f)) : null);
       }
       if (b.kind === 'note') return el('div', { class: 'post' }, head, el('div', { class: 'body', text: b.text }));
       if (b.kind === 'attempt') return el('div', { class: 'post attempt' }, head, el('div', { class: 'body' }, 'provade ', el('b', { text: b.text })));
@@ -602,6 +680,14 @@
     return el('section', null, form, count);
   }
 
+  // Vad som valts i koordinat- och vallås, per lucka, så att valet
+  // finns kvar när vyn ritas om.
+  var lockPick = {};
+  var LOCK_FILTER = {
+    digits: function(v){ return v.replace(/\D/g, ''); },
+    word: function(v){ return v.toUpperCase().replace(/[^A-ZÅÄÖ]/g, ''); }
+  };
+
   function lockSection(d){
     var lock = d.lock;
     var open = d.lockOpen && !d.missingItems.length;
@@ -610,48 +696,112 @@
       body = el('p', { class: 'lock-msg', text: 'Låset går att använda när alla fem lappar ligger på tavlan.' });
     } else if (d.missingItems.length) {
       body = el('p', { class: 'lock-msg', text: 'Låset går inte att öppna än. Det behövs: ' + joinNames(d.missingItems.map(function(i){ return i.name || 'något som laget inte har hittat'; })) + '.' });
-    } else if (lock.type !== 'digits') {
-      body = el('p', { class: 'lock-msg', text: 'Den här låstypen kommer snart.' });
     } else if (d.attemptsLeft <= 0) {
       body = el('p', { class: 'lock-msg', text: 'Du har använt dina tio försök idag. Någon annan i laget kan fortsätta.' });
     } else {
-      var boxes = [];
-      for (var i = 0; i < lock.length; i++) {
-        boxes.push(el('input', { class: 'lock-box', id: 'lock-' + i, type: 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', 'aria-label': 'Siffra ' + (i + 1) }));
-      }
-      wireDigitBoxes(boxes);
-      body = el('form', { onsubmit: function(e){ e.preventDefault(); submitDigits(boxes); } },
-        el('div', { class: 'lock-boxes', id: 'lock-boxes' }, boxes),
+      var input = lockInput(d);
+      if (!input) body = el('p', { class: 'lock-msg', text: 'Det här låset går inte att visa.' });
+      else body = el('form', { onsubmit: function(e){ e.preventDefault(); var a = input.read(); if (a) submitLock(a, input); else { shake(); input.focusFirst(); } } },
+        input.node,
         el('button', { class: 'btn btn-primary btn-block', type: 'submit', text: 'Öppna låset' }),
         el('p', { class: 'lock-foot', id: 'lock-foot', text: d.attemptsLeft < 10 ? 'Du har ' + d.attemptsLeft + ' försök kvar idag.' : '' }));
     }
     return el('section', null, el('div', { class: 'lock' + (open ? '' : ' closed') },
       el('div', { class: 'lock-head' }, icon(open ? 'unlock' : 'lock'), el('h2', { text: 'Låset' })), body));
   }
-  function wireDigitBoxes(boxes){
+
+  // Varje låstyp ger { node, read() → svar eller null, clear(), focusFirst() }.
+  function lockInput(d){
+    var lock = d.lock, key = d.day;
+    if (lock.type === 'digits' || lock.type === 'word') {
+      var digits = lock.type === 'digits', boxes = [];
+      for (var i = 0; i < (lock.length | 0); i++) {
+        boxes.push(el('input', digits
+          ? { class: 'lock-box', id: 'lock-' + i, type: 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', 'aria-label': 'Siffra ' + (i + 1) }
+          : { class: 'lock-box', id: 'lock-' + i, type: 'text', inputmode: 'text', autocapitalize: 'characters', autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', 'aria-label': 'Bokstav ' + (i + 1) }));
+      }
+      if (!boxes.length) return null;
+      wireBoxes(boxes, LOCK_FILTER[lock.type]);
+      return {
+        node: el('div', { class: 'lock-boxes', id: 'lock-boxes' }, boxes),
+        read: function(){ var a = boxes.map(function(b){ return b.value; }).join(''); return a.length === boxes.length ? a : null; },
+        clear: function(){ boxes.forEach(function(b){ b.value = ''; b.dataset.prev = ''; }); },
+        focusFirst: function(){ (boxes.filter(function(b){ return !b.value; })[0] || boxes[0]).focus({ preventScroll: true }); }
+      };
+    }
+    if (lock.type === 'coordinate') {
+      var cols = Math.max(1, Math.min(26, lock.cols | 0)), rows = Math.max(1, Math.min(30, lock.rows | 0));
+      var picked = el('p', { class: 'coord-picked', 'aria-live': 'polite' });
+      var grid = el('div', { class: 'coord', id: 'lock-boxes', role: 'grid', style: 'grid-template-columns: 22px repeat(' + cols + ', 1fr)' });
+      var buttons = [];
+      function sync(){
+        buttons.forEach(function(b){ var on = b.dataset.v === lockPick[key]; b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.textContent = on ? b.dataset.v : ''; });
+        picked.textContent = lockPick[key] ? 'Vald ruta: ' + lockPick[key] : 'Tryck på en ruta.';
+      }
+      add(grid, el('span', { class: 'lbl' }));
+      for (var c = 0; c < cols; c++) add(grid, el('span', { class: 'lbl', text: colName(c) }));
+      for (var r = 1; r <= rows; r++) {
+        add(grid, el('span', { class: 'lbl', text: r }));
+        for (var k = 0; k < cols; k++) {
+          var v = colName(k) + r;
+          var b = el('button', { type: 'button', 'aria-label': 'Ruta ' + v, onclick: function(){ lockPick[key] = this.dataset.v; sync(); } });
+          b.dataset.v = v;
+          buttons.push(b); add(grid, b);
+        }
+      }
+      sync();
+      return {
+        node: el('div', null, grid, picked),
+        read: function(){ return lockPick[key] || null; },
+        clear: function(){ delete lockPick[key]; sync(); },
+        focusFirst: function(){ buttons[0].focus({ preventScroll: true }); }
+      };
+    }
+    if (lock.type === 'choice') {
+      var opts = (lock.options || []).map(String);
+      if (!opts.length) return null;
+      var btns = opts.map(function(o){
+        var b = el('button', { type: 'button', text: o, onclick: function(){ lockPick[key] = o; syncC(); } });
+        b.dataset.v = o;
+        return b;
+      });
+      function syncC(){ btns.forEach(function(b){ b.setAttribute('aria-pressed', b.dataset.v === lockPick[key] ? 'true' : 'false'); }); }
+      syncC();
+      return {
+        node: el('div', { class: 'choices', id: 'lock-boxes', role: 'group', 'aria-label': 'Alternativ' }, btns),
+        read: function(){ return lockPick[key] || null; },
+        clear: function(){ delete lockPick[key]; syncC(); },
+        focusFirst: function(){ btns[0].focus({ preventScroll: true }); }
+      };
+    }
+    return null;
+  }
+
+  function wireBoxes(boxes, filter){
     boxes.forEach(function(b, i){
-      // Flera siffror på en gång (autofyll, snabb inmatning) fördelas
+      // Flera tecken på en gång (autofyll, snabb inmatning) fördelas
       // över rutorna från den här och framåt.
       b.addEventListener('input', function(){
-        var digits = b.value.replace(/\D/g, '');
-        if (digits.length > 1 && b.value.length > 1 && b.selectionStart === b.value.length && digits[0] === b.dataset.prev) digits = digits.slice(1);
-        b.value = digits.slice(0, 1);
-        for (var k = 1; k < digits.length && boxes[i + k]; k++) boxes[i + k].value = digits[k];
+        var chars = Array.from(filter(b.value));
+        if (chars.length > 1 && b.value.length > 1 && b.selectionStart === b.value.length && chars[0] === b.dataset.prev) chars = chars.slice(1);
+        b.value = chars[0] || '';
+        for (var k = 1; k < chars.length && boxes[i + k]; k++) boxes[i + k].value = chars[k];
         boxes.forEach(function(x){ x.dataset.prev = x.value; });
-        var next = boxes[Math.min(i + Math.max(digits.length, 1), boxes.length - 1)];
-        if (digits && next !== b) next.focus();
+        var next = boxes[Math.min(i + Math.max(chars.length, 1), boxes.length - 1)];
+        if (chars.length && next !== b) next.focus();
       });
       b.addEventListener('keydown', function(e){
         if (e.key === 'Backspace' && !b.value && boxes[i - 1]) { boxes[i - 1].focus(); boxes[i - 1].value = ''; e.preventDefault(); }
         if (e.key === 'ArrowLeft' && boxes[i - 1]) boxes[i - 1].focus();
         if (e.key === 'ArrowRight' && boxes[i + 1]) boxes[i + 1].focus();
       });
-      // Klistra in en hel kod.
+      // Klistra in ett helt svar.
       b.addEventListener('paste', function(e){
-        var t = ((e.clipboardData || window.clipboardData).getData('text') || '').replace(/\D/g, '');
-        if (!t) return;
+        var t = Array.from(filter((e.clipboardData || window.clipboardData).getData('text') || ''));
+        if (!t.length) return;
         e.preventDefault();
         for (var k = 0; k < boxes.length - i && k < t.length; k++) boxes[i + k].value = t[k];
+        boxes.forEach(function(x){ x.dataset.prev = x.value; });
         (boxes[Math.min(i + t.length, boxes.length - 1)]).focus();
       });
       b.addEventListener('focus', function(){ b.select(); });
@@ -699,14 +849,16 @@
   // Den lösta vyn är facit: servern skickar då hela gåtan.
   function renderSolved(d){
     var s = d.solved;
-    var answer = String(d.solution || '').split('');
+    var answer = Array.from(String(d.solution || ''));
     setScreen([
       topbar(d),
       el('section', { style: 'margin-top:8px' }, lanternRow(d)),
       el('p', { class: 'solved-meta', text: 'Lucka ' + d.day + ' · löst ' + s.time + ' · ' + (s.mode === 'together' ? 'alla fem' : 'i efterhand') }),
       el('header', { class: 'solved-head' },
         el('h1', { text: d.title }),
-        el('div', { class: 'lock-boxes', 'aria-label': 'Svaret: ' + d.solution }, answer.map(function(ch){ return el('div', { class: 'lock-box static', text: ch }); }))),
+        el('div', { class: 'lock-boxes', 'aria-label': 'Svaret: ' + d.solution },
+          d.lock.type === 'choice' ? el('div', { class: 'lock-box static wide', text: d.solution })
+            : answer.map(function(ch){ return el('div', { class: 'lock-box static', text: ch }); }))),
       el('section', null, el('p', { class: 'intro', text: d.intro })),
       el('section', null, el('h2', { class: 'section-title', text: 'Ni löste uppgiften' }), el('p', { class: 'epilogue', text: d.epilogue.text })),
       d.epilogue.item ? el('section', null, el('h2', { class: 'section-title', text: 'Nytt föremål' }), itemCard(d.epilogue.item, true)) : null,
@@ -726,7 +878,7 @@
         if (!f) return null;
         var mine = p.slot === d.me;
         return el('div', { class: 'frag' },
-          el('div', { class: 'paper' }, el('div', { class: 'from', text: mine ? 'Din lapp' : 'Från ' + p.name }), fragmentBody(f)),
+          el('div', { class: 'paper' }, el('div', { class: 'from', text: mine ? 'Din lapp' : 'Från ' + p.name }), fragmentContent(f)),
           !f.posted ? el('div', { class: 'never', text: mine ? 'Du lade aldrig ut din lapp.' : p.name + ' lade aldrig ut sin lapp.' }) : null);
       })));
   }
@@ -794,20 +946,21 @@
       } else toast(res.status === 400 ? 'Anteckningen får vara högst 280 tecken.' : 'Kunde inte skicka anteckningen.');
     });
   }
-  function submitDigits(boxes){
-    var answer = boxes.map(function(b){ return b.value; }).join('');
-    if (answer.length !== boxes.length) { shake(); (boxes.filter(function(b){ return !b.value; })[0] || boxes[0]).focus(); return; }
+  function submitLock(answer, input){
     act('/solve', { answer: answer }).then(function(res){
       if (!res) return;
       var b = res.body || {};
-      if (res.status === 200 && b.correct) { view.data = b.day; window.scrollTo(0, 0); renderDay(view.data); return; }
+      if (res.status === 200 && b.correct) { delete lockPick[view.day]; view.data = b.day; window.scrollTo(0, 0); renderDay(view.data); return; }
       if (res.status === 200) {
-        boxes.forEach(function(x){ x.value = ''; });
+        input.clear();
         view.data = b.day; renderDay(view.data);
         var first = document.getElementById('lock-0'); if (first) first.focus({ preventScroll: true });
         shake();
         var foot = document.getElementById('lock-foot');
-        if (foot) { foot.textContent = 'Fel kod. ' + (b.day.attemptsLeft ? 'Du har ' + b.day.attemptsLeft + ' försök kvar idag.' : ''); foot.className = 'lock-foot lock-msg err'; }
+        if (foot) {
+          foot.textContent = (b.day.lock.type === 'digits' ? 'Fel kod. ' : 'Fel svar. ') + (b.day.attemptsLeft ? 'Du har ' + b.day.attemptsLeft + ' försök kvar idag.' : '');
+          foot.className = 'lock-foot lock-msg err';
+        }
         return;
       }
       if (b.error === 'already_solved') { view.data = b.day; renderDay(view.data); return; }
@@ -818,6 +971,61 @@
       refresh();
     });
   }
+
+  // Skalar ned bilden i klienten (längsta sidan högst 1280 px) och
+  // sparar som JPEG under 600 kB innan den laddas upp.
+  var MAX_PHOTO = 600 * 1024 - 8 * 1024;
+  function preparePhoto(file){
+    return new Promise(function(resolve, reject){
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function(){
+        URL.revokeObjectURL(url);
+        var side = 1280, quality = .85;
+        function attempt(){
+          var scale = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
+          var w = Math.max(1, Math.round(img.naturalWidth * scale)), h = Math.max(1, Math.round(img.naturalHeight * scale));
+          var c = document.createElement('canvas'); c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          c.toBlob(function(blob){
+            if (!blob) return reject(new Error('kodning'));
+            if (blob.size > MAX_PHOTO) {
+              if (quality > .5) quality -= .1; else side = Math.round(side * .8);
+              if (side < 320) return reject(new Error('för stor'));
+              return attempt();
+            }
+            var fr = new FileReader();
+            fr.onload = function(){ resolve({ mime: 'image/jpeg', data: String(fr.result).split(',')[1] }); };
+            fr.onerror = function(){ reject(new Error('läsning')); };
+            fr.readAsDataURL(blob);
+          }, 'image/jpeg', quality);
+        }
+        attempt();
+      };
+      img.onerror = function(){ URL.revokeObjectURL(url); reject(new Error('bild')); };
+      img.src = url;
+    });
+  }
+  var uploading = false;
+  function uploadPhoto(file, btn, status){
+    if (uploading) return;
+    uploading = true; btn.disabled = true; status.textContent = 'Förbereder fotot …';
+    preparePhoto(file).then(function(photo){
+      status.textContent = 'Laddar upp …';
+      return act('/photo', photo).then(function(res){
+        uploading = false;
+        if (!res) { btn.disabled = false; status.textContent = ''; return; }
+        var b = res.body || {};
+        if (res.status === 200 || b.error === 'already_posted') { if (b.day) { view.data = b.day; renderDay(view.data); } return; }
+        btn.disabled = false; status.textContent = '';
+        if (res.status === 413) toast('Fotot är för stort. Prova ett annat.');
+        else if (!handleError(res)) toast('Kunde inte ladda upp fotot. Försök igen.');
+      });
+    }).catch(function(){
+      uploading = false; btn.disabled = false; status.textContent = '';
+      toast('Kunde inte läsa bilden. Prova att ta ett nytt foto.');
+    });
+  }
+
   function shake(){
     var b = document.getElementById('lock-boxes'); if (!b) return;
     b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
@@ -853,7 +1061,7 @@
   // Inte medan någon skriver — en omritning stänger tangentbordet på mobilen.
   function typing(){ var a = document.activeElement; return !!(a && app.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName)); }
   setInterval(function(){
-    if (document.visibilityState === 'visible' && !busy && !typing() && !scratching) refresh();
+    if (document.visibilityState === 'visible' && !busy && !uploading && !typing() && !scratching) refresh();
   }, 20000);
   document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible') refresh(); });
   window.addEventListener('hashchange', function(){ refresh(); });

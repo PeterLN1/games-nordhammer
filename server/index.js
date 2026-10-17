@@ -13,7 +13,7 @@ import express from 'express';
 import pg from 'pg';
 import { createGhostTrains } from './ghosttrains.js';
 import { createFlashback } from './flashback.js';
-import { createNattaget } from './nattaget.js';
+import { createNattaget, photoBodyParser as nattagetPhotoBody } from './nattaget.js';
 
 const PORT = process.env.PORT || 3000;
 const DATABASE_URL = process.env.DATABASE_URL || '';
@@ -377,6 +377,9 @@ if (DATABASE_URL) {
 
 /* ---------- App ---------- */
 const app = express();
+// Nattågets foto-endpoint får större kroppar; måste ligga före den globala
+// 8 kB-gränsen (som sedan hoppar över redan tolkade kroppar).
+app.use('/api/nattaget', nattagetPhotoBody);
 app.use(express.json({ limit: '8kb' }));
 
 // CORS

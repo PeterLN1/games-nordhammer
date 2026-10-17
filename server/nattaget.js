@@ -474,6 +474,7 @@ export function pgStore(pool) {
       const r = await pool.query('select id, day, profile_id, mime, data from nattaget_photos where id = $1', [id]);
       return r.rows[0] || null;
     },
+    async deletePhoto(id) { await pool.query('delete from nattaget_photos where id = $1', [id]); },
     // Tömmer allt utom nattaget_players (kopplingen plats → profil).
     async reset() {
       await pool.query('truncate nattaget_events, nattaget_photos, nattaget_solves restart identity');
@@ -508,13 +509,41 @@ export function memStore() {
       return true;
     },
     async insertPhoto({ day, profileId, mime, data }) {
-      const p = { id: photos.length + 1, day, profile_id: profileId, mime, data };
+      const p = { id: (photos.length ? photos[photos.length - 1].id : 0) + 1, day, profile_id: profileId, mime, data };
       photos.push(p);
       return p.id;
     },
     async getPhoto(id) { return photos.find(p => p.id === Number(id)) || null; },
+    async deletePhoto(id) { photos = photos.filter(p => p.id !== Number(id)); },
     async reset() { events = []; solves = []; photos = []; nextId = 1; }
   };
+}
+
+/* ---------- Foton ---------- */
+export const MAX_PHOTO_BYTES = 600 * 1024;
+const PHOTO_MIMES = {
+  'image/jpeg': b => b.length > 3 && b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF,
+  'image/png': b => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47
+};
+// Sajtens globala JSON-gräns är 8 kB. Bara foto-endpointen får större
+// kroppar (600 kB bild ≈ 800 kB base64). Monteras på API-sökvägen FÖRE
+// den globala parsern; den globala hoppar sedan över redan tolkade kroppar.
+const photoJson = express.json({ limit: '900kb' });
+export function photoBodyParser(req, res, next) {
+  if (req.method === 'POST' && /^\/day\/\d+\/photo\/?$/.test(req.path)) return photoJson(req, res, next);
+  next();
+}
+// Avkodar och kontrollerar en uppladdad bild. Returnerar { buf } eller { error, status }.
+export function decodePhoto(mime, data) {
+  const check = PHOTO_MIMES[mime];
+  if (!check) return { status: 400, error: 'bara jpeg eller png' };
+  if (typeof data !== 'string' || !data) return { status: 400, error: 'bild saknas' };
+  const b64 = data.replace(/^data:[^,]*,/, '');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) return { status: 400, error: 'ogiltig bild' };
+  const buf = Buffer.from(b64, 'base64');
+  if (buf.length > MAX_PHOTO_BYTES) return { status: 413, error: 'bilden ar for stor' };
+  if (!check(buf)) return { status: 400, error: 'ogiltig bild' };
+  return { buf };
 }
 
 /* ---------- Router ---------- */
@@ -595,6 +624,39 @@ function createRouter({ store, content, now, adminSecret, listProfiles }) {
     }
     res.json({ ok: true, day: await dayView(n, p) });
   }));
+
+  // Fotouppgift: lägger ut fotot och lappen (tänder lyktan). Bara samma
+  // dag; i arkivläge visas reveal ändå direkt. Ett foto per spelare och lucka.
+  router.post('/day/:n/photo', dayRoute('/photo', async (req, res, p, n) => {
+    const view = await dayView(n, p);
+    if (view.status !== 'today') return res.status(409).json({ error: 'not_today' });
+    if (content.days[n - 1].fragments[p.slot].kind !== 'photo_task') return res.status(400).json({ error: 'not_photo_task' });
+    if (view.fragments[p.slot].posted) return res.status(409).json({ error: 'already_posted', day: view });
+    const b = req.body || {};
+    const photo = decodePhoto(b.mime, b.data);
+    if (photo.error) return res.status(photo.status).json({ error: photo.error });
+    const id = await store.insertPhoto({ day: n, profileId: p.profileId, mime: b.mime, data: photo.buf });
+    const added = await store.insertEventIfCount(
+      { day: n, profileId: p.profileId, kind: 'photo', body: String(id), createdAt: now() },
+      { kind: 'photo', profileId: p.profileId, count: 0 }
+    );
+    if (!added) { await store.deletePhoto(id); return res.status(409).json({ error: 'already_posted', day: await dayView(n, p) }); }
+    res.json({ ok: true, day: await dayView(n, p) });
+  }));
+
+  // Ett foto från tavlan. Bara för spelare, och bara för luckor som öppnats.
+  router.get('/photo/:id', async (req, res) => {
+    try {
+      const p = await player(req, res); if (!p) return;
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id < 1) return res.status(404).json({ error: 'inget sadant foto' });
+      const photo = await store.getPhoto(id);
+      if (!photo || dayDate(content, photo.day) > today()) return res.status(404).json({ error: 'inget sadant foto' });
+      res.setHeader('Content-Type', photo.mime);
+      res.setHeader('Cache-Control', 'private, max-age=86400');
+      res.end(Buffer.from(photo.data));
+    } catch (e) { console.error('Nattåget: fel i /photo:', e.message); res.status(500).json({ error: 'serverfel' }); }
+  });
 
   router.post('/day/:n/note', dayRoute('/note', async (req, res, p, n) => {
     const text = cleanNote((req.body || {}).text);
