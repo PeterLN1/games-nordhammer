@@ -346,7 +346,7 @@ De gamla namnen `NATTAGET_*` läses fortfarande som reserv, med en varning i log
 - Rörelse: en lykta eller ett ljus som tänds medan man tittar flammar upp (bara de som just tänts, inte de som redan lyste när sidan öppnades), och tända lågor fladdrar svagt. När låset öppnas glöder låsrutan och bygeln slår upp. Vid rätt svar lyser rutorna, låset öppnas och den lösta vyn glider in med svaret ruta för ruta. Allt stängs av med `prefers-reduced-motion`.
 - Felhantering: varje anrop ger upp efter 15 s (20 s för foton). Svarar servern inte, eller svarar med ett serverfel, under en tyst uppdatering ligger vyn kvar och en rad överst säger ”Ingen kontakt med servern. Försöker igen …”; raden försvinner vid nästa lyckade hämtning eller när telefonen är online igen. Misslyckade åtgärder visar ett kort meddelande. Oväntade fel i sidan ger ”Något gick fel. Ladda om sidan om det inte fungerar.”
 - Foto: `<input type="file" accept="image/*" capture="environment">`, skalas ned i klienten med canvas innan uppladdning.
-- Länk till spelet läggs i sajtens meny först när allt är klart.
+- Spelet är länkat från spelhubben (`index.html`) som kortet ”Kalendern”.
 
 ---
 

@@ -34,5 +34,5 @@ Reglerna i SPEC.md under *Vad servern får skicka* är det som gör spelet möjl
 - Bygg en fas i taget, i den ordning som står i SPEC.md. Stanna efter varje fas och berätta vad som är klart och hur Peter kan testa.
 - Följ repots befintliga mönster (Ghost Trains är närmaste förebild): ren HTML/CSS/JS i `kalender/`, backendmodul i `server/kalender.js`, tabeller skapas och migreras vid start. Tester: `cd server && npm test` (databastesterna kör riktig Postgres via PGlite).
 - Spelare identifieras med profilens **id**, aldrig namnet.
-- **En push till `main` deployar till produktion.** Det är okej, eftersom spelet inte är länkat från menyn. Lägg inte till länken i menyn förrän Peter ber om det. Ändringar i databasen måste vara migreringar som behåller data från tidigare kalendrar.
+- **En push till `main` deployar till produktion**, och kalendern är länkad från spelhubben (`index.html`) sedan oktober 2026. Familjen spelar på riktigt: testa lokalt innan du pushar. Ändringar i databasen måste vara migreringar som behåller data från tidigare kalendrar.
 - Lägg till nya miljövariabler i `server/.env.example`.
