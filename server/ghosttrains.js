@@ -2,67 +2,25 @@
    Ghost Trains — asynkront familjespel (Nordhammer Spel)
    Se .claude/plans/dapper-enchanting-snowflake.md för bakgrund.
 
-   Kartan (städer/rutter) hålls bara här på servern — klienten hämtar
-   den via GET /api/ghosttrains/map istället för att duplicera datan,
+   Kartorna (städer/rutter, ghosttrains-maps/) hålls bara på servern —
+   klienten hämtar den via GET /api/ghosttrains/map istället för att duplicera datan,
    eftersom Railways "Root Directory" för server-tjänsten är satt till
    server/ och alltså inte ser filer utanför den mappen.
    ============================================================ */
 import express from 'express';
 import cron from 'node-cron';
+import { MAPS, DEFAULT_MAP_ID } from './ghosttrains-maps/index.js';
 
 export const COLORS = ['red', 'blue', 'green', 'yellow', 'orange', 'purple', 'black', 'white'];
 export const WILD = 'wild';
 
-// Destinationsbiljetter (Pass 2). Poängen är kontrollerade mot faktiska
-// kartavstånd (viktad kortaste väg) — "Öestersund" i ursprungsdatan var
-// en felstavning av Östersund, och kiruna-ostersund var felprissatt som
-// kortast på kartan (5p) trots att den är lika lång som umea-stockholm
-// (9p) — rättad till 9 (se .claude/plans).
-export const TICKETS = [
-  { id: 't1', cityA: 'kiruna', cityB: 'malmo', points: 15 },
-  { id: 't2', cityA: 'lulea', cityB: 'goteborg', points: 14 },
-  { id: 't3', cityA: 'ostersund', cityB: 'karlskrona', points: 12 },
-  { id: 't4', cityA: 'umea', cityB: 'stockholm', points: 9 },
-  { id: 't5', cityA: 'mora', cityB: 'goteborg', points: 9 },
-  { id: 't6', cityA: 'karlstad', cityB: 'malmo', points: 8 },
-  { id: 't7', cityA: 'stockholm', cityB: 'kristianstad', points: 7 },
-  { id: 't8', cityA: 'orebro', cityB: 'lund', points: 7 },
-  { id: 't9', cityA: 'kiruna', cityB: 'ostersund', points: 9 },
-  { id: 't10', cityA: 'goteborg', cityB: 'karlskrona', points: 5 },
-  { id: 't11', cityA: 'sundsvall', cityB: 'karlstad', points: 5 },
-  { id: 't12', cityA: 'jonkoping', cityB: 'malmo', points: 5 },
-  { id: 't13', cityA: 'vaxjo', cityB: 'lund', points: 4 },
-  { id: 't14', cityA: 'uppsala', cityB: 'orebro', points: 4 },
-  { id: 't15', cityA: 'gavle', cityB: 'stockholm', points: 3 },
-  // t16–t30: tillagda så leken räcker för 4–6 spelare (Ticket to Ride har
-  // 30). Prissatta som de ursprungliga: poäng = kortaste vägen på kartan,
-  // över 13 avtrubbat (13 + (avstånd-13)/3, avrundat nedåt). Paren valdes
-  // så att varje stad förekommer i 2–4 biljetter totalt.
-  { id: 't16', cityA: 'lulea', cityB: 'norrkoping', points: 12 },
-  { id: 't17', cityA: 'umea', cityB: 'kristianstad', points: 14 },
-  { id: 't18', cityA: 'sundsvall', cityB: 'vaxjo', points: 12 },
-  { id: 't19', cityA: 'gavle', cityB: 'jonkoping', points: 7 },
-  { id: 't20', cityA: 'lulea', cityB: 'borlange', points: 11 },
-  { id: 't21', cityA: 'umea', cityB: 'norrkoping', points: 11 },
-  { id: 't22', cityA: 'mora', cityB: 'karlskrona', points: 11 },
-  { id: 't23', cityA: 'borlange', cityB: 'kristianstad', points: 9 },
-  { id: 't24', cityA: 'uppsala', cityB: 'lund', points: 8 },
-  { id: 't25', cityA: 'ostersund', cityB: 'borlange', points: 6 },
-  { id: 't26', cityA: 'sundsvall', cityB: 'mora', points: 6 },
-  { id: 't27', cityA: 'gavle', cityB: 'orebro', points: 5 },
-  { id: 't28', cityA: 'karlstad', cityB: 'jonkoping', points: 5 },
-  { id: 't29', cityA: 'norrkoping', cityB: 'vaxjo', points: 4 },
-  { id: 't30', cityA: 'kiruna', cityB: 'umea', points: 6 }
-];
-const TICKETS_BY_ID = new Map(TICKETS.map(t => [t.id, t]));
 function ticketTier(points) { return points >= 12 ? 'long' : points >= 7 ? 'medium' : 'short'; }
 
 // Officiell Ticket to Ride-poängtabell för ruttlängd.
 const ROUTE_POINTS = { 1: 1, 2: 2, 3: 4, 4: 7, 5: 10, 6: 15 };
-// 20 (inte Ticket to Rides 45/35): kartan har bara 110 vagnar spår
-// totalt. Med 35 blev kartan full innan någon nådde slutgränsen redan
-// vid 4 spelare (simulerat) — med 20 tar ett spel ~2 veckor för 2–6
-// spelare och slutar nästan alltid på tågvagnar, inte full karta.
+// Tågvagnar per spelare sätts per karta (startingTrainCars i
+// ghosttrains-maps/*.js) och sparas i ghosttrains_game_state.starting_cars
+// när ett spel startas. Detta är reservvärdet för spel från före kartvalet.
 const STARTING_TRAIN_CARS = 20;
 const FINAL_ROUND_THRESHOLD = 2;
 // AP per dag. Med 6 hinner en spelare flera claims samma dag (2 AP st)
@@ -80,136 +38,34 @@ function nextColorIdx(used) {
   return used.size % PLAYER_COLOR_COUNT; // fler spelare än färger: återanvänd
 }
 
-export const CITIES = [
-  // Koordinater beräknade från städernas verkliga lat/long (enkel
-  // ekvirektangulär projektion mot Sveriges yttre gränser), sedan
-  // passade mot Sverigekonturens bounding box (ghosttrains/index.html) —
-  // annars hamnar städer som Stockholm/Göteborg utanför konturen (se
-  // .claude/plans, felrapport "kartan är inte i synk med städerna").
-  { id: 'kiruna', name: 'Kiruna', x: 702, y: 72 },
-  { id: 'lulea', name: 'Luleå', x: 785, y: 282 },
-  { id: 'umea', name: 'Umeå', x: 704, y: 444 },
-  { id: 'ostersund', name: 'Östersund', x: 463, y: 504 },
-  { id: 'sundsvall', name: 'Sundsvall', x: 578, y: 577 },
-  { id: 'gavle', name: 'Gävle', x: 570, y: 737 },
-  // "Inlandsbanan": Gävle var en hård flaskhals — plockar man bort
-  // Gävle delas kartan i två helt oberoende delar (norra klustret
-  // Kiruna/Luleå/Umeå/Östersund/Sundsvall vs. resten). Karlstad hade
-  // dessutom ingen väg norrut alls utom via Gävle. Borlänge/Mora öppnar
-  // en andra, oberoende väg norrut genom Dalarna (se ROUTES nedan).
-  { id: 'borlange', name: 'Borlänge', x: 497, y: 754 },
-  { id: 'mora', name: 'Mora', x: 459, y: 706 },
-  { id: 'karlstad', name: 'Karlstad', x: 414, y: 856 },
-  { id: 'uppsala', name: 'Uppsala', x: 592, y: 812 },
-  { id: 'stockholm', name: 'Stockholm', x: 610, y: 861 },
-  { id: 'orebro', name: 'Örebro', x: 487, y: 866 },
-  { id: 'norrkoping', name: 'Norrköping', x: 529, y: 929 },
-  { id: 'jonkoping', name: 'Jönköping', x: 442, y: 1004 },
-  { id: 'goteborg', name: 'Göteborg', x: 348, y: 1011 },
-  { id: 'vaxjo', name: 'Växjö', x: 470, y: 1087 },
-  { id: 'karlskrona', name: 'Karlskrona', x: 504, y: 1154 },
-  // Kalmar (tillagd mitt i första riktiga spelet): utan den kunde två
-  // rutter (jonkoping-vaxjo + kristianstad-lund) stänga in hela hörnet
-  // Växjö–Karlskrona–Kristianstad — hände en spelare med en Växjö-biljett.
-  // Koordinater från lat/long via samma projektion (minsta kvadrat-
-  // passning mot övriga städer, fel < 10 enheter).
-  { id: 'kalmar', name: 'Kalmar', x: 537, y: 1108 },
-  { id: 'kristianstad', name: 'Kristianstad', x: 442, y: 1166 },
-  // Lund och Malmö låg bara 12 enheter isär (verkligt avstånd ~18 km,
-  // kortast av alla stadspar på kartan) — stadsprickarna (radie 10 var)
-  // överlappade då helt och dolde hela rutten mellan dem. Flyttade isär
-  // symmetriskt längs samma geografiska riktning (~30 enheter) tills
-  // linjen syns, utan att ändra deras position i förhållande till varandra.
-  { id: 'lund', name: 'Lund', x: 407, y: 1190 },
-  { id: 'malmo', name: 'Malmö', x: 387, y: 1213 }
-];
-
-export const ROUTES = [
-  { id: 'kiruna-lulea', cityA: 'kiruna', cityB: 'lulea', length: 4, color: 'blue', doubleTrack: false },
-  // Kiruna hade annars bara denna enda anslutning — ett problem så fort
-  // destinationsbiljetter (fas 2) kräver att man kan ta sig dit: om
-  // kiruna-lulea claimas av en annan spelare finns ingen alternativ väg
-  // in. En andra, oberoende rutt löser det (se .claude/plans).
-  { id: 'kiruna-umea', cityA: 'kiruna', cityB: 'umea', length: 6, color: 'purple', doubleTrack: false },
-  { id: 'lulea-umea', cityA: 'lulea', cityB: 'umea', length: 3, color: 'red', doubleTrack: false },
-  // Umeå var en enda felpunkt för Kiruna+Luleå: plockar man bort Umeå
-  // blev de två helt avskurna från resten av kartan (samma mönster som
-  // Gävle hade för hela Norrland). Kustexpress-genväg löser det —
-  // orange var lägsta färgen (9), håller balansen jämn (9->13).
-  { id: 'lulea-sundsvall', cityA: 'lulea', cityB: 'sundsvall', length: 4, color: 'orange', doubleTrack: false },
-  { id: 'umea-ostersund', cityA: 'umea', cityB: 'ostersund', length: 3, color: 'green', doubleTrack: false },
-  { id: 'umea-sundsvall', cityA: 'umea', cityB: 'sundsvall', length: 3, color: 'yellow', doubleTrack: false },
-  // Svart istället för orange: orange möttes redan med den nya
-  // lulea-sundsvall i Sundsvall (samma stad, samma färg = förvirrande).
-  { id: 'ostersund-sundsvall', cityA: 'ostersund', cityB: 'sundsvall', length: 2, color: 'black', doubleTrack: false },
-  // "Norrlandsporten": Östersund som knutpunkt mellan Norrlands inland
-  // och kusten söderut — andra benet (ostersund-sundsvall fanns redan).
-  { id: 'ostersund-gavle', cityA: 'ostersund', cityB: 'gavle', length: 3, color: 'blue', doubleTrack: false },
-  { id: 'sundsvall-gavle', cityA: 'sundsvall', cityB: 'gavle', length: 3, color: 'purple', doubleTrack: false },
-  { id: 'gavle-uppsala', cityA: 'gavle', cityB: 'uppsala', length: 2, color: 'black', doubleTrack: false },
-  // Färgbalans: vit (14 rutor) var kraftigt överrepresenterad, röd (6)
-  // kraftigt underrepresenterad över hela kartan — bytte denna till röd.
-  { id: 'gavle-karlstad', cityA: 'gavle', cityB: 'karlstad', length: 4, color: 'red', doubleTrack: false },
-  // "Inlandsbanan" — separerar flödet väster-/inlandsifrån (Karlstad,
-  // Örebro, Uppsala) från östkustens Gävle-flaskhals, precis som
-  // riktiga Ticket to Ride-kartor separerar regionala flöden. mora-
-  // ostersund gjordes vit (inte lila, som annars hade blivit
-  // kraftigt överrepresenterad igen) för att hålla färgbalansen jämn.
-  { id: 'karlstad-borlange', cityA: 'karlstad', cityB: 'borlange', length: 2, color: 'orange', doubleTrack: false },
-  // Blå istället för gul: gul mötte redan orebro-stockholm i Örebro.
-  { id: 'orebro-borlange', cityA: 'orebro', cityB: 'borlange', length: 2, color: 'blue', doubleTrack: false },
-  // Grön istället för svart: svart mötte redan gavle-uppsala i Uppsala.
-  { id: 'uppsala-borlange', cityA: 'uppsala', cityB: 'borlange', length: 2, color: 'green', doubleTrack: false },
-  { id: 'borlange-mora', cityA: 'borlange', cityB: 'mora', length: 2, color: 'red', doubleTrack: false },
-  { id: 'mora-ostersund', cityA: 'mora', cityB: 'ostersund', length: 4, color: 'white', doubleTrack: false },
-  { id: 'uppsala-stockholm', cityA: 'uppsala', cityB: 'stockholm', length: 1, color: 'red', doubleTrack: true },
-  { id: 'karlstad-orebro', cityA: 'karlstad', cityB: 'orebro', length: 2, color: 'green', doubleTrack: false },
-  { id: 'karlstad-goteborg', cityA: 'karlstad', cityB: 'goteborg', length: 3, color: 'blue', doubleTrack: false },
-  // Örebro har grad 5, samma som Stockholm, men hade 0 dubbelspår mot
-  // Stockholms 4 av 5 — ojämnt jämfört med sin lika stora hubb-granne.
-  // Speglar Uppsala-Stockholm som redan är dubbelspår.
-  { id: 'orebro-stockholm', cityA: 'orebro', cityB: 'stockholm', length: 2, color: 'yellow', doubleTrack: true },
-  { id: 'orebro-jonkoping', cityA: 'orebro', cityB: 'jonkoping', length: 3, color: 'orange', doubleTrack: false },
-  { id: 'orebro-norrkoping', cityA: 'orebro', cityB: 'norrkoping', length: 2, color: 'white', doubleTrack: false },
-  { id: 'stockholm-norrkoping', cityA: 'stockholm', cityB: 'norrkoping', length: 2, color: 'purple', doubleTrack: true },
-  { id: 'norrkoping-jonkoping', cityA: 'norrkoping', cityB: 'jonkoping', length: 2, color: 'black', doubleTrack: false },
-  // Färgbalans (vit ner ytterligare) + Jönköping är nu en 4-vägshubb
-  // (Örebro/Norrköping/Göteborg/Växjö) helt utan dubbelspår — samma
-  // avlastning som Stockholm redan fått på två av sina fem anslutningar.
-  // Gul (inte orange) för att undvika samma färg som orebro-jonkoping,
-  // som redan är orange och möts i samma stad.
-  { id: 'jonkoping-goteborg', cityA: 'jonkoping', cityB: 'goteborg', length: 2, color: 'yellow', doubleTrack: true },
-  { id: 'jonkoping-vaxjo', cityA: 'jonkoping', cityB: 'vaxjo', length: 2, color: 'red', doubleTrack: false },
-  { id: 'vaxjo-karlskrona', cityA: 'vaxjo', cityB: 'karlskrona', length: 2, color: 'green', doubleTrack: false },
-  { id: 'vaxjo-kristianstad', cityA: 'vaxjo', cityB: 'kristianstad', length: 2, color: 'yellow', doubleTrack: false },
-  { id: 'kristianstad-karlskrona', cityA: 'kristianstad', cityB: 'karlskrona', length: 1, color: 'blue', doubleTrack: false },
-  { id: 'kristianstad-lund', cityA: 'kristianstad', cityB: 'lund', length: 2, color: 'orange', doubleTrack: false },
-  { id: 'lund-malmo', cityA: 'lund', cityB: 'malmo', length: 1, color: 'purple', doubleTrack: false },
-  // Kalmar: tre rutter så varken Kalmar eller sydosthörnet kan stängas
-  // in av två rutter. Färgerna valda utan krock i någon ändstad, och så
-  // att färgbalansen blir jämnare (spann 12–18 mot tidigare 11–18).
-  { id: 'norrkoping-kalmar', cityA: 'norrkoping', cityB: 'kalmar', length: 4, color: 'orange', doubleTrack: false },
-  { id: 'kalmar-vaxjo', cityA: 'kalmar', cityB: 'vaxjo', length: 2, color: 'blue', doubleTrack: false },
-  { id: 'kalmar-karlskrona', cityA: 'kalmar', cityB: 'karlskrona', length: 1, color: 'red', doubleTrack: false },
-  { id: 'stockholm-goteborg', cityA: 'stockholm', cityB: 'goteborg', length: 5, color: 'black', doubleTrack: true },
-  { id: 'stockholm-malmo', cityA: 'stockholm', cityB: 'malmo', length: 6, color: 'white', doubleTrack: true },
-  // "Västkustlinjen": direktförbindelse längs västkusten mellan de två
-  // städerna, utöver den längre vägen via Jönköping/Karlstad/Örebro.
-  { id: 'goteborg-malmo', cityA: 'goteborg', cityB: 'malmo', length: 3, color: 'green', doubleTrack: false }
-];
-
-const ROUTES_BY_ID = new Map(ROUTES.map(r => [r.id, r]));
-
-function buildAdjacency() {
-  const adj = new Map();
-  CITIES.forEach(c => adj.set(c.id, []));
-  ROUTES.forEach(r => {
-    adj.get(r.cityA).push({ routeId: r.id, other: r.cityB, length: r.length });
-    adj.get(r.cityB).push({ routeId: r.id, other: r.cityA, length: r.length });
+/* ---------- Kartor ----------
+   Kartdatan (städer, rutter, biljetter, kontur) ligger i
+   ghosttrains-maps/. Allt som slår upp rutter/städer/biljetter tar en
+   kartkontext `m` — det pågående spelets karta (mapForGame). */
+function buildMapContext(def) {
+  const adjacency = new Map();
+  def.cities.forEach(c => adjacency.set(c.id, []));
+  def.routes.forEach(r => {
+    adjacency.get(r.cityA).push({ routeId: r.id, other: r.cityB, length: r.length });
+    adjacency.get(r.cityB).push({ routeId: r.id, other: r.cityA, length: r.length });
   });
-  return adj;
+  return {
+    id: def.id, def,
+    cities: def.cities, routes: def.routes, tickets: def.tickets,
+    startingTrainCars: def.startingTrainCars || STARTING_TRAIN_CARS,
+    routesById: new Map(def.routes.map(r => [r.id, r])),
+    ticketsById: new Map(def.tickets.map(t => [t.id, t])),
+    adjacency
+  };
 }
-const ADJACENCY = buildAdjacency();
+const MAP_CONTEXTS = Object.fromEntries(Object.values(MAPS).map(def => [def.id, buildMapContext(def)]));
+export function mapContext(mapId) { return MAP_CONTEXTS[mapId] || MAP_CONTEXTS[DEFAULT_MAP_ID]; }
+function mapForGame(gameState) { return mapContext(gameState && gameState.mapId); }
+
+// Bakåtkompatibla exporter (Sverigekartan), används av engångsskript.
+export const CITIES = MAPS[DEFAULT_MAP_ID].cities;
+export const ROUTES = MAPS[DEFAULT_MAP_ID].routes;
+export const TICKETS = MAPS[DEFAULT_MAP_ID].tickets;
 
 function trackSlots(route) { return route.doubleTrack ? ['A', 'B'] : ['single']; }
 
@@ -223,10 +79,10 @@ function ownsTrackOn(routeId, profileId, builtRoutesList) {
 // äger spelaren redan en rutt som rör vid EN av ändstäderna, blir den
 // staden origin (för omdirigerings-BFS:en vid krock). Rör spelaren
 // vid båda eller ingen, lottas det mellan de två ändstäderna.
-function pickOriginCity(route, profileId, builtRoutesList) {
+function pickOriginCity(m, route, profileId, builtRoutesList) {
   const ownsCity = (city) => builtRoutesList.some((r) => {
     if (r.owner_profile_id !== profileId) return false;
-    const owned = ROUTES_BY_ID.get(r.route_id);
+    const owned = m.routesById.get(r.route_id);
     return owned && (owned.cityA === city || owned.cityB === city);
   });
   const touchesA = ownsCity(route.cityA);
@@ -302,7 +158,7 @@ function nextDay(dateStr) { return new Date(Date.parse(dateStr + 'T00:00:00Z') +
    och faller — om det lokala området redan är fullt — tillbaka på
    närmaste lediga rutt var som helst på kartan. En spelare lämnas
    alltså bara helt utan spår (Total Crash) om HELA kartan är fullbyggd. */
-function findNearestFreeRoute(startCity, excludeRouteId, builtSet, maxAffordableLength, ownedRouteIds = new Set()) {
+function findNearestFreeRoute(m, startCity, excludeRouteId, builtSet, maxAffordableLength, ownedRouteIds = new Set()) {
   const affordable = r => r.length <= maxAffordableLength && !ownedRouteIds.has(r.id);
   const visitedCities = new Set([startCity]);
   let frontier = [startCity];
@@ -311,11 +167,11 @@ function findNearestFreeRoute(startCity, excludeRouteId, builtSet, maxAffordable
     const candidates = [];
     const nextFrontier = [];
     for (const city of frontier) {
-      for (const edge of ADJACENCY.get(city)) {
+      for (const edge of m.adjacency.get(city)) {
         if (!seenRoutes.has(edge.routeId)) {
           seenRoutes.add(edge.routeId);
           if (edge.routeId !== excludeRouteId) {
-            const route = ROUTES_BY_ID.get(edge.routeId);
+            const route = m.routesById.get(edge.routeId);
             const freeSlots = trackSlots(route).filter(t => !builtSet.has(route.id + '|' + t));
             if (freeSlots.length > 0 && affordable(route)) candidates.push(route);
           }
@@ -331,7 +187,7 @@ function findNearestFreeRoute(startCity, excludeRouteId, builtSet, maxAffordable
     frontier = nextFrontier;
   }
   // krockstadens sammanhängande del av kartan är helt full — sök globalt.
-  const allFree = ROUTES.filter(r => r.id !== excludeRouteId && affordable(r) && trackSlots(r).some(t => !builtSet.has(r.id + '|' + t)));
+  const allFree = m.routes.filter(r => r.id !== excludeRouteId && affordable(r) && trackSlots(r).some(t => !builtSet.has(r.id + '|' + t)));
   if (!allFree.length) return null;
   return allFree[Math.floor(Math.random() * allFree.length)];
 }
@@ -347,6 +203,7 @@ function findNearestFreeRoute(startCity, excludeRouteId, builtSet, maxAffordable
 export async function resolveDay(store, day) {
   if (await store.isDayResolved(day)) return { day, alreadyResolved: true, results: [] };
 
+  const m = mapForGame(await store.getGameState());
   const claims = await store.unresolvedForDay(day);
   const built = await store.builtRoutes();
   const builtSet = new Set(built.map(b => b.route_id + '|' + b.track));
@@ -370,7 +227,7 @@ export async function resolveDay(store, day) {
   const resolvedIds = [];
 
   for (const [routeId, group] of byRoute) {
-    const route = ROUTES_BY_ID.get(routeId);
+    const route = m.routesById.get(routeId);
     group.sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at));
     resolvedIds.push(...group.map(g => g.id));
     const freeSlots = trackSlots(route).filter(t => !builtSet.has(routeId + '|' + t));
@@ -414,7 +271,7 @@ export async function resolveDay(store, day) {
     // (kvarvarande tågvagnar) — annars Total Crash (se .claude/plans,
     // Pass 2: "reroute constraints").
     const carsLeft = await budgetFor(c.profileId);
-    const alt = findNearestFreeRoute(c.fromCity, c.routeId, builtSet, carsLeft, ownedBy.get(c.profileId));
+    const alt = findNearestFreeRoute(m, c.fromCity, c.routeId, builtSet, carsLeft, ownedBy.get(c.profileId));
     if (alt) {
       budget.set(c.profileId, carsLeft - alt.length);
       const track = trackSlots(alt).filter(t => !builtSet.has(alt.id + '|' + t))[0];
@@ -441,16 +298,16 @@ export async function resolveDay(store, day) {
   }
   await store.markResolved(resolvedIds);
   await store.markDayResolved(day);
-  await checkFinalRoundAndGameOver(store, day, results);
+  await checkFinalRoundAndGameOver(store, m, day, results);
   return { day, results };
 }
 
 // Enkel BFS över bara EN spelares egna byggda rutter — avgör om en
 // destinationsbiljett är uppfylld vid spelslut.
-function isConnectedForProfile(ownedRouteIds, cityA, cityB) {
+function isConnectedForProfile(m, ownedRouteIds, cityA, cityB) {
   if (cityA === cityB) return true;
   const adj = new Map();
-  ROUTES.forEach(r => {
+  m.routes.forEach(r => {
     if (!ownedRouteIds.has(r.id)) return;
     if (!adj.has(r.cityA)) adj.set(r.cityA, []);
     if (!adj.has(r.cityB)) adj.set(r.cityB, []);
@@ -476,24 +333,24 @@ function isConnectedForProfile(ownedRouteIds, cityA, cityB) {
 // kostar 0 och lediga rutter kostar sin längd. En rutt där spelaren redan
 // äger ena dubbelspåret räknas som egen. Byggda rutter utan ledigt spår
 // är oframkomliga. carsLeft = tågvagnar minus dagens bokade claims.
-function ticketStatus(ticket, profileId, builtList, carsLeft, pendingRouteIds = new Set()) {
+function ticketStatus(m, ticket, profileId, builtList, carsLeft, pendingRouteIds = new Set()) {
   const ownRouteIds = new Set(builtList.filter(b => b.owner_profile_id === profileId).map(b => b.route_id));
-  if (isConnectedForProfile(ownRouteIds, ticket.cityA, ticket.cityB)) return { status: 'completed', carsNeeded: 0 };
+  if (isConnectedForProfile(m, ownRouteIds, ticket.cityA, ticket.cityB)) return { status: 'completed', carsNeeded: 0 };
   const cost = r => {
     if (ownRouteIds.has(r.id) || pendingRouteIds.has(r.id)) return 0;
     const freeSlot = trackSlots(r).some(t => !builtList.some(b => b.route_id === r.id && b.track === t));
     return freeSlot ? r.length : Infinity;
   };
-  const dist = new Map(CITIES.map(c => [c.id, Infinity]));
+  const dist = new Map(m.cities.map(c => [c.id, Infinity]));
   dist.set(ticket.cityA, 0);
-  const todo = new Set(CITIES.map(c => c.id));
+  const todo = new Set(m.cities.map(c => c.id));
   while (todo.size) {
     let u = null;
     for (const c of todo) if (u === null || dist.get(c) < dist.get(u)) u = c;
     todo.delete(u);
     if (dist.get(u) === Infinity) break;
-    for (const e of ADJACENCY.get(u)) {
-      const d = dist.get(u) + cost(ROUTES_BY_ID.get(e.routeId));
+    for (const e of m.adjacency.get(u)) {
+      const d = dist.get(u) + cost(m.routesById.get(e.routeId));
       if (d < dist.get(e.other)) dist.set(e.other, d);
     }
   }
@@ -504,15 +361,15 @@ function ticketStatus(ticket, profileId, builtList, carsLeft, pendingRouteIds = 
 }
 
 // Lägger till status (+ bakåtkompatibla `completed`) på biljetter för en profil.
-async function decorateTickets(store, profileId, tickets) {
+async function decorateTickets(store, m, profileId, ticketIds) {
   const [built, player, pending] = await Promise.all([
     store.builtRoutes(), store.getPlayer(profileId), store.pendingForProfileToday(profileId, gameDay())
   ]);
   const pendingIds = new Set(pending.map(p => p.route_id));
-  const reserved = pending.reduce((s, p) => s + (ROUTES_BY_ID.get(p.route_id)?.length || 0), 0);
+  const reserved = pending.reduce((s, p) => s + (m.routesById.get(p.route_id)?.length || 0), 0);
   const carsLeft = player.trainCars - reserved;
-  return tickets.filter(Boolean).map(t => {
-    const st = ticketStatus(t, profileId, built, carsLeft, pendingIds);
+  return ticketIds.map(id => m.ticketsById.get(id)).filter(Boolean).map(t => {
+    const st = ticketStatus(m, t, profileId, built, carsLeft, pendingIds);
     return { ...t, completed: st.status === 'completed', status: st.status, carsNeeded: st.carsNeeded };
   });
 }
@@ -521,9 +378,9 @@ async function decorateTickets(store, profileId, tickets) {
 // byggt spår används högst en gång, städer får passeras flera gånger)
 // viktad med ruttlängd — samma definition som Ticket to Rides bonus.
 // Uttömmande DFS; en spelare äger högst ~20 rutter så det går snabbt.
-export function longestPathLength(ownedBuilt) {
+export function longestPathLength(ownedBuilt, m = mapContext(DEFAULT_MAP_ID)) {
   const edges = ownedBuilt.map((b, i) => {
-    const r = ROUTES_BY_ID.get(b.route_id);
+    const r = m.routesById.get(b.route_id);
     return r ? { i, a: r.cityA, b: r.cityB, len: r.length } : null;
   }).filter(Boolean);
   const adj = new Map();
@@ -560,7 +417,7 @@ function compareFinal(a, b) {
 // botten (utlöser en sista spelrunda), och — om den sista rundans dag
 // just upplöstes — räkna ut slutpoäng (ruttpoäng + biljetter) och
 // avsluta spelet. Se .claude/plans, Pass 2.
-async function checkFinalRoundAndGameOver(store, day, results) {
+async function checkFinalRoundAndGameOver(store, m, day, results) {
   let gameState = await store.getGameState();
   if (gameState.status === 'active') {
     const touched = Array.from(new Set(results.filter(r => r.track).map(r => r.profileId)));
@@ -573,7 +430,7 @@ async function checkFinalRoundAndGameOver(store, day, results) {
           gameDay: day, profileId, kind: 'final_round_triggered',
           routeId: null, altRouteId: null, otherPlayers: [], details: { trainCars: player.trainCars }
         });
-        gameState = { status: 'final_round', finalDay };
+        gameState = { ...gameState, status: 'final_round', finalDay };
         break;
       }
     }
@@ -582,11 +439,11 @@ async function checkFinalRoundAndGameOver(store, day, results) {
   // Andra slutvillkoret: ingen spelare kan bygga någon ledig rutt längre
   // (kartan full, eller allt som är kvar är för långt / andra spåret på
   // en egen dubbelspårsrutt). Utan detta kunde spelet stå still för
-  // evigt med många spelare — se STARTING_TRAIN_CARS.
+  // evigt med många spelare — se startingTrainCars i ghosttrains-maps/.
   if (gameState.status === 'active') {
     const built = await store.builtRoutes();
     const joined = (await store.allPlayers()).filter(p => p.joined);
-    const canBuild = p => ROUTES.some(r =>
+    const canBuild = p => m.routes.some(r =>
       r.length <= p.trainCars
       && trackSlots(r).some(t => !built.some(b => b.route_id === r.id && b.track === t))
       && !ownsTrackOn(r.id, p.profileId, built));
@@ -597,7 +454,7 @@ async function checkFinalRoundAndGameOver(store, day, results) {
         gameDay: day, profileId: 'system', kind: 'final_round_triggered',
         routeId: null, altRouteId: null, otherPlayers: [], details: { reason: 'map_full' }
       });
-      gameState = { status: 'final_round', finalDay };
+      gameState = { ...gameState, status: 'final_round', finalDay };
     }
   }
 
@@ -627,9 +484,9 @@ async function checkFinalRoundAndGameOver(store, day, results) {
       const breakdown = [];
       let ticketDelta = 0;
       ticketIds.forEach(ticketId => {
-        const ticket = TICKETS_BY_ID.get(ticketId);
+        const ticket = m.ticketsById.get(ticketId);
         if (!ticket) return;
-        const ok = isConnectedForProfile(ownedRouteIds, ticket.cityA, ticket.cityB);
+        const ok = isConnectedForProfile(m, ownedRouteIds, ticket.cityA, ticket.cityB);
         ticketDelta += ok ? ticket.points : -ticket.points;
         breakdown.push({ ticketId, cityA: ticket.cityA, cityB: ticket.cityB, points: ticket.points, success: ok });
       });
@@ -639,7 +496,7 @@ async function checkFinalRoundAndGameOver(store, day, results) {
       finalResults.push({
         profileId: p.profileId, routeScore: p.score, ticketDelta, breakdown,
         ticketsCompleted: breakdown.filter(b => b.success).length,
-        longestPath: longestPathLength(builtByProfile.get(p.profileId) || [])
+        longestPath: longestPathLength(builtByProfile.get(p.profileId) || [], m)
       });
     }
     // Längsta tåg-bonusen går till alla som delar det längsta (> 0).
@@ -763,6 +620,10 @@ async function initSchema(pool) {
   // Slutresultat sparas vid spelslut; game_no räknas upp vid nytt spel.
   await pool.query(`alter table ghosttrains_game_state add column if not exists final_results jsonb;`);
   await pool.query(`alter table ghosttrains_game_state add column if not exists game_no int not null default 1;`);
+  // Kartval per spel (null = Sverigekartan, spel från före kartvalet)
+  // och kartans tågvagnar per spelare, satt av /new-game.
+  await pool.query(`alter table ghosttrains_game_state add column if not exists map_id text;`);
+  await pool.query(`alter table ghosttrains_game_state add column if not exists starting_cars int;`);
   // Kasthög för spenderade kort (blandas om när leken tar slut).
   await pool.query(`alter table ghosttrains_deck add column if not exists discard jsonb not null default '[]';`);
   await pool.query(`alter table ghosttrains_players add column if not exists color_idx int;`);
@@ -808,6 +669,12 @@ async function saveDeckState(client, st) {
     [JSON.stringify(st.deck), JSON.stringify(st.discard)]
   );
 }
+
+// Nya spelare får det pågående spelets tågvagnar (kartans
+// startingTrainCars, sparat i game_state av /new-game). ALLA inserts i
+// ghosttrains_players måste sätta train_cars med denna — kolumnens
+// default är Sverigekartans 20 (hände med joinGame vid nytt spel).
+const START_CARS_SQL = `coalesce((select starting_cars from ghosttrains_game_state where id=1), ${STARTING_TRAIN_CARS})`;
 
 function pgStore(pool) {
   return {
@@ -931,8 +798,10 @@ function pgStore(pool) {
     async getPlayer(profileId) {
       const r = await pool.query('select train_cars, score, initial_tickets_dealt, joined from ghosttrains_players where profile_id=$1', [profileId]);
       if (r.rows[0]) return { trainCars: r.rows[0].train_cars, score: r.rows[0].score, initialTicketsDealt: r.rows[0].initial_tickets_dealt, joined: r.rows[0].joined };
-      await pool.query('insert into ghosttrains_players (profile_id) values ($1) on conflict (profile_id) do nothing', [profileId]);
-      return { trainCars: STARTING_TRAIN_CARS, score: 0, initialTicketsDealt: false, joined: false };
+      await pool.query(
+        `insert into ghosttrains_players (profile_id, train_cars) values ($1, ${START_CARS_SQL})
+         on conflict (profile_id) do nothing`, [profileId]);
+      return this.getPlayer(profileId);
     },
     async allPlayers() {
       const r = await pool.query('select profile_id, train_cars, score, joined, color_idx from ghosttrains_players');
@@ -960,21 +829,21 @@ function pgStore(pool) {
     },
     async deductTrainCars(profileId, amount) {
       await pool.query(
-        `insert into ghosttrains_players (profile_id, train_cars) values ($1, ${STARTING_TRAIN_CARS} - $2)
+        `insert into ghosttrains_players (profile_id, train_cars) values ($1, ${START_CARS_SQL} - $2)
          on conflict (profile_id) do update set train_cars = ghosttrains_players.train_cars - $2`,
         [profileId, amount]
       );
     },
     async addScore(profileId, amount) {
       await pool.query(
-        `insert into ghosttrains_players (profile_id, score) values ($1, $2)
+        `insert into ghosttrains_players (profile_id, train_cars, score) values ($1, ${START_CARS_SQL}, $2)
          on conflict (profile_id) do update set score = ghosttrains_players.score + $2`,
         [profileId, amount]
       );
     },
     async joinGame(profileId) {
       await pool.query(
-        `insert into ghosttrains_players (profile_id, joined) values ($1, true)
+        `insert into ghosttrains_players (profile_id, train_cars, joined) values ($1, ${START_CARS_SQL}, true)
          on conflict (profile_id) do update set joined = true`,
         [profileId]
       );
@@ -983,7 +852,7 @@ function pgStore(pool) {
     // samtidiga /state-anrop aldrig kan ge dubbla startkort.
     async claimInitialCards(profileId) {
       const r = await pool.query(
-        `insert into ghosttrains_players (profile_id, initial_cards_dealt) values ($1, true)
+        `insert into ghosttrains_players (profile_id, train_cars, initial_cards_dealt) values ($1, ${START_CARS_SQL}, true)
          on conflict (profile_id) do update set initial_cards_dealt = true
          where ghosttrains_players.initial_cards_dealt = false
          returning profile_id`,
@@ -993,7 +862,7 @@ function pgStore(pool) {
     },
     async setInitialTicketsDealt(profileId) {
       await pool.query(
-        `insert into ghosttrains_players (profile_id, initial_tickets_dealt) values ($1, true)
+        `insert into ghosttrains_players (profile_id, train_cars, initial_tickets_dealt) values ($1, ${START_CARS_SQL}, true)
          on conflict (profile_id) do update set initial_tickets_dealt = true`,
         [profileId]
       );
@@ -1026,10 +895,13 @@ function pgStore(pool) {
       await pool.query('delete from ghosttrains_ticket_offers where profile_id=$1', [profileId]);
     },
     async getGameState() {
-      const r = await pool.query('select status, final_day, final_results, game_no from ghosttrains_game_state where id=1');
-      if (!r.rows[0]) return { status: 'active', finalDay: null, finalResults: null, gameNo: 1 };
+      const r = await pool.query('select status, final_day, final_results, game_no, map_id, starting_cars from ghosttrains_game_state where id=1');
+      if (!r.rows[0]) return { status: 'active', finalDay: null, finalResults: null, gameNo: 1, mapId: DEFAULT_MAP_ID, startingCars: STARTING_TRAIN_CARS };
       const row = r.rows[0];
-      return { status: row.status, finalDay: row.final_day, finalResults: row.final_results, gameNo: row.game_no };
+      return {
+        status: row.status, finalDay: row.final_day, finalResults: row.final_results, gameNo: row.game_no,
+        mapId: row.map_id || DEFAULT_MAP_ID, startingCars: row.starting_cars || STARTING_TRAIN_CARS
+      };
     },
     async setGameState(status, finalDay, finalResults = null) {
       await pool.query(
@@ -1041,7 +913,7 @@ function pgStore(pool) {
     // Nollställer brädet för ett nytt spel — bara om det förra är slut.
     // Låser game_state-raden så att två samtidiga klick inte kan starta
     // två spel. Loggen och resolved_days behålls (historik + idempotens).
-    async resetGame() {
+    async resetGame(m) {
       const client = await pool.connect();
       try {
         await client.query('begin');
@@ -1054,8 +926,9 @@ function pgStore(pool) {
         await client.query('delete from ghosttrains_pending_moves where resolved=false');
         const gameNo = r.rows[0].game_no + 1;
         await client.query(
-          `update ghosttrains_game_state set status='active', final_day=null, final_results=null, game_no=$1 where id=1`,
-          [gameNo]
+          `update ghosttrains_game_state set status='active', final_day=null, final_results=null, game_no=$1,
+             map_id=$2, starting_cars=$3 where id=1`,
+          [gameNo, m.id, m.startingTrainCars]
         );
         await client.query('commit');
         return gameNo;
@@ -1064,12 +937,12 @@ function pgStore(pool) {
     },
     // Delad, cirkulerande biljettlek — samma FOR UPDATE-transaktionsmönster
     // som kortmarknaden i Pass 1 (delad, muterbar state, samma racerisk).
-    async dealTickets(count) {
+    async dealTickets(count, m) {
       const client = await pool.connect();
       try {
         await client.query('begin');
         const r = await client.query('select remaining from ghosttrains_ticket_deck where id=1 for update');
-        let deck = r.rows[0] ? r.rows[0].remaining : shuffle(TICKETS.map(t => t.id));
+        let deck = r.rows[0] ? r.rows[0].remaining : shuffle(m.tickets.map(t => t.id));
         const dealt = [];
         for (let i = 0; i < count && deck.length > 0; i++) dealt.push(deck.pop());
         await client.query('insert into ghosttrains_ticket_deck (id, remaining) values (1,$1) on conflict (id) do update set remaining=$1', [JSON.stringify(deck)]);
@@ -1079,17 +952,17 @@ function pgStore(pool) {
       finally { client.release(); }
     },
     // Dealar EXAKT en biljett per given tier (initial gratis-deal).
-    async dealTicketsByTier(tiers) {
+    async dealTicketsByTier(tiers, m) {
       const client = await pool.connect();
       try {
         await client.query('begin');
         const r = await client.query('select remaining from ghosttrains_ticket_deck where id=1 for update');
-        let deck = r.rows[0] ? r.rows[0].remaining : shuffle(TICKETS.map(t => t.id));
+        let deck = r.rows[0] ? r.rows[0].remaining : shuffle(m.tickets.map(t => t.id));
         const dealt = [];
         for (const tier of tiers) {
           let idx = -1;
           for (let i = deck.length - 1; i >= 0; i--) {
-            if (ticketTier(TICKETS_BY_ID.get(deck[i]).points) === tier) { idx = i; break; }
+            if (ticketTier(m.ticketsById.get(deck[i])?.points) === tier) { idx = i; break; }
           }
           if (idx >= 0) dealt.push(deck.splice(idx, 1)[0]);
         }
@@ -1099,13 +972,13 @@ function pgStore(pool) {
       } catch (e) { await client.query('rollback'); throw e; }
       finally { client.release(); }
     },
-    async returnTicketsToDeck(ticketIds) {
+    async returnTicketsToDeck(ticketIds, m) {
       if (!ticketIds.length) return;
       const client = await pool.connect();
       try {
         await client.query('begin');
         const r = await client.query('select remaining from ghosttrains_ticket_deck where id=1 for update');
-        let deck = r.rows[0] ? r.rows[0].remaining : shuffle(TICKETS.map(t => t.id));
+        let deck = r.rows[0] ? r.rows[0].remaining : shuffle(m.tickets.map(t => t.id));
         ticketIds.forEach(id => deck.unshift(id));
         await client.query('insert into ghosttrains_ticket_deck (id, remaining) values (1,$1) on conflict (id) do update set remaining=$1', [JSON.stringify(deck)]);
         await client.query('commit');
@@ -1209,14 +1082,14 @@ function memStore() {
   const playerTickets = new Map();
   const ticketOffers = new Map();
   let ticketDeck = null;
-  let gameState = { status: 'active', finalDay: null, finalResults: null, gameNo: 1 };
+  let gameState = { status: 'active', finalDay: null, finalResults: null, gameNo: 1, mapId: DEFAULT_MAP_ID, startingCars: STARTING_TRAIN_CARS };
   let nextPendingId = 1, nextLogId = 1;
   function getPlayerMem(profileId) {
     let p = players.get(profileId);
-    if (!p) { p = { trainCars: STARTING_TRAIN_CARS, score: 0, initialTicketsDealt: false, initialCardsDealt: false, joined: false }; players.set(profileId, p); }
+    if (!p) { p = { trainCars: gameState.startingCars, score: 0, initialTicketsDealt: false, initialCardsDealt: false, joined: false }; players.set(profileId, p); }
     return p;
   }
-  function ensureTicketDeck() { if (!ticketDeck) ticketDeck = shuffle(TICKETS.map(t => t.id)); return ticketDeck; }
+  function ensureTicketDeck(m) { if (!ticketDeck) ticketDeck = shuffle(m.tickets.map(t => t.id)); return ticketDeck; }
   return {
     async getHand(profileId) { return hands.get(profileId) || []; },
     async saveHand(profileId, hand) { hands.set(profileId, hand); },
@@ -1298,34 +1171,34 @@ function memStore() {
     async setGameState(status, finalDay, finalResults = null) {
       gameState = { ...gameState, status, finalDay: finalDay || null, finalResults: finalResults || null };
     },
-    async resetGame() {
+    async resetGame(m) {
       if (gameState.status !== 'finished') return null;
       hands.clear(); deckState.deck = freshDeck(); deckState.discard = []; routes = []; market = null;
       players.clear(); playerTickets.clear(); ticketOffers.clear(); ticketDeck = null;
       pending = pending.filter(p => p.resolved);
-      gameState = { status: 'active', finalDay: null, finalResults: null, gameNo: gameState.gameNo + 1 };
+      gameState = { status: 'active', finalDay: null, finalResults: null, gameNo: gameState.gameNo + 1, mapId: m.id, startingCars: m.startingTrainCars };
       return gameState.gameNo;
     },
-    async dealTickets(count) {
-      const d = ensureTicketDeck();
+    async dealTickets(count, m) {
+      const d = ensureTicketDeck(m);
       const dealt = [];
       for (let i = 0; i < count && d.length > 0; i++) dealt.push(d.pop());
       return dealt;
     },
-    async dealTicketsByTier(tiers) {
-      const d = ensureTicketDeck();
+    async dealTicketsByTier(tiers, m) {
+      const d = ensureTicketDeck(m);
       const dealt = [];
       tiers.forEach(tier => {
         let idx = -1;
         for (let i = d.length - 1; i >= 0; i--) {
-          if (ticketTier(TICKETS_BY_ID.get(d[i]).points) === tier) { idx = i; break; }
+          if (ticketTier(m.ticketsById.get(d[i])?.points) === tier) { idx = i; break; }
         }
         if (idx >= 0) dealt.push(d.splice(idx, 1)[0]);
       });
       return dealt;
     },
-    async returnTicketsToDeck(ticketIds) {
-      const d = ensureTicketDeck();
+    async returnTicketsToDeck(ticketIds, m) {
+      const d = ensureTicketDeck(m);
       ticketIds.forEach(id => d.unshift(id));
     },
     async spendAP(profileId, day, amount) {
@@ -1368,11 +1241,30 @@ async function actionBlocked(store, profileId) {
   return null;
 }
 
+const MAP_LIST = Object.values(MAPS).map(d => ({
+  id: d.id, name: d.name, description: d.description,
+  cityCount: d.cities.length, routeCount: d.routes.length, startingTrainCars: d.startingTrainCars
+}));
+const CITY_NAMES = Object.fromEntries(Object.values(MAPS).flatMap(d => d.cities.map(c => [c.id, c.name])));
+
 function createGhostTrainsRouter(store, resolveSecret) {
   const router = express.Router();
 
-  router.get('/map', (req, res) => {
-    res.json({ cities: CITIES, routes: ROUTES });
+  // Det pågående spelets karta, eller ?mapId= för en annan (kartvalet
+  // vid nytt spel). `maps` listar alla kartor; `cityNames` täcker alla
+  // kartors städer så att gamla nattrapporter (från ett spel på en
+  // annan karta) ändå kan visa stadsnamn.
+  router.get('/map', async (req, res) => {
+    try {
+      const requested = typeof req.query.mapId === 'string' && MAPS[req.query.mapId] ? req.query.mapId : null;
+      const def = MAPS[requested || mapForGame(await store.getGameState()).id];
+      res.json({
+        id: def.id, name: def.name, width: def.width, height: def.height,
+        startingTrainCars: def.startingTrainCars, outlineSvg: def.outlineSvg,
+        cities: def.cities, routes: def.routes,
+        maps: MAP_LIST, cityNames: CITY_NAMES
+      });
+    } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 
   router.get('/state', async (req, res) => {
@@ -1395,7 +1287,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
       // första gången någon läser /state för profilen — se .claude/plans.
       let ticketOffer = await store.getTicketOffer(profileId);
       if (player.joined && !ticketOffer && !player.initialTicketsDealt) {
-        const dealt = await store.dealTicketsByTier(['long', 'medium', 'short']);
+        const dealt = await store.dealTicketsByTier(['long', 'medium', 'short'], mapForGame(gameState));
         if (dealt.length) {
           await store.setTicketOffer(profileId, dealt, 2);
           await store.setInitialTicketsDealt(profileId);
@@ -1403,6 +1295,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
         }
       }
 
+      const m = mapForGame(gameState);
       const finalResults = gameState.status === 'finished' ? await finalResultsFor(store, gameState) : null;
 
 
@@ -1418,7 +1311,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
       allTickets.forEach(t => ticketCount.set(t.profileId, (ticketCount.get(t.profileId) || 0) + 1));
       const players = allPlayers
         .map(p => ({ profileId: p.profileId, joined: !!p.joined, colorIdx: p.colorIdx, trainCars: p.trainCars, score: p.score, ticketCount: ticketCount.get(p.profileId) || 0 }))
-        .filter(p => p.joined || p.ticketCount > 0 || p.score > 0 || p.trainCars < STARTING_TRAIN_CARS)
+        .filter(p => p.joined || p.ticketCount > 0 || p.score > 0 || p.trainCars < gameState.startingCars)
         .sort((a, b) => b.score - a.score);
 
       res.json({
@@ -1431,13 +1324,14 @@ function createGhostTrainsRouter(store, resolveSecret) {
         market,
         trainCars: player.trainCars,
         score: player.score,
-        tickets: await decorateTickets(store, profileId, ticketIds.map(id => TICKETS_BY_ID.get(id))),
+        tickets: await decorateTickets(store, m, profileId, ticketIds),
         players,
-        ticketOffer: ticketOffer ? { tickets: await decorateTickets(store, profileId, ticketOffer.ticketIds.map(id => TICKETS_BY_ID.get(id))), minKeep: ticketOffer.minKeep } : null,
+        ticketOffer: ticketOffer ? { tickets: await decorateTickets(store, m, profileId, ticketOffer.ticketIds), minKeep: ticketOffer.minKeep } : null,
         joined: !!player.joined,
         gameStatus: gameState.status,
         finalDay: gameState.finalDay,
         gameNo: gameState.gameNo || 1,
+        mapId: m.id,
         finalResults
       });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
@@ -1487,10 +1381,11 @@ function createGhostTrainsRouter(store, resolveSecret) {
     const b = req.body || {};
     const profileId = b.profileId;
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
-    const route = ROUTES_BY_ID.get(b.routeId);
-    if (!route) return res.status(400).json({ error: 'okand rutt' });
-    if (!validateClaimCards(route, b.cards)) return res.status(400).json({ error: 'ogiltiga kort for denna rutt' });
     try {
+      const m = mapForGame(await store.getGameState());
+      const route = m.routesById.get(b.routeId);
+      if (!route) return res.status(400).json({ error: 'okand rutt' });
+      if (!validateClaimCards(route, b.cards)) return res.status(400).json({ error: 'ogiltiga kort for denna rutt' });
       const blocked = await actionBlocked(store, profileId);
       if (blocked) return res.status(blocked.status).json({ error: blocked.error });
       const built = await store.builtRoutes();
@@ -1504,13 +1399,13 @@ function createGhostTrainsRouter(store, resolveSecret) {
       // räknas mot ALLA dagens oupplösta claims, inte bara detta.
       const pendingToday = await store.pendingForProfileToday(profileId, day);
       if (pendingToday.some(p => p.route_id === route.id)) return res.status(409).json({ error: 'du har redan ett claim pa denna rutt idag' });
-      const reserved = pendingToday.reduce((sum, p) => sum + (ROUTES_BY_ID.get(p.route_id)?.length || 0), 0);
+      const reserved = pendingToday.reduce((sum, p) => sum + (m.routesById.get(p.route_id)?.length || 0), 0);
       const player = await store.getPlayer(profileId);
       if (player.trainCars - reserved < route.length) return res.status(400).json({ error: 'inte tillrackligt med tagvagnar kvar' });
       const hand = await store.getHand(profileId);
       const newHand = removeCards(hand, b.cards);
       if (!newHand) return res.status(400).json({ error: 'du har inte de korten' });
-      const fromCity = pickOriginCity(route, profileId, built);
+      const fromCity = pickOriginCity(m, route, profileId, built);
       // Handen tas atomärt (compare-and-swap) innan AP spenderas — ett
       // samtidigt drag/dubbeltryck ger 409 istället för att tappa kort.
       // Misslyckas AP:t läggs korten tillbaka på handen.
@@ -1539,10 +1434,11 @@ function createGhostTrainsRouter(store, resolveSecret) {
       const day = gameDay();
       const apRemaining = await store.spendAP(profileId, day, 1);
       if (apRemaining == null) return res.status(402).json({ error: 'inte tillrackligt med AP' });
-      const dealt = await store.dealTickets(3);
+      const m = mapForGame(await store.getGameState());
+      const dealt = await store.dealTickets(3, m);
       if (!dealt.length) return res.json({ ok: true, offer: null, apRemaining, note: 'inga fler biljetter kvar i leken' });
       await store.setTicketOffer(profileId, dealt, 1);
-      res.json({ ok: true, offer: { tickets: await decorateTickets(store, profileId, dealt.map(id => TICKETS_BY_ID.get(id))), minKeep: 1 }, apRemaining });
+      res.json({ ok: true, offer: { tickets: await decorateTickets(store, m, profileId, dealt), minKeep: 1 }, apRemaining });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 
@@ -1562,11 +1458,12 @@ function createGhostTrainsRouter(store, resolveSecret) {
         return res.status(400).json({ error: 'maste behalla minst ' + offer.minKeep + ' av de erbjudna biljetterna' });
       }
       const discard = offer.ticketIds.filter(id => !keepIds.includes(id));
+      const m = mapForGame(await store.getGameState());
       await store.addPlayerTickets(profileId, keepIds);
-      await store.returnTicketsToDeck(discard);
+      await store.returnTicketsToDeck(discard, m);
       await store.clearTicketOffer(profileId);
       const ticketIds = await store.getPlayerTickets(profileId);
-      res.json({ ok: true, tickets: await decorateTickets(store, profileId, ticketIds.map(id => TICKETS_BY_ID.get(id))) });
+      res.json({ ok: true, tickets: await decorateTickets(store, m, profileId, ticketIds) });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 
@@ -1587,18 +1484,22 @@ function createGhostTrainsRouter(store, resolveSecret) {
 
   // Startar ett nytt spel när det förra är slut. Vem som helst i
   // familjen får trycka — samma öppna förtroendemodell som resten.
+  // { mapId } väljer karta; utelämnat = samma karta som förra spelet.
   router.post('/new-game', async (req, res) => {
-    const profileId = (req.body || {}).profileId;
+    const b = req.body || {};
+    const profileId = b.profileId;
     if (!validProfileId(profileId)) return res.status(400).json({ error: 'ogiltigt profileId' });
+    if (b.mapId != null && !MAPS[b.mapId]) return res.status(400).json({ error: 'okand karta' });
     try {
-      const gameNo = await store.resetGame();
+      const m = b.mapId ? mapContext(b.mapId) : mapForGame(await store.getGameState());
+      const gameNo = await store.resetGame(m);
       if (gameNo == null) return res.status(409).json({ error: 'spelet ar inte slut an' });
       await store.joinGame(profileId); // den som startar är självklart med
       await store.insertLog({
         gameDay: gameDay(), profileId, kind: 'new_game',
-        routeId: null, altRouteId: null, otherPlayers: [], details: { gameNo }
+        routeId: null, altRouteId: null, otherPlayers: [], details: { gameNo, mapId: m.id, mapName: m.def.name }
       });
-      res.json({ ok: true, gameNo });
+      res.json({ ok: true, gameNo, mapId: m.id });
     } catch (e) { console.error(e); res.status(500).json({ error: 'databasfel' }); }
   });
 
@@ -1628,7 +1529,7 @@ function createGhostTrainsRouter(store, resolveSecret) {
   return router;
 }
 
-// Biljetter som lagts till i TICKETS efter att ett spel startat finns
+// Biljetter som lagts till i kartans tickets efter att ett spel startat finns
 // inte i den sparade biljettleken. Lägg in de som saknas (inte i leken,
 // inte hos någon spelare, inte i en öppen offer) på slumpade platser.
 // Idempotent — körs vid varje uppstart, gör inget om inget saknas.
@@ -1639,10 +1540,12 @@ async function topUpTicketDeck(pool) {
     const r = await client.query('select remaining from ghosttrains_ticket_deck where id=1 for update');
     if (!r.rows[0]) { await client.query('commit'); return; } // skapas lat med alla biljetter
     const deck = r.rows[0].remaining;
+    const gs = await client.query('select map_id from ghosttrains_game_state where id=1');
+    const m = mapContext(gs.rows[0] && gs.rows[0].map_id);
     const held = await client.query('select ticket_id from ghosttrains_player_tickets');
     const offers = await client.query('select ticket_ids from ghosttrains_ticket_offers');
     const known = new Set([...deck, ...held.rows.map(x => x.ticket_id), ...offers.rows.flatMap(x => x.ticket_ids)]);
-    const missing = TICKETS.map(t => t.id).filter(id => !known.has(id));
+    const missing = m.tickets.map(t => t.id).filter(id => !known.has(id));
     if (missing.length) {
       const merged = shuffle(deck.concat(missing));
       await client.query('update ghosttrains_ticket_deck set remaining=$1 where id=1', [JSON.stringify(merged)]);

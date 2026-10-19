@@ -1,7 +1,8 @@
 # Ghost Trains
 
 Asynkront, Ticket to Ride-inspirerat familjespel. Familjen bygger ett
-gemensamt tågnät över Sverige, dag för dag. Alla drag under dagen
+gemensamt tågnät — över Sverige eller hela Norden (kartan väljs per
+spel) — dag för dag. Alla drag under dagen
 hålls hemliga; en midnattsupplösning kör dubbelspårs- och
 krockmotorn och skriver resultatet permanent till kartan. Nästa
 morgon ser familjen vad som hände i natt som en helskärms "Stories"-
@@ -22,13 +23,16 @@ ghosttrains/
                        # i repot).
 
 server/
-├── ghosttrains.js     # Allt spellogik: kartdata, regler, upplösnings-
-                       # motor, databasschema, Express-router.
+├── ghosttrains.js     # Allt spellogik: regler, upplösningsmotor,
+                       # databasschema, Express-router.
+├── ghosttrains-maps/  # Kartorna: index.js (MAPS), sverige.js, norden.js
+│                      # — städer, rutter, biljetter, kontur, tågvagnar.
+├── test/ghosttrains-maps.test.js  # Kartornas designprinciper (npm test).
 └── index.js           # Mountar ghosttrains-routern på /api/ghosttrains/*
                        # och startar node-cron-schemat.
 ```
 
-**Kartan (städer/rutter) finns BARA på servern.** Klienten hämtar den
+**Kartorna (städer/rutter/biljetter/kontur) finns BARA på servern.** Klienten hämtar den
 via `GET /api/ghosttrains/map` istället för att duplicera datan i en
 delad fil. Anledning: Railways "Root Directory" för `server`-tjänsten
 är satt till `server/`, så filer utanför den mappen följer inte med
@@ -74,26 +78,81 @@ en enda atomär `INSERT ... ON CONFLICT ... WHERE`-sats (se
 till ny delad, muterbar state — återanvänd något av dessa två mönster,
 inte ett enkelt "läs, mutera i JS, skriv tillbaka".**
 
-## Kartan
+## Kartorna
 
-`CITIES` och `ROUTES` i `server/ghosttrains.js` är den enda källan.
+Varje spel spelas på EN karta, vald i klienten när ett nytt spel
+startas (`POST /new-game { mapId }`, utelämnat = samma som förra
+spelet). Valet sparas i `ghosttrains_game_state.map_id` (null = Sverige,
+spel från före kartvalet) tillsammans med kartans tågvagnar per spelare
+(`starting_cars`). All kod som slår upp rutter/städer/biljetter tar en
+kartkontext `m` (`mapForGame(gameState)` → `routesById`, `ticketsById`,
+`adjacency` …) — använd aldrig en enskild karta direkt i spellogiken.
+`CITIES`/`ROUTES`/`TICKETS`-exporterna finns kvar men är Sverigekartan.
 
+| Karta | Städer | Rutter | Spår (vagnar) | Tågvagnar/spelare |
+|---|---|---|---|---|
+| `sverige` | 21 | 37 | 110 | 20 |
+| `norden` | 41 | 67 | 156 | 25 |
+
+En kartmodul (`server/ghosttrains-maps/<id>.js`) exporterar `id`,
+`name`, `description`, `width`/`height` (SVG-koordinatsystemet),
+`startingTrainCars`, `cities` (valfri `labelPos: 'left'|'above'|'below'`
+när namnet krockar med en granne), `routes`, `tickets` och `outlineSvg`
+(ritas under rutterna). Registrera den i `ghosttrains-maps/index.js` och
+kör `npm test` — `test/ghosttrains-maps.test.js` kontrollerar
+designprinciperna nedan för ALLA kartor.
+
+**Fallgropar vid kartbyte:**
+- Nya rader i `ghosttrains_players` måste sätta `train_cars` från
+  `START_CARS_SQL` (det pågående spelets `starting_cars`) — kolumnens
+  default är 20. Missades först i `joinGame`: den som startade ett
+  Norden-spel fick 20 vagnar, alla andra 25.
+- Loggen behålls mellan spel, så nattrapporten/slutresultatet kan
+  nämna rutter och städer från en annan karta än den som nu är laddad.
+  `/map` skickar därför `cityNames` för alla kartor, och klientens
+  `routeLabel` faller tillbaka på rutt-id:t (`stadA-stadB`).
+- Klienten laddar om kartan när `/state` har ett annat `mapId` än den
+  laddade (nytt spel startat på en annan enhet).
+
+### Sverigekartan
 - **Koordinater**: beräknade från städernas verkliga lat/long via en
   enkel ekvirektangulär projektion, sedan passade mot Sverigekonturens
-  uppmätta bounding box (se `ghosttrains/index.html`, sök efter
-  `SWEDEN_OUTLINE_SVG` — en inbäddad, förenklad Sverigesiluett från
+  uppmätta bounding box (`outlineSvg` i `sverige.js` — en inbäddad,
+  förenklad Sverigesiluett från
   [djaiss/mapsicon](https://github.com/djaiss/mapsicon), krediterad i
   en kommentar). Ändrar du en stads koordinater: verifiera att den
   fortfarande hamnar INNANFÖR konturen (`isPointInFill` i webbläsarens
   konsol går snabbt att testa manuellt) och att den inte hamnar för
   nära en granne (två städer närmare än ~20 enheter får sina prickar
   att överlappa och dölja rutten mellan dem — hände med Lund/Malmö).
-- **Designprinciper** (upptäcktes/etablerades under utveckling, håll
-  koll på dessa om du lägger till städer/rutter):
+- Biljetterna t1–t15 prissattes innan senare rutter (Kalmar,
+  lulea-sundsvall m.fl.) ändrade avstånden och avviker upp till 2p från
+  regeln nedan — testet tillåter det för just dem.
+
+### Nordenkartan
+Tillkom efter första riktiga spelet (önskemål: fler spelare, mindre
+"långsmal" karta). Togs fram med engångsskript:
+- **Koordinater**: Lambert azimutal ytriktig projektion centrerad på
+  17°E 63°N, skalad så städerna fyller bredden 1000 (höjd 1145).
+  Köpenhamn/Malmö flyttades isär (för nära varandra).
+- **Kontur**: Natural Earth 1:50m (public domain, via npm-paketet
+  `world-atlas`), samma projektion, förenklad. Norden ritas som
+  `land-thin`, grannländer nedtonat som `land-faint`.
+- **Längder**: kartavstånd / 55, avrundat, 1–6. Färjor (Kvarken,
+  Ålands hav, Göteborg–Aalborg, Kristiansand–Aalborg) är vanliga rutter.
+- **Färger**: slumpad girig sökning (20 000 försök) som minimerar
+  spannet i vagnar per färg (19–20) utan samma färg två gånger i en stad.
+- **Biljetter**: 45 st, handplockade (11 långa, 17 medel, 17 korta),
+  varje stad i 2–4 biljetter, gränsöverskridande par prioriterade.
+- **Tågvagnar 25**: botsimulering mot riktiga koden, 3–5 spelare —
+  20 gav 30–50 % byggd karta och få klarade långa biljetter; 25 ger
+  ~8–9 dagar, 50–75 % byggd karta. (Sverige: ~7–9 dagar med samma botar.)
+
+### Designprinciper (alla kartor)
+Upptäcktes/etablerades under utvecklingen av Sverigekartan och
+kontrolleras nu automatiskt av `server/test/ghosttrains-maps.test.js`:
   - **Inga artikulationspunkter**: ingen enskild stad får, om den
-    plockas bort, dela kartan i flera separata delar. Kolla med en
-    enkel BFS-per-borttagen-stad (gjordes manuellt via node-skript
-    under utvecklingen, finns inte som automatiserat test än).
+    plockas bort, dela kartan i flera separata delar.
   - **Inga grad-1-städer**: varje stad ska ha minst 2 rutter, annars
     blir den permanent otillgänglig om dess enda rutt claimas av
     någon annan (hände Kiruna, löstes med en andra rutt).
@@ -101,7 +160,8 @@ inte ett enkelt "läs, mutera i JS, skriv tillbaka".**
     som möts i samma stad är visuellt förvirrande (vilken kräver
     vilka kort?). Kolla per stad, inte bara lokalt vid varje ny rutt.
   - **Färgbalans**: summan av rutt-längder per färg (8 färger) bör
-    ligga inom ett smalt spann (senast ~9–13) — annars blir vissa
+    ligga inom ett smalt spann (testet: max 6 isär, dubbelspår räknat
+    två gånger; Norden 19–20) — annars blir vissa
     färger värdelösa (för lite efterfrågan) eller för eftertraktade.
   - **Dubbelspår ges selektivt**, bara till hubbar (hög grad) som är
     tydliga avvikare jämfört med sina gradkamrater — inte till alla
@@ -112,10 +172,12 @@ inte ett enkelt "läs, mutera i JS, skriv tillbaka".**
     biljetter dit omöjliga för andra). Upptäcktes i första riktiga
     spelet: jonkoping-vaxjo + kristianstad-lund stängde in Växjö/
     Karlskrona/Kristianstad. Löst genom att lägga till **Kalmar** (3
-    rutter). Kvar som enskilda städer med grad 2: Kiruna, Mora, Lund.
-  - Alla dessa kontrollerades med små, engångs node-skript under
-    utvecklingen (inte sparade som filer) — skriv om vid behov, det
-    är enkel grafteori över `CITIES`/`ROUTES`.
+    rutter). Kvar som enskilda städer med grad 2 på Sverigekartan:
+    Kiruna, Mora, Lund. (Norden: Rovaniemi fick en tredje rutt,
+    kiruna-rovaniemi, annars stängde två rutter in Kirkenes+Rovaniemi.)
+  - Testet kontrollerar även: alla rutter/biljetter pekar på kända
+    städer, biljettpoäng följer prissättningsregeln, ingen biljett
+    kräver fler vagnar än `startingTrainCars`, minst 6 långa biljetter.
 
 ## Spelregler (nuvarande implementation)
 
@@ -223,9 +285,9 @@ om HELA kartan är fullbyggd eller ingen ledig rutt är prisvärd för
 just den spelaren — extremt ovanligt i normalt spel.
 
 ### Tågvagnar & poäng
-- 20 tågvagnar per spelare (`STARTING_TRAIN_CARS`). **Inte** Ticket to
-  Rides 45: kartan har bara 110 vagnar spår totalt (dubbelspår
-  inräknade). Med 35 blev kartan full innan någon nådde slutgränsen
+- Tågvagnar per spelare sätts per karta (`startingTrainCars`: Sverige
+  20, Norden 25). **Inte** Ticket to Rides 45: Sverigekartan har bara
+  110 vagnar spår totalt (dubbelspår inräknade). Med 35 blev kartan full innan någon nådde slutgränsen
   redan vid 4 spelare — spelet tog aldrig slut. Simulerat med botar
   mot riktiga koden: 20 vagnar ⇒ ~12–13 dagar för 2–6 spelare.
   **Lägger du till städer/rutter eller ändrar antalet: simulera om.** `/claim` avvisas direkt om spelaren inte
@@ -237,7 +299,8 @@ just den spelaren — extremt ovanligt i normalt spel.
   längd 1→1p, 2→2p, 3→4p, 4→7p, 5→10p, 6→15p.
 
 ### Destinationsbiljetter
-- 30 biljetter totalt (`TICKETS`), delad cirkulerande lek (samma
+- Biljetterna kommer från kartan (Sverige 30 st `t1`–`t30`, Norden 45 st
+  `n1`–`n45`), delad cirkulerande lek (samma
   transaktionsmönster som kortmarknaden). Prissättning: poäng =
   kortaste vägen på kartan (summa ruttlängder), över 13 avtrubbat till
   13 + (avstånd−13)/3. t16–t30 valdes så att varje stad finns i 2–4
@@ -337,8 +400,8 @@ begäran oavsett flagga.
 
 | Endpoint | Metod | Beskrivning |
 |---|---|---|
-| `/map` | GET | Statisk kartdata (städer, rutter). |
-| `/state?profileId=` | GET | Allt en klient behöver i en runda: hand, karta-ägarskap, AP, marknad, tågvagnar, poäng, biljetter, ev. biljett-offer, spelstatus, slutresultat. |
+| `/map?mapId=` | GET | Kartdata för pågående spel (eller `mapId`): städer, rutter, kontur, storlek, plus `maps` (alla kartor, för kartvalet) och `cityNames` (alla kartors städer). |
+| `/state?profileId=` | GET | Allt en klient behöver i en runda: hand, karta-ägarskap, AP, marknad, tågvagnar, poäng, biljetter, ev. biljett-offer, spelstatus, `mapId`, slutresultat. |
 | `/market` | GET | Marknadens 5 kort (lat-initieras vid behov). |
 | `/draw` | POST | `{profileId}` — blint kort, 1 AP. |
 | `/market/draw` | POST | `{profileId, index}` — draget kort från marknaden, 1 eller 2 AP. |
@@ -346,7 +409,7 @@ begäran oavsett flagga.
 | `/tickets/draw` | POST | `{profileId}` — 1 AP, skapar en biljett-offer. |
 | `/tickets/choose` | POST | `{profileId, keepIds}` — löser en öppen offer. |
 | `/join` | POST | `{profileId}` — gå med i pågående spel (ej under sista rundan). |
-| `/new-game` | POST | `{profileId}` — startar ett nytt spel när det förra är `finished`. |
+| `/new-game` | POST | `{profileId, mapId?}` — startar ett nytt spel när det förra är `finished`, på vald karta (utelämnat = samma karta). |
 | `/resolve` | POST | Hemlig header `x-resolve-secret` (miljövariabel `GHOSTTRAINS_RESOLVE_SECRET`, se `server/.env.example`). Kör upplösning för en dag (default igår), idempotent. |
 | `/digest/day?day=` | GET | Hela familjens loggrader för en dag (default igår). |
 
@@ -399,10 +462,7 @@ root-`README.md`). Deploy sker automatiskt vid push till `main`.
   ursprungs-PRD:ts "Upon Next Login".
 - Flera parallella spelbräden/rum — ett enda delat bräde för hela
   familjen, som Ordleks maratontabell.
-- Automatiserade tester för kartans designprinciper (artikulations-
-  punkter, färgbalans, etc.) — kontrollerades manuellt med engångs-
-  skript under utvecklingen, se ovan.
 - Admin-UI för att t.ex. nollställa ett pågående spel eller justera
   kartan utan kodändring (ett AVSLUTAT spel kan startas om via
-  `/new-game`) — allt görs idag genom att redigera `CITIES`/`ROUTES`/
-  `TICKETS` direkt i `server/ghosttrains.js` och pusha.
+  `/new-game`) — allt görs idag genom att redigera kartmodulerna i
+  `server/ghosttrains-maps/` och pusha.
