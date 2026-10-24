@@ -74,7 +74,7 @@ describe('framtida luckor', () => {
     for (const n of [2, 3]) {
       const r = await g.get('/day/' + n, IDS.peter);
       assert.equal(r.status, 403);
-      assert.deepEqual(Object.keys(r.body), ['error']);
+      assert.deepEqual(r.body, { error: 'locked', reason: 'date' });
       const d = SAMPLE.days[n - 1];
       assert.ok(!r.text.includes(d.title) && !r.text.includes(d.intro));
     }
@@ -98,6 +98,7 @@ describe('framtida luckor', () => {
   });
 
   test('luckan öppnas vid midnatt svensk tid', async () => {
+    await g.store.insertSolve({ day: 1, profileId: IDS.peter, mode: 'together', solvedAt: at('2026-12-01', '20:00') });
     g.setNow(new Date('2026-12-01T22:59:59Z')); // 23:59:59 i Stockholm
     assert.equal((await g.get('/day/2', IDS.peter)).status, 403);
     g.setNow(new Date('2026-12-01T23:00:00Z')); // 00:00 den 2 december
@@ -139,26 +140,33 @@ describe('svaret skickas aldrig', () => {
 
   test('olösta luckor innehåller varken answer eller själva svaret', async () => {
     await g.ev(1, 'peter', 'attempt', '1111', at('2026-12-01', '09:00'));
-    for (const slot of Object.keys(IDS)) {
-      const s = await g.get('/state', IDS[slot]);
-      assert.ok(!hasKeyDeep(s.body, 'answer'));
-      for (const n of [1, 2, 3]) {
+    // Luckorna öppnas i ordning: kontrollera varje lucka medan den är öppen
+    // och olöst (alla svar som samlas in här är från olösta luckor), lös den
+    // sedan så att nästa öppnas.
+    const solveAs = { 1: { profileId: IDS.simon, mode: 'archive', solvedAt: at('2026-12-02', '21:48') }, 2: { profileId: IDS.peter, mode: 'archive' } };
+    for (const n of [1, 2, 3]) {
+      const start = g.responses.length;
+      for (const slot of Object.keys(IDS)) {
+        const s = await g.get('/state', IDS[slot]);
+        assert.ok(!hasKeyDeep(s.body, 'answer'));
         const r = await g.get('/day/' + n, IDS[slot]);
         assert.equal(r.status, 200);
         assert.ok(!hasKeyDeep(r.body, 'answer'), 'answer-nyckel i lucka ' + n);
         assert.ok(!hasKeyDeep(r.body, 'solution'), 'solution i olöst lucka ' + n);
         assert.ok(!hasKeyDeep(r.body, 'epilogue') && !hasKeyDeep(r.body, 'story'));
         assert.ok(!r.text.includes(SAMPLE.days[n - 1].epilogue.text));
+        if (n < 3) assert.equal((await g.get('/day/' + (n + 1), IDS[slot])).status, 403);
       }
+      // Inget strängvärde i något svar är ett svar. (Nycklar räknas inte:
+      // dag 2:s svar är också en ruta i kartlappens cells, och den ska med.)
+      const values = g.responses.slice(start).flatMap(t => stringValues(JSON.parse(t)));
+      for (const d of SAMPLE.days) assert.ok(!values.includes(d.answer), 'svaret för lucka ' + d.day + ' läckte');
+      if (solveAs[n]) await g.store.insertSolve(Object.assign({ day: n }, solveAs[n]));
     }
-    // Inget strängvärde i något svar är ett svar. (Nycklar räknas inte:
-    // dag 2:s svar är också en ruta i kartlappens cells, och den ska med.)
-    const values = g.responses.flatMap(t => stringValues(JSON.parse(t)));
-    for (const d of SAMPLE.days) assert.ok(!values.includes(d.answer), 'svaret för lucka ' + d.day + ' läckte');
   });
 
   test('löst lucka visar epilog och "Så här gick det till", men aldrig answer-nyckeln', async () => {
-    await g.store.insertSolve({ day: 1, profileId: IDS.simon, mode: 'archive', solvedAt: at('2026-12-02', '21:48') });
+    // Lucka 1 löstes av Simon i efterhand i testet ovan.
     const r = await g.get('/day/1', IDS.peter);
     assert.equal(r.body.status, 'solved');
     assert.ok(!hasKeyDeep(r.body, 'answer'));
@@ -211,6 +219,7 @@ describe('andra spelares lappar', () => {
   });
 
   test('i arkivläge syns alla lappar, även de som aldrig lades ut', async () => {
+    await g.store.insertSolve({ day: 1, profileId: IDS.peter, mode: 'together' });
     g.setNow(at('2026-12-02', '10:00'));
     await g.ev(2, 'peter', 'fragment', null, at('2026-12-02', '08:00'));
     g.setNow(at('2026-12-03', '10:00'));
@@ -236,7 +245,8 @@ describe('andra spelares lappar', () => {
 describe('fotouppgifter', () => {
   let g;
   const reveal = slot => SAMPLE.days[2].fragments[slot].reveal;
-  before(async () => { g = await startGame(at('2026-12-03', '10:00')); });
+  // Lucka 3 öppnas först när lucka 2 är löst (lucka 1 lämnas olöst, så nyckeln saknas).
+  before(async () => { g = await startGame(at('2026-12-03', '10:00')); await g.store.insertSolve({ day: 2, profileId: IDS.peter, mode: 'archive' }); });
   after(() => g.close());
 
   test('reveal skickas inte före uppladdning, inte ens till ägaren', async () => {
@@ -466,7 +476,9 @@ describe('innehållsladdning', () => {
     const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
     const base = 'http://127.0.0.1:' + server.address().port + '/n';
     const st = await (await fetch(base + '/state?profile=' + IDS.peter)).json();
-    assert.deepEqual(st.days.map(d => d.status), ['archive', 'today', 'locked']);
+    // Lucka 2:s dag har kommit, men lucka 1 är olöst.
+    assert.deepEqual(st.days.map(d => d.status), ['archive', 'locked', 'locked']);
+    assert.equal(st.days[1].waitingFor, 1);
     assert.equal((await fetch(base + '/day/3?profile=' + IDS.peter)).status, 403);
     await new Promise(r => server.close(r));
   });
@@ -630,6 +642,7 @@ describe('fas 2: låsregler', () => {
   });
 
   test('en arkivlucka löses i efterhand utan lyktor, och lappar kan inte läggas ut där', async () => {
+    await g.store.insertSolve({ day: 1, profileId: IDS.maria, mode: 'archive' });
     g.setNow(at('2026-12-03', '10:00'));
     assert.equal((await g.post('/day/2/fragment', { profile: IDS.peter })).status, 409);
     const r = await g.post('/day/2/solve', { profile: IDS.peter, answer: 'c5' });
@@ -640,11 +653,21 @@ describe('fas 2: låsregler', () => {
   });
 
   test('en lucka som kräver föremål går inte att lösa utan dem', async () => {
-    g.setNow(at('2026-12-04', '10:00'));
-    const r = await g.post('/day/3/solve', { profile: IDS.peter, answer: SAMPLE.days[2].answer });
-    assert.equal(r.status, 409);
-    assert.equal(r.body.error, 'missing_items');
-    assert.deepEqual(r.body.missingItems.map(i => i.id), ['nyckel12']);
+    // Egen kalender där lucka 1 ger ett annat föremål, så nyckeln aldrig finns.
+    const content = JSON.parse(JSON.stringify(SAMPLE));
+    content.days[0].epilogue.item.id = 'annat';
+    const store = memStore(); await store.setPlayers(IDS);
+    for (const day of [1, 2]) await store.insertSolve({ day, profileId: IDS.peter, mode: 'archive' });
+    const game = await createKalender(null, { content, store, adminSecret: SECRET, now: () => at('2026-12-04', '10:00') });
+    const app = express(); app.use(express.json()); app.use('/k', game.router);
+    const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
+    try {
+      const res = await fetch('http://127.0.0.1:' + server.address().port + '/k/day/3/solve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile: IDS.peter, answer: SAMPLE.days[2].answer }) });
+      const body = await res.json();
+      assert.equal(res.status, 409);
+      assert.equal(body.error, 'missing_items');
+      assert.deepEqual(body.missingItems.map(i => i.id), ['nyckel12']);
+    } finally { await new Promise(r => server.close(r)); }
   });
 
   test('fotouppgifter läggs inte ut via /fragment', async () => {
@@ -785,6 +808,7 @@ describe('löst lucka: hela gåtan skickas', () => {
   });
 
   test('en löst fotolucka skickar reveal för alla, även utan uppladdning', async () => {
+    await g.store.insertSolve({ day: 2, profileId: IDS.peter, mode: 'archive' });
     g.setNow(at('2026-12-03', '09:00'));
     await g.ev(3, 'peter', 'photo', '1', at('2026-12-03', '08:00'));
     let r = await g.get('/day/3', IDS.maria);
@@ -808,7 +832,8 @@ const PNG = n => Buffer.concat([Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A,
 describe('fas 4: fotouppgifter', () => {
   let g;
   const D3 = SAMPLE.days[2];
-  before(async () => { g = await startGame(at('2026-12-03', '09:00')); });
+  // Lucka 3 öppnas när lucka 2 är löst; lucka 1 (som ger nyckeln) löses senare i testet.
+  before(async () => { g = await startGame(at('2026-12-03', '09:00')); await g.store.insertSolve({ day: 2, profileId: IDS.peter, mode: 'archive' }); });
   after(() => g.close());
 
   test('uppladdning lägger ut fotot, tänder lyktan och visar reveal', async () => {
@@ -996,6 +1021,7 @@ describe('kalendrar, miljövariabler och tema', () => {
     content.days = Array.from({ length: 7 }, (_, i) => Object.assign({}, SAMPLE.days[0], { day: i + 1 }));
     content.start_date = '2026-10-25';
     const store = memStore('prov'); await store.setPlayers(IDS);
+    for (let day = 1; day <= 6; day++) await store.insertSolve({ day, profileId: IDS.peter, mode: 'together' });
     const game = await createKalender(null, { content, store, adminSecret: SECRET, now: () => at('2026-10-31', '12:00'), listProfiles: async () => PROFILES });
     const app = express(); app.use('/k', game.router);
     const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
@@ -1095,5 +1121,80 @@ describe('punkt 7: /admin/check', () => {
       assert.ok(!res.error.includes('hemlig'));
       assert.equal(loadContent({}).error, 'CONTENT_KEY saknas och KALENDER_CONTENT=sample är inte satt');
     } finally { console.warn = w; console.error = e; fs.rmSync(tmp2, { recursive: true, force: true }); }
+  });
+});
+
+describe('luckorna öppnas i ordning', () => {
+  let g;
+  before(async () => { g = await startGame(at('2026-12-02', '10:00')); });
+  after(() => g.close());
+
+  test('en lucka vars dag har kommit är låst tills den förra är löst, och avslöjar inget', async () => {
+    const r = await g.get('/day/2', IDS.peter);
+    assert.equal(r.status, 403);
+    assert.deepEqual(r.body, { error: 'locked', reason: 'previous', waitingFor: 1 });
+    for (const t of [SAMPLE.days[1].title, SAMPLE.days[1].intro, SAMPLE.days[1].fragments.peter.text]) assert.ok(!r.text.includes(t));
+    const s = await g.get('/state', IDS.peter);
+    assert.deepEqual(s.body.days[1], { day: 2, status: 'locked', waitingFor: 1 });
+    assert.deepEqual(s.body.days[2], { day: 3, status: 'locked' }); // dag 3 är låst av datum
+    assert.equal(s.body.openedCount, 1);
+    assert.ok(!s.text.includes(SAMPLE.days[1].title));
+  });
+
+  test('en låst lucka går inte att ändra', async () => {
+    const calls = [
+      ['/day/2/fragment', {}], ['/day/2/note', { text: 'hej' }], ['/day/2/hint', { n: 1 }],
+      ['/day/2/solve', { answer: SAMPLE.days[1].answer }],
+      ['/day/2/photo', { mime: 'image/jpeg', data: Buffer.from([0xFF, 0xD8, 0xFF, 0]).toString('base64') }]
+    ];
+    for (const [p, body] of calls) {
+      const r = await g.post(p, Object.assign({ profile: IDS.peter }, body));
+      assert.equal(r.status, 403, p);
+      assert.equal(r.body.reason, 'previous', p);
+    }
+    assert.deepEqual(await g.store.listEvents(), []);
+    assert.deepEqual(await g.store.listSolves(), []);
+  });
+
+  test('lucka 1 löst i efterhand samma dag som lucka 2 → lucka 2 är dagens lucka och kan lösas med alla fem', async () => {
+    let d1 = await g.get('/day/1', IDS.peter);
+    assert.equal(d1.body.status, 'archive');
+    assert.deepEqual(d1.body.next, { day: 2, open: false });
+    const r = await g.post('/day/1/solve', { profile: IDS.peter, answer: SAMPLE.days[0].answer });
+    assert.equal(r.body.correct, true);
+    assert.deepEqual(r.body.day.next, { day: 2, open: true });
+    const d2 = await g.get('/day/2', IDS.peter);
+    assert.equal(d2.status, 200);
+    assert.equal(d2.body.status, 'today');
+    for (const s of Object.keys(IDS)) assert.equal((await g.post('/day/2/fragment', { profile: IDS[s] })).status, 200);
+    const solved = await g.post('/day/2/solve', { profile: IDS.sara, answer: SAMPLE.days[1].answer });
+    assert.equal(solved.body.day.solved.mode, 'together');
+  });
+
+  test('sista luckan har ingen nästa, och nästa är stängd tills dess dag kommer', async () => {
+    const d2 = await g.get('/day/2', IDS.peter);
+    assert.deepEqual(d2.body.next, { day: 3, open: false }); // dag 3 är 3 december
+    g.setNow(at('2026-12-03', '00:01'));
+    assert.deepEqual((await g.get('/day/2', IDS.peter)).body.next, { day: 3, open: true });
+    await g.store.insertSolve({ day: 3, profileId: IDS.peter, mode: 'archive' });
+    assert.equal((await g.get('/day/3', IDS.peter)).body.next, null);
+  });
+
+  test('en lucka som öppnas först efter sin dag blir en arkivlucka', async () => {
+    const content = JSON.parse(JSON.stringify(SAMPLE));
+    const store = memStore(); await store.setPlayers(IDS);
+    const game = await createKalender(null, { content, store, adminSecret: SECRET, now: () => at('2026-12-05', '10:00') });
+    const app = express(); app.use(express.json()); app.use('/k', game.router);
+    const server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
+    const base = 'http://127.0.0.1:' + server.address().port + '/k';
+    try {
+      const get = async n => fetch(base + '/day/' + n + '?profile=' + IDS.peter);
+      assert.equal((await get(2)).status, 403);
+      await store.insertSolve({ day: 1, profileId: IDS.peter, mode: 'archive' });
+      const d2 = await (await get(2)).json();
+      assert.equal(d2.status, 'archive');
+      assert.equal(d2.lockOpen, true);
+      assert.equal((await get(3)).status, 403);
+    } finally { await new Promise(r => server.close(r)); }
   });
 });

@@ -118,7 +118,9 @@ describe('flera kalendrar i samma databas', () => {
     assert.equal(p.body.board.length, 2);
     assert.equal(h.body.board.length, 0);
     await prov.game.store.insertSolve({ day: 2, profileId: IDS.peter, mode: 'archive' });
-    assert.equal((await hw.get('/state')).body.days[1].status, 'archive');
+    // Halloween: lucka 2:s dag har kommit, men lucka 1 är olöst där — lösningen i prov räknas inte.
+    const hwDay2 = (await hw.get('/state')).body.days[1];
+    assert.deepEqual(hwDay2, { day: 2, status: 'locked', waitingFor: 1 });
     const photoId = await prov.game.store.insertPhoto({ day: 1, profileId: IDS.peter, mime: 'image/jpeg', data: Buffer.from([0xFF, 0xD8, 0xFF]) });
     assert.equal((await fetch(prov.base + '/photo/' + photoId + '?profile=' + IDS.peter)).status, 200);
     assert.equal((await fetch(hw.base + '/photo/' + photoId + '?profile=' + IDS.peter)).status, 404);

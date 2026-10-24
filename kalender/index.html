@@ -90,7 +90,7 @@
   .grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
   .grid > * { flex: 0 0 calc((100% - 30px) / 4); }
   .cell {
-    aspect-ratio: 1 / 1.08; border-radius: 14px; padding: 8px; text-decoration: none;
+    aspect-ratio: 1 / 1.08; border-radius: 14px; padding: 8px; text-decoration: none; text-align: left;
     display: flex; flex-direction: column; justify-content: space-between;
     background: var(--surface-dark); border: 1px solid var(--border);
   }
@@ -102,6 +102,12 @@
   .cell.solved .tag { color: var(--glow); }
   .cell.locked { background: var(--surface); border-color: transparent; opacity: .45; }
   .cell.locked .num { color: var(--muted); }
+  /* Dagen har kommit, men föregående lucka är olöst: tryck för att gå dit. */
+  .cell.gated { background: var(--surface); border: 1px dashed rgba(var(--glow-rgb), .6); opacity: .85; }
+  .cell.gated .num { color: var(--muted); }
+  .cell.gated .tag { color: var(--glow); }
+  .next-hint { text-align: center; color: var(--muted); font-size: 14px; margin-top: 10px; }
+  .solved-actions { display: flex; flex-direction: column; gap: 10px; }
   .packing { margin-top: 24px; }
   .packing h2, .section-title { font-size: 22px; margin-bottom: 10px; }
   .item { background: var(--surface); border-radius: 14px; padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; }
@@ -511,7 +517,14 @@
       messagePage(title, title + ' är familjens kalender. Välj din profil för att spela.', switchProfileButton());
       return true;
     }
-    if (res.status === 403 && res.body && res.body.error === 'locked') { toast(doorName(route().day || '') + ' går inte att öppna än.'); location.hash = ''; return true; }
+    if (res.status === 403 && res.body && res.body.error === 'locked') {
+      // Luckorna löses i ordning: skicka till den som väntar på att lösas.
+      if (res.body.reason === 'previous' && res.body.waitingFor) {
+        toast('Lös ' + T.door.singular + ' ' + res.body.waitingFor + ' först.');
+        location.hash = '#dag-' + res.body.waitingFor;
+      } else { toast(doorName(route().day || '') + ' går inte att öppna än.'); location.hash = ''; }
+      return true;
+    }
     if (res.status === 404) { location.hash = ''; return true; }
     if (res.status >= 400) { messagePage('Något gick fel', 'Kunde inte hämta kalendern just nu.', el('button', { class: 'btn btn-primary', text: 'Försök igen', onclick: function(){ refresh(); } })); return true; }
     return false;
@@ -522,6 +535,10 @@
     var me = s.players.filter(function(p){ return p.slot === s.me; })[0];
     if (!s.started) return renderPrestart(s, me);
     var cells = s.days.map(function(d){
+      if (d.status === 'locked' && d.waitingFor) {
+        return el('a', { class: 'cell gated', href: '#dag-' + d.waitingFor, 'aria-label': doorName(d.day) + ', öppnas när ' + T.door.singular + ' ' + d.waitingFor + ' är löst' },
+          el('span', { class: 'num', text: d.day }), el('span', { class: 'tag', text: 'Lös ' + T.door.singular + ' ' + d.waitingFor + ' först' }));
+      }
       if (d.status === 'locked') {
         return el('div', { class: 'cell locked', 'aria-label': doorName(d.day) + ', låst' }, el('span', { class: 'num', text: d.day }), icon('lock'));
       }
@@ -1062,9 +1079,18 @@
       solvedFragmentsSection(d),
       boardSection(d),
       solvedHintsSection(d),
-      el('section', null, el('a', { class: 'btn btn-primary btn-block', href: '#', text: T.back }))
+      el('section', { class: 'solved-actions' }, nextDoorButton(d), el('a', { class: 'btn ' + (d.next && d.next.open ? 'btn-secondary' : 'btn-primary') + ' btn-block', href: '#', text: T.back }), nextDoorHint(d))
     ]);
     if (animate) playEnter();
+  }
+  // Nästa lucka: knapp om den är öppen, annars när den öppnas.
+  function nextDoorButton(d){
+    return d.next && d.next.open ? el('a', { class: 'btn btn-primary btn-block', href: '#dag-' + d.next.day, text: 'Vidare till ' + T.door.singular + ' ' + d.next.day }) : null;
+  }
+  function nextDoorHint(d){
+    if (!d.next || d.next.open) return null;
+    var nd = new Date(Date.parse(d.date + 'T12:00:00Z') + 86400000);
+    return el('p', { class: 'next-hint', text: doorName(d.next.day) + ' öppnas ' + nd.getUTCDate() + ' ' + MONTHS[nd.getUTCMonth()] + '.' });
   }
   function solvedFragmentsSection(d){
     return el('section', null,

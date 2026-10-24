@@ -371,11 +371,18 @@ export function computeStars(solves, events) {
   return Math.max(0, total);
 }
 
+// Varför en lucka är låst: 'date' (dess dag har inte kommit) eller
+// 'previous' (föregående lucka är inte löst än — luckorna löses i ordning,
+// oavsett datum). null om luckan är öppen.
+export function lockReason(content, n, today, solvedDays) {
+  if (dayDate(content, n) > today) return 'date';
+  if (n > 1 && !solvedDays.has(n - 1)) return 'previous';
+  return null;
+}
 function dayStatus(content, n, today, solvedDays) {
-  const date = dayDate(content, n);
-  if (date > today) return 'locked';
+  if (lockReason(content, n, today, solvedDays)) return 'locked';
   if (solvedDays.has(n)) return 'solved';
-  return date === today ? 'today' : 'archive';
+  return dayDate(content, n) === today ? 'today' : 'archive';
 }
 
 const isPostEvent = e => e.kind === 'fragment' || e.kind === 'photo';
@@ -423,7 +430,7 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
   const date = dayDate(content, n);
   const solvedDays = new Set(solves.map(s => s.day));
   const status = dayStatus(content, n, today, solvedDays);
-  if (status === 'locked') throw new Error('framtida lucka');
+  if (status === 'locked') throw new Error('låst lucka');
   const solve = solves.find(s => s.day === n) || null;
   // Arkivläge: luckan är passerad, oavsett om den sedan lösts i efterhand.
   const archiveMode = date < today;
@@ -508,6 +515,8 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
     board,
     hints, hintsUsed, hintsTotal: hintTexts.length,
     lockOpen: !solve && (archiveMode || allLit),
+    // Nästa lucka, om den finns: öppen när den här är löst och dess dag har kommit.
+    next: n < content.days.length ? { day: n + 1, open: !lockReason(content, n + 1, today, solvedDays) } : null,
     stars: computeStars(solves, events),
     attemptsLeft: Math.max(0, MAX_ATTEMPTS_PER_DAY - myAttempts)
   };
@@ -533,7 +542,11 @@ export function buildStateView({ content, today, now = new Date(), me, players, 
   const days = content.days.map(d => {
     const status = dayStatus(content, d.day, today, solvedDays);
     const out = { day: d.day, status };
-    if (status === 'locked') return out;
+    // Datum har kommit men föregående lucka är olöst: säg vilken som väntar.
+    if (status === 'locked') {
+      if (lockReason(content, d.day, today, solvedDays) === 'previous') out.waitingFor = d.day - 1;
+      return out;
+    }
     out.title = d.title || '';
     const solve = solves.find(s => s.day === d.day);
     if (solve) out.solvedMode = solve.mode;
@@ -837,10 +850,16 @@ function createRouter({ store, content, now, adminSecret, listProfiles, loadErro
 
   // Luckans nummer ur URL:en. Svarar själv 404/403 och returnerar null
   // för okända och framtida luckor (datumlåset gäller alla anrop).
-  function openDayNumber(req, res) {
+  // Låset gäller alla anrop: en framtida lucka, eller en lucka vars
+  // föregående lucka inte är löst, skickas aldrig och går inte att ändra.
+  async function openDayNumber(req, res) {
     const n = Number(req.params.n);
     if (!Number.isInteger(n) || n < 1 || n > content.days.length) { res.status(404).json({ error: 'ingen sådan lucka' }); return null; }
-    if (dayDate(content, n) > today()) { res.status(403).json({ error: 'locked' }); return null; }
+    if (dayDate(content, n) > today()) { res.status(403).json({ error: 'locked', reason: 'date' }); return null; }
+    if (n > 1) {
+      const solved = new Set((await store.listSolves()).map(x => x.day));
+      if (!solved.has(n - 1)) { res.status(403).json({ error: 'locked', reason: 'previous', waitingFor: n - 1 }); return null; }
+    }
     return n;
   }
   async function dayView(n, p) {
@@ -851,7 +870,7 @@ function createRouter({ store, content, now, adminSecret, listProfiles, loadErro
   const dayRoute = (name, fn) => async (req, res) => {
     try {
       const p = await player(req, res); if (!p) return;
-      const n = openDayNumber(req, res); if (n == null) return;
+      const n = await openDayNumber(req, res); if (n == null) return;
       await fn(req, res, p, n);
     } catch (e) { console.error('Kalendern: fel i ' + name + ':', e.message); res.status(500).json({ error: 'serverfel' }); }
   };

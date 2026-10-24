@@ -11,8 +11,10 @@ Den här filen beskriver spelmotorn. Det riktiga innehållet (berättelse, gåto
 ## 1. Kärnmekanik
 
 ### En lucka per dag
-- Lucka *N* öppnas kl. 00:00 svensk tid (Europe/Stockholm) den *N*:e december. Startdatum anges i innehållsfilen (`start_date`).
-- Framtida luckor går inte att öppna. Det kontrolleras **på servern**, aldrig bara i klienten.
+- Lucka *N* öppnas tidigast kl. 00:00 svensk tid (Europe/Stockholm) dag *N*, räknat från startdatumet i innehållsfilen (`start_date`).
+- **Luckorna löses i ordning.** Lucka *N* (*N* > 1) öppnas inte förrän lucka *N* − 1 är löst, oavsett datum. En lucka är alltså öppen när både dess dag har kommit och den föregående är löst.
+- Löses lucka *N* − 1 i efterhand öppnas lucka *N* direkt. Är det fortfarande lucka *N*:s dag är den dagens lucka (alla fem lyktor och +3 går att få); har dagen passerat är den en arkivlucka.
+- Framtida och spärrade luckor går inte att öppna eller ändra. Det kontrolleras **på servern**, aldrig bara i klienten.
 
 ### Fem lappar
 - Varje lucka har en lapp (`fragment`) per spelare. Spelaren ser bara sin egen lapp.
@@ -109,6 +111,7 @@ Designen finns som mockup. Färger och typsnitt (Nattågets tema, som används n
   - **Löst:** mörk med guldkant och etiketten ”Alla fem” eller ”Arkiv”.
   - **Olöst arkiv:** som löst men utan guldkant, etikett ”Olöst”.
   - **Låst (framtida):** dämpad med hänglås.
+  - **Väntar på föregående** (dagen har kommit men lucka *N* − 1 är olöst): streckad kant och ”Lös <lucka> *N* − 1 först”. Ett tryck leder till luckan som väntar.
 - Under rutnätet: lagets packning (föremål), om det finns några.
 - Före startdatum: en ”Kommer <startdatum>”-sida med kalenderns titel, en tänd lykta eller ett ljus, en nedräkning (dagar, timmar, minuter, sekunder) till midnatt svensk tid det första datumet, och prologen (`prologue`). Nedräkningen utgår från serverns klocka (`now` i `/state`), så en felställd telefon räknar ändå rätt. Vid noll står det ”Nu öppnas <lucka> 1 …” och sidan frågar servern igen.
 - Luckan heter i texterna temats ord i singular (”Vagn 3”, ”Rum 3”), och tillbakaknappen har temats text.
@@ -142,7 +145,8 @@ En löst lucka är facit: hela gåtan visas. Uppifrån och ned:
 - **Alla fem lappar**, utan frost, med `reveal` för fotouppgifter. Lappar som aldrig lades ut är markerade.
 - **Tavlan** i tidsordning.
 - **Ledtrådarna**: de laget tog visas öppet med vem som tog dem. De som aldrig togs är hopfällda (”Ledtråd 3 · behövdes inte”) och fälls ut med ett tryck.
-- Knapp ”Tillbaka till tåget”.
+- ”Vidare till <lucka> *N* + 1” om nästa lucka är öppen, annars ”<Lucka> *N* + 1 öppnas <datum>.” under knappen.
+- Knapp med temats tillbakatext (”Tillbaka till tåget”).
 
 ---
 
@@ -304,7 +308,9 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 | POST | `/admin/reset` | `{secret}`. Tömmer den aktiva kalenderns händelser, foton och lösningar, men inte spelarna och inget från andra kalendrar. Bara för test |
 
 ### Vad servern får skicka för en lucka
-- Aldrig en framtida lucka (inte ens till admin).
+- Aldrig en framtida lucka (inte ens till admin), och aldrig en lucka vars föregående lucka är olöst. Båda svarar 403 med bara `{"error": "locked", "reason": "date"}` respektive `{"error": "locked", "reason": "previous", "waitingFor": N − 1}`, för läsning och för alla ändringar (lapp, foto, anteckning, ledtråd, lås).
+- I `/state` har en låst lucka bara `day` och `status`, plus `waitingFor` när den väntar på föregående lucka.
+- `next`: `{day, open}` för nästa lucka (eller `null` för den sista), så att den lösta vyn kan visa ”Vidare till …”.
 - Aldrig `answer`.
 - `intro`, `title`, `lock` (utan svaret), `requires_items` och vilka som saknas.
 - Spelarens **egen** lapp. För `photo_task`: `reveal` bara efter att spelaren lagt upp foto, i arkivläge eller när luckan är löst.
