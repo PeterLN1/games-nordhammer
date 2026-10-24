@@ -136,7 +136,7 @@ GeoJSON-filen ut behöver listan genereras om.
 
 Använder samma delade Railway/Supabase-backend (`server/index.js`) som
 Ordlek och Mahjong, mode `"streetview"`. Till skillnad från de andra
-spelen rankas topplistan efter **flest → färst gissningar** (med tid som
+spelen rankas topplistan efter **färst gissningar först** (med tid som
 utslag), inte tid — se `sortBy=moves` på `/api/leaderboard` samt
 `store.topByMoves()` i `server/index.js`. Namnet hämtas automatiskt från
 den valda "Vem spelar?"-profilen (`shared/profile.js`); spelet ber om en

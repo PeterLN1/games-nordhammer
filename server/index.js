@@ -177,7 +177,7 @@ if (DATABASE_URL) {
         );
         return r.rows;
       },
-      // Som top(), men rankar på flest -> färst gissningar (moves) med tid
+      // Som top(), men rankar på färst gissningar (moves) först, med tid
       // som utslagstiebreak — för spel där antal försök är huvudmåttet
       // (t.ex. "Var är jag?") snarare än tid.
       async topByMoves(mode, tiles, limit) {
@@ -420,7 +420,7 @@ app.get('/api/leaderboard', async (req, res) => {
     const tiles = parseInt(req.query.tiles, 10);
     const mode = MODES.has(req.query.mode) ? req.query.mode : 'classic';
     if (!(tiles > 0)) return res.status(400).json({ error: 'tiles kravs' });
-    // sortBy=moves: rankar flest -> färst gissningar (tid som tiebreak) —
+    // sortBy=moves: rankar färst gissningar först (tid som tiebreak) —
     // för spel som "Var är jag?" där antal försök är huvudmåttet, inte tid.
     const scores = req.query.sortBy === 'moves'
       ? await store.topByMoves(mode, tiles, limit)
