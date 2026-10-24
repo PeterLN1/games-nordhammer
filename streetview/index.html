@@ -822,11 +822,74 @@
       });
     }
 
+    // ---- Sparat läge ----
+    // Pågående spel sparas i localStorage så man fortsätter där man var om
+    // man går tillbaka till hubben och in igen. Speltiden sparas som
+    // förfluten tid, så tiden man är borta räknas inte.
+    var SAVE_KEY = 'streetview:save';
+    var roundDone = false; // rundan avgjord, resultatrutan visas/väntar
+    function saveGame(){
+      if (!currentTarget || !gameStartedAt || !finalOverlay.classList.contains('hidden')) return;
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify({
+          v: 1,
+          results: results,
+          usedCountries: Array.from(usedCountries),
+          currentRound: currentRound,
+          currentTarget: currentTarget,
+          attemptsThisRound: attemptsThisRound,
+          roundGuesses: roundGuesses.map(function(g){ return { code: g.code, name: g.name, km: isFinite(g.km) ? g.km : null }; }),
+          roundDone: roundDone,
+          elapsedMs: Date.now() - gameStartedAt
+        }));
+      } catch(e){}
+    }
+    function clearSave(){ try { localStorage.removeItem(SAVE_KEY); } catch(e){} }
+    function loadSave(){
+      try {
+        var s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+        if (s && s.v === 1 && s.currentTarget && s.currentTarget.pano && s.currentRound >= 1) return s;
+      } catch(e){}
+      return null;
+    }
+    window.addEventListener('pagehide', saveGame);
+    document.addEventListener('visibilitychange', function(){ if (document.hidden) saveGame(); });
+
+    function restoreGame(s){
+      results = s.results || [];
+      usedCountries = new Set(s.usedCountries || []);
+      currentRound = s.currentRound;
+      currentTarget = s.currentTarget;
+      gameStartedAt = Date.now() - (s.elapsedMs || 0);
+      roundPill.textContent = 'Runda ' + currentRound + '/' + TOTAL_ROUNDS;
+      resetMapForRound();
+      attemptsThisRound = s.attemptsThisRound || 0;
+      guessCounter.textContent = 'Gissningar: ' + attemptsThisRound + '/' + MAX_GUESSES_PER_ROUND;
+      roundGuesses = (s.roundGuesses || []).map(function(g){ return { code: g.code, name: g.name, km: g.km == null ? Infinity : g.km }; });
+      roundGuesses.forEach(function(g){ wrongCodesThisRound[g.code] = true; });
+      renderGuessList();
+      roundDone = !!s.roundDone && results.length === currentRound;
+      if (roundDone) revealCode = currentTarget.code;
+      refreshGlobeColors();
+      refreshGlobeFlags();
+      renderPanorama(currentTarget);
+      loadingOverlay.classList.add('hidden');
+      if (roundDone){
+        setMapVisible(true);
+        if (globeInstance) globeInstance.pointOfView({ lat: currentTarget.lat, lng: currentTarget.lng, altitude: 1.4 }, 0);
+        showRoundResult(results[results.length - 1]);
+      } else {
+        setMapVisible(false);
+      }
+    }
+
     // ---- Rundflöde ----
     async function startRound(){
       currentRound++;
       roundPill.textContent = 'Runda ' + currentRound + '/' + TOTAL_ROUNDS;
       attemptsThisRound = 0;
+      roundDone = false;
+      currentTarget = null; // inget att spara förrän nästa plats är laddad
       guessCounter.textContent = 'Gissningar: 0/' + MAX_GUESSES_PER_ROUND;
       resetMapForRound();
       setMapVisible(false);
@@ -849,6 +912,7 @@
       currentTarget = target;
       renderPanorama(target);
       loadingOverlay.classList.add('hidden');
+      saveGame();
     }
 
     retryBtn.addEventListener('click', loadRound);
@@ -873,6 +937,7 @@
         finishRound(false);
         return;
       }
+      saveGame();
       showToast('Fel! Försök igen.');
     }
 
@@ -881,6 +946,8 @@
     // hur långt ifrån ens gissningar var.
     function finishRound(solved){
       results.push({ code: currentTarget.code, nameSv: currentTarget.nameSv, guesses: attemptsThisRound, solved: solved });
+      roundDone = true;
+      saveGame();
       revealCode = currentTarget.code;
       refreshGlobeColors();
       refreshGlobeFlags();
@@ -940,6 +1007,7 @@
       document.getElementById('finalGuesses').textContent = totalGuesses;
       document.getElementById('finalTime').textContent = fmtTime(seconds);
       finalOverlay.classList.remove('hidden');
+      clearSave();
       submitScore(totalGuesses, seconds);
     }
 
@@ -1045,6 +1113,8 @@
         return;
       }
       await ensureProfile();
+      var saved = loadSave();
+      if (saved){ restoreGame(saved); return; }
       gameStartedAt = Date.now();
       startRound();
     }

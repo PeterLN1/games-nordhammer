@@ -23,6 +23,10 @@ drag, zooma med scroll/pinch).
 - 5 rundor per spel. Totalt antal gissningar (lägre är bättre, tid som
   utslag vid lika) skickas automatiskt till en global topplista — spela
   hur många gånger du vill, ingen daglig begränsning.
+- Ett pågående spel sparas i webbläsaren (`localStorage`, nyckel
+  `streetview:save`) — går man tillbaka till hubben och in igen fortsätter
+  man på samma runda, bild och gissningar. Tiden man är borta räknas inte
+  in i speltiden. Sparningen tas bort när spelet är klart.
 
 ## Skaffa en Google Maps API-nyckel
 
