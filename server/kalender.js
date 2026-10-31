@@ -59,6 +59,17 @@ export function readEnv(env = process.env) {
 }
 
 /* ---------- Innehåll ---------- */
+// Krypterar innehållet till samma format som decryptContent läser
+// ({ v, alg, iv, tag, data }). Används av server/tools/kalender-kryptera.js.
+export function encryptContent(content, keyB64) {
+  const key = Buffer.from(keyB64, 'base64');
+  if (key.length !== 32) throw new Error('nyckeln ska vara 32 byte i base64');
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const data = Buffer.concat([c.update(JSON.stringify(content), 'utf8'), c.final()]);
+  return { v: 1, alg: 'aes-256-gcm', iv: iv.toString('base64'), tag: c.getAuthTag().toString('base64'), data: data.toString('base64') };
+}
+
 export function decryptContent(file, keyB64) {
   const key = Buffer.from(keyB64, 'base64');
   const d = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(file.iv, 'base64'));

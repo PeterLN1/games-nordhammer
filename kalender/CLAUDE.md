@@ -22,6 +22,11 @@ Peter spelar själv. Det riktiga innehållet (berättelse, lappar, ledtrådar, s
 
 Felmeddelanden från `checkContent()` och innehållsladdningen får **aldrig** innehålla något ur filen — bara dag, plats, fält och låstyp. Det finns tester som kontrollerar det; håll dem gröna.
 
+## Skrivguiden måste följa motorn
+Innehållet skrivs av en annan Claude-session utifrån [`INNEHALL.md`](INNEHALL.md). Den sessionen vet bara det som står där.
+- **Varje gång motorn får något nytt eller ändrat** — en lås- eller lapptyp, ett fält, en regel i `checkContent()`, gissningsskyddet, ett verktyg — uppdatera `INNEHALL.md` i samma commit. Lägg också till ett exempel i `server/kalender/sample-verktyg.json` när det är något nytt att använda.
+- `server/tools/kalender-kontroll.js` och `kalender-kryptera.js` körs av den som skriver innehållet (eller av Peter), aldrig av dig mot riktigt innehåll. Deras utskrift får aldrig innehålla något ur filen eller nyckeln; testerna i `server/test/kalender-verktygsprogram.test.js` kontrollerar det.
+
 ## Säkerhetsreglerna i servern
 Reglerna i SPEC.md under *Vad servern får skicka* är det som gör spelet möjligt att spela. Skriv tester för dem i fas 1:
 - en framtida lucka returnerar 403

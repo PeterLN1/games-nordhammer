@@ -197,6 +197,11 @@ Ingen lapp får renderas som rå HTML.
 ```
 `stages` ersätter `lock` och `answer` (minst två steg). `after` visas när steget är löst. Ett löst mellansteg sparas som händelsen `stage`. Servern skickar bara låset som gäller nu, och mellanspel och svar för de lås som redan är öppnade (`stage: {index, total}`, `interludes`). En löst lucka skickar alla svar (`solutions`). Felförsök på tavlan visar vilket lås de gällde. Sidan skickar med vilket lås den svarar på, så att ett svar på ett lås som någon annan just öppnat inte räknas som ett felförsök (409 `stage_already_open`).
 
+### Skrivguide och verktyg
+[`INNEHALL.md`](INNEHALL.md) är guiden för den som skriver innehåll: formatet, lås- och lapptyperna, kontrollens regler, gissningsskyddet och råd för bra luckor. Två verktyg hör till:
+- `cd server && npm run kontroll -- <fil.json>`: samma kontroll som `/admin/check`, på en klartextfil, plus en översikt (låstyper, försök per dag, föremål). Skriver aldrig ut något ur filen.
+- `cd server && CONTENT_KEY=<nyckel> npm run kryptera -- <fil.json> [ut.enc]`: kontrollerar, krypterar till `<id>.enc`, dekrypterar och jämför. Skriver aldrig ut nyckeln eller innehållet. `--ny-nyckel` skriver ut en ny slumpad nyckel.
+
 ### Testkalendrar
 `server/kalender/sample.json` (id `prov`) är grundtestet. `server/kalender/sample-verktyg.json` (id `prov-verktyg`) provar ryggsäcken, det genomskinliga kortet, flera lås, symbollås, rutlås, hemlig del och återkoppling. Den väljs med `KALENDER_CONTENT=sample-verktyg` (lokalt: startkonfigurationen `kalender-verktyg`).
 

@@ -6,7 +6,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "kontroll": "node tools/kalender-kontroll.js",
+    "kryptera": "node tools/kalender-kryptera.js"
   },
   "engines": {
     "node": ">=18"
