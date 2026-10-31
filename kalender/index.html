@@ -270,6 +270,67 @@
   .story li { display: flex; gap: 10px; align-items: flex-start; color: var(--soft); }
   .story li::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--glow); margin-top: 9px; }
   .new-item { border: 1px solid var(--glow); }
+  button.item { width: 100%; text-align: left; border: 0; color: inherit; font: inherit; cursor: pointer; }
+  button.item .more { margin-left: auto; color: var(--muted); font-size: 13px; align-self: center; }
+
+  /* ---------- Ryggsäcken (föremål med innehåll) ---------- */
+  .bag-btn { position: relative; }
+  .bag-btn .count { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; border-radius: 10px; background: var(--glow); color: var(--on-glow); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
+  .sheet-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.55); display: flex; align-items: flex-end; justify-content: center; }
+  .sheet {
+    width: 100%; max-width: 520px; max-height: 88vh; overflow: auto; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 18px 18px 0 0; padding: 16px 16px calc(env(safe-area-inset-bottom) + 20px); animation: enter .3s ease-out both;
+  }
+  .sheet-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .sheet-head h2 { flex: 1; font-size: 24px; }
+  .item-detail { background: var(--surface); border-radius: 14px; padding: 14px; margin-top: 10px; }
+  .item-detail .paper { transform: none; margin-top: 10px; }
+  .item-tag { display: inline-block; font-size: 12px; color: var(--glow); border: 1px solid rgba(var(--glow-rgb), .5); border-radius: 999px; padding: 2px 8px; margin-top: 6px; }
+
+  /* ---------- Genomskinligt kort över en bild ---------- */
+  .svg-stack { position: relative; width: 100%; max-width: 420px; margin: 0 auto; }
+  .svg-stack > img:first-child { display: block; width: 100%; height: auto; }
+  .svg-stack .overlay-img { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; transition: transform .25s; }
+  .overlay-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip-btn {
+    min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid rgba(42,33,24,.35); background: rgba(255,255,255,.35);
+    color: inherit; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .chip-btn[aria-pressed="true"] { background: #2A2118; color: #F4EBDD; }
+  .sheet .chip-btn, .interlude .chip-btn { border-color: var(--border); background: transparent; color: var(--text); }
+  .sheet .chip-btn[aria-pressed="true"], .interlude .chip-btn[aria-pressed="true"] { background: var(--glow); color: var(--on-glow); border-color: var(--glow); }
+
+  /* ---------- Hemlig del på lappen ---------- */
+  .private { margin-top: 10px; padding: 8px 10px; border: 1.5px dashed rgba(42,33,24,.45); border-radius: 6px; }
+  .private .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; opacity: .65; margin-bottom: 4px; }
+
+  /* ---------- Lås i flera steg ---------- */
+  .interlude { background: var(--surface); border-radius: 16px; padding: 16px; border: 1px solid rgba(var(--glow-rgb), .45); }
+  .interlude + .interlude { margin-top: 10px; }
+  .interlude .opened { color: var(--glow); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+  .interlude .ans { font-family: var(--serif); font-size: 22px; margin: 4px 0 8px; overflow-wrap: anywhere; }
+  .interlude .txt { color: var(--soft); white-space: pre-wrap; }
+  .interlude .svg-stack { margin-top: 10px; border-radius: 8px; overflow: hidden; background: var(--paper); }
+  .stage-pill { margin-left: auto; font-size: 13px; color: var(--muted); }
+  .solutions { list-style: none; padding: 0; margin: 0 0 6px; color: var(--soft); text-align: center; }
+
+  /* ---------- Symbol-, rut- och väglås ---------- */
+  .seq-slots { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .seq-slot {
+    width: 58px; height: 58px; border-radius: 10px; border: 1px dashed var(--border); background: var(--surface-dark);
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; padding: 2px;
+  }
+  .seq-slot.filled { border-style: solid; border-color: var(--glow); }
+  .seq-slot img, .palette img { width: 40px; height: 40px; }
+  .palette { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 14px; }
+  .palette button {
+    min-width: 64px; min-height: 52px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-dark);
+    color: var(--text); font: inherit; font-weight: 600; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  .palette button[disabled] { opacity: .35; cursor: default; }
+  .coord button .ord { font-size: 15px; }
+  .grid-tools { display: flex; justify-content: center; margin: -4px 0 12px; }
+  .att-fb { color: var(--muted); font-size: 13px; margin-left: 6px; }
 
   /* ---------- Meddelandesidor ---------- */
   .message { text-align: center; padding-top: 18vh; }
@@ -390,6 +451,7 @@
     unlock: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 017.6-1.7"/></svg>',
     check: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
     camera: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+    close: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     bag: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1.2 12H6.2z"/><path d="M9 8V6a3 3 0 016 0v2"/></svg>',
     train: '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14M9 21l-2 0M15 21h2M8 17l-2 4M16 17l2 4"/><circle cx="9" cy="14" r=".8" fill="currentColor"/><circle cx="15" cy="14" r=".8" fill="currentColor"/></svg>',
     candle: '<svg class="candle" viewBox="0 0 40 56" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path class="flame" stroke="none" d="M20 4c3.2 4.2 4.5 7 4.5 9.6a4.5 4.5 0 01-9 0c0-2.6 1.3-5.4 4.5-9.6z"/><path d="M20 17v4" stroke-linecap="round"/><path class="wax" stroke="none" d="M14 22h12v24H14z"/><path d="M14 22h12v24H14z"/><path d="M26 26c0 3-1.6 3.6-1.6 6" stroke-linecap="round"/><path d="M9 46h22v4H9z" fill="currentColor"/></svg>',
@@ -555,7 +617,7 @@
         el('div', { class: 'stat' }, el('div', { class: 'label', text: 'Lagets stjärnor' }), el('div', { class: 'value' }, el('span', { style: 'color:var(--glow)' }, icon('star')), String(s.stars))),
         el('div', { class: 'stat' }, el('div', { class: 'label', text: 'Öppnade ' + T.door.plural }), el('div', { class: 'value' }, String(s.openedCount), el('small', { text: '/ ' + s.totalDays })))),
       el('nav', { class: 'grid', 'aria-label': 'Luckor' }, cells),
-      s.items && s.items.length ? el('section', { class: 'packing' }, el('h2', { text: 'Lagets packning' }), s.items.map(itemCard)) : null,
+      s.items && s.items.length ? el('section', { class: 'packing' }, el('h2', { text: 'Ryggsäcken' }), s.items.map(function(it){ return itemCard(it, false, s.items); })) : null,
       el('p', { class: 'who' }, 'Du spelar som ', el('b', { text: me ? me.name : '' }), ' · ', el('button', { text: 'Byt profil', onclick: function(){ NordhammerProfile.openSwitcher(function(){ refresh(); }); } }))
     ]);
   }
@@ -603,16 +665,60 @@
   }
   setInterval(tickCountdown, 1000);
 
-  function itemCard(it, isNew){
-    return el('div', { class: 'item' + (isNew ? ' new-item' : '') }, icon('bag'),
-      el('div', null, el('div', { class: 'name', text: it.name }), it.description ? el('div', { class: 'desc', text: it.description }) : null));
+  // Ett föremål. Har det innehåll går det att öppna i ryggsäcken.
+  function itemCard(it, isNew, items){
+    var body = [icon('bag'), el('div', null, el('div', { class: 'name', text: it.name }), it.description ? el('div', { class: 'desc', text: it.description }) : null)];
+    if (!it.content) return el('div', { class: 'item' + (isNew ? ' new-item' : '') }, body);
+    return el('button', { type: 'button', class: 'item' + (isNew ? ' new-item' : ''), onclick: function(){ openBackpack(items || [it], it.id); } },
+      body, el('span', { class: 'more', text: 'Visa' }));
   }
+
+  /* ---------- Ryggsäcken (B1) ----------
+     Lagets föremål. Ett föremål med innehåll (en tabell, en karta, ett
+     genomskinligt kort) kan öppnas och användas igen i senare luckor. */
+  var sheet = null;
+  function closeBackpack(){ if (sheet) { sheet.remove(); sheet = null; document.body.style.overflow = ''; } }
+  function openBackpack(items, openId){
+    closeBackpack();
+    var shown = openId || null;
+    var list = el('div');
+    function draw(){
+      list.textContent = '';
+      if (!items.length) add(list, el('p', { class: 'empty', text: 'Ryggsäcken är tom. Föremål hittar ni när luckor löses.' }));
+      items.forEach(function(it){
+        var open = shown === it.id;
+        add(list, el('button', { type: 'button', class: 'item' + (open ? ' new-item' : ''), 'aria-expanded': it.content ? String(open) : null,
+          onclick: function(){ if (it.content) { shown = open ? null : it.id; draw(); } } },
+          icon('bag'), el('div', null, el('div', { class: 'name', text: it.name }), it.description ? el('div', { class: 'desc', text: it.description }) : null,
+            it.content && it.content.overlay ? el('span', { class: 'item-tag', text: 'Genomskinligt kort' }) : null),
+          it.content ? el('span', { class: 'more', text: open ? 'Dölj' : 'Visa' }) : null));
+        if (open && it.content) {
+          add(list, el('div', { class: 'item-detail' },
+            it.content.overlay ? el('p', { class: 'desc', text: 'Kortet är genomskinligt. Under bilderna på lapparna finns knappen ”Lägg över”, så att ni kan lägga kortet över dem, vrida det och spegelvända det.' }) : null,
+            el('div', { class: 'paper' }, it.content.text ? el('div', { class: 'frag-text', text: it.content.text }) : null,
+              it.content.svg ? svgFigure(it.content.svg, it.name, 'frag-svg', it.id) : null)));
+        }
+      });
+    }
+    draw();
+    sheet = el('div', { class: 'sheet-backdrop', onclick: function(e){ if (e.target === sheet) closeBackpack(); } },
+      el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Ryggsäcken' },
+        el('div', { class: 'sheet-head' }, el('h2', { text: 'Ryggsäcken' }),
+          el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Stäng', onclick: closeBackpack }, icon('close'))),
+        list));
+    document.body.appendChild(sheet);
+    document.body.style.overflow = 'hidden';
+  }
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeBackpack(); });
+  window.addEventListener('hashchange', closeBackpack);
 
   /* --- Luckan --- */
   function topbar(d){
     return el('div', { class: 'topbar' },
       el('a', { class: 'icon-btn', href: '#', 'aria-label': T.back }, icon('back')),
       el('div', { class: 'date', text: prettyDate(d.date) }),
+      d.backpack && d.backpack.length ? el('button', { type: 'button', class: 'icon-btn bag-btn', 'aria-label': 'Ryggsäcken, ' + d.backpack.length + ' föremål', onclick: function(){ openBackpack(d.backpack); } },
+        icon('bag'), el('span', { class: 'count', text: d.backpack.length })) : null,
       el('div', { class: 'stars-pill', 'aria-label': d.stars + ' stjärnor' }, icon('star'), String(d.stars)));
   }
   // Vad som visades förra gången, per kalender och lucka, så att ett ljus
@@ -662,12 +768,61 @@
     }
     return g;
   }
+  // Lagets genomskinliga kort (B2), från ryggsäcken i senaste vyn.
+  function overlayItems(){
+    var bp = (view.data && view.data.backpack) || [];
+    return bp.filter(function(it){ return it.content && it.content.overlay && it.content.svg; });
+  }
+  // Vilket kort som ligger över vilken bild, och hur det är vridet. Minns
+  // per bild så att 20-sekundersuppdateringen inte tar bort kortet.
+  var overlayState = {};
+  function svgKey(svg){ var h = 0; for (var i = 0; i < svg.length; i++) h = (h * 31 + svg.charCodeAt(i)) | 0; return 'k' + h; }
+  // En bild (svg) där lagets genomskinliga kort kan läggas över, vridas och spegelvändas.
+  function svgFigure(svg, alt, cls, skipId){
+    var key = svgKey(svg);
+    var cards = overlayItems().filter(function(it){ return it.id !== skipId; });
+    var st = overlayState[key] && cards.some(function(c){ return c.id === overlayState[key].id; }) ? overlayState[key] : null;
+    var wrap = el('div', { class: 'svg-stack' });
+    var fig = el('div', null, wrap);
+    function draw(){
+      wrap.textContent = '';
+      add(wrap, el('img', { class: cls || 'frag-svg', src: svgDataUri(svg), alt: alt }));
+      if (st) {
+        var card = cards.filter(function(c){ return c.id === st.id; })[0];
+        add(wrap, el('img', { class: 'overlay-img', src: svgDataUri(card.content.svg), alt: card.name + ' ovanpå',
+          style: 'transform: rotate(' + st.rot + 'deg) scaleX(' + (st.flip ? -1 : 1) + ')' }));
+      }
+      bar.textContent = '';
+      cards.forEach(function(c){
+        add(bar, el('button', { type: 'button', class: 'chip-btn', 'aria-pressed': st && st.id === c.id ? 'true' : 'false',
+          onclick: function(){ st = st && st.id === c.id ? null : { id: c.id, rot: 0, flip: false }; overlayState[key] = st; draw(); } },
+          st && st.id === c.id ? 'Ta bort ' + c.name.toLowerCase() : 'Lägg över ' + c.name.toLowerCase()));
+      });
+      if (st) {
+        add(bar, el('button', { type: 'button', class: 'chip-btn', onclick: function(){ st.rot = (st.rot + 90) % 360; draw(); } }, 'Vrid'));
+        add(bar, el('button', { type: 'button', class: 'chip-btn', onclick: function(){ st.flip = !st.flip; draw(); } }, 'Spegelvänd'));
+      }
+    }
+    var bar = el('div', { class: 'overlay-bar' });
+    if (cards.length) add(fig, bar);
+    draw();
+    return fig;
+  }
+  // Text och/eller bild, t.ex. en lapps hemliga del eller ett mellanspel.
+  function pieceContent(x, alt){
+    var out = [];
+    if (x.text) out.push(el('div', { class: 'frag-text', text: x.text }));
+    if (x.svg) out.push(svgFigure(x.svg, alt || 'Bild'));
+    return out;
+  }
   function fragmentContent(f){
     var out = [];
     if (f.text) out.push(el('div', { class: 'frag-text', text: f.text }));
-    if (f.kind === 'svg' && f.svg) out.push(el('img', { class: 'frag-svg', src: svgDataUri(f.svg), alt: 'Bild på lappen' }));
+    if (f.kind === 'svg' && f.svg) out.push(svgFigure(f.svg, 'Bild på lappen'));
     if (f.kind === 'grid_map') out.push(gridMap(f));
     if (f.reveal) out.push(el('div', { class: 'reveal', text: f.reveal }));
+    // Hemlig del (B3): servern skickar den bara till ägaren — och till alla i arkivet eller när luckan är löst.
+    if (f.private) out.push(el('div', { class: 'private' }, el('div', { class: 'lbl', text: 'Hemlig del – bara ägaren ser den' }), pieceContent(f.private, 'Hemlig bild')));
     if (!out.length) out.push(el('div', { class: 'frag-text', text: '(Tom lapp)' }));
     return out;
   }
@@ -856,7 +1011,10 @@
           f ? el('div', { class: 'fragment' }, fragmentContent(f)) : null);
       }
       if (b.kind === 'note') return el('div', { class: 'post' }, head, el('div', { class: 'body', text: b.text }));
-      if (b.kind === 'attempt') return el('div', { class: 'post attempt' }, head, el('div', { class: 'body' }, 'provade ', el('b', { text: b.text })));
+      if (b.kind === 'attempt') return el('div', { class: 'post attempt' }, head, el('div', { class: 'body' }, 'provade ', el('b', { text: answerLabel(d, b.text, b.stage) }),
+        b.stage && d.stage ? el('span', { class: 'att-fb', text: '(lås ' + b.stage + ')' }) : null,
+        b.feedback ? el('span', { class: 'att-fb', text: '· ' + b.feedback.exact + ' rätt plats, ' + b.feedback.near + ' fel plats' }) : null));
+      if (b.kind === 'stage') return el('div', { class: 'post solve' }, head, el('div', { class: 'body', text: 'öppnade lås ' + b.stage }));
       if (b.kind === 'hint') {
         var h = d.hints[b.hint - 1];
         return el('div', { class: 'post' }, head, el('div', { class: 'body', text: 'tog ledtråd ' + b.hint + (h ? ': ' + h.text : '') }));
@@ -905,24 +1063,51 @@
     } else if (d.missingItems.length) {
       body = el('p', { class: 'lock-msg', text: 'Låset går inte att öppna än. Det behövs: ' + joinNames(d.missingItems.map(function(i){ return i.name || 'något som laget inte har hittat'; })) + '.' });
     } else if (d.attemptsLeft <= 0) {
-      body = el('p', { class: 'lock-msg', text: 'Du har använt dina tio försök idag. Någon annan i laget kan fortsätta.' });
+      body = el('p', { class: 'lock-msg', text: d.teamAttemptsLeft <= 0
+        ? 'Laget har använt dagens försök på det här låset. I morgon får ni nya.'
+        : 'Du har använt dina tio försök idag. Någon annan i laget kan fortsätta.' });
     } else {
       var input = lockInput(d);
       if (!input) body = el('p', { class: 'lock-msg', text: 'Det här låset går inte att visa.' });
       else body = el('form', { onsubmit: function(e){ e.preventDefault(); var a = input.read(); if (a) submitLock(a, input); else { shake(); input.focusFirst(); } } },
         input.node,
         el('button', { class: 'btn btn-primary btn-block', type: 'submit', text: 'Öppna låset' }),
-        el('p', { class: 'lock-foot', id: 'lock-foot', text: d.attemptsLeft < 10 ? 'Du har ' + d.attemptsLeft + ' försök kvar idag.' : '' }));
+        el('p', { class: 'lock-foot', id: 'lock-foot', text: attemptsText(d) }));
     }
     var mem = seenFor(d), justOpened = open && mem.lockOpen === false;
     mem.lockOpen = open;
     return el('section', null, el('div', { class: 'lock' + (open ? '' : ' closed') + (justOpened ? ' just-opened' : ''), id: 'lock' },
-      el('div', { class: 'lock-head' }, icon(open ? 'unlock' : 'lock'), el('h2', { text: 'Låset' })), body));
+      el('div', { class: 'lock-head' }, icon(open ? 'unlock' : 'lock'), el('h2', { text: d.stage ? 'Lås ' + d.stage.index : 'Låset' }),
+        d.stage ? el('span', { class: 'stage-pill', text: d.stage.index + ' av ' + d.stage.total }) : null), body));
+  }
+  function attemptsText(d){
+    if (d.teamAttemptsLeft <= 5 && d.teamAttemptsLeft < d.attemptsLeft + 1) return 'Laget har ' + d.teamAttemptsLeft + (d.teamAttemptsLeft === 1 ? ' försök' : ' försök') + ' kvar idag på det här låset.';
+    return d.attemptsLeft < 10 ? 'Du har ' + d.attemptsLeft + ' försök kvar idag.' : '';
+  }
+  // Ett svar som det visas: symbolernas namn i stället för id, rutor med mellanslag.
+  function answerLabel(d, text, stage){
+    var lock = d.lock;
+    if (stage && d.stage && stage !== d.stage.index && d.status !== 'solved') return text;
+    if (lock && lock.type === 'sequence' && lock.palette) {
+      return String(text).split(',').map(function(id){ var p = lock.palette.filter(function(x){ return x.id === id; })[0]; return p ? (p.label || id) : id; }).join(' · ');
+    }
+    return text;
+  }
+  // Mellanspelen (B5): det som visades när ett lås öppnades.
+  function interludeSection(d){
+    if (!d.interludes || !d.interludes.length) return null;
+    return el('section', null, d.interludes.map(function(it){
+      return el('div', { class: 'interlude', id: 'interlude-' + it.stage },
+        el('div', { class: 'opened', text: 'Lås ' + it.stage + ' öppnat' }),
+        el('div', { class: 'ans', text: it.solution }),
+        it.text ? el('p', { class: 'txt', text: it.text }) : null,
+        it.svg ? svgFigure(it.svg, 'Bild efter lås ' + it.stage) : null);
+    }));
   }
 
   // Varje låstyp ger { node, read() → svar eller null, clear(), focusFirst() }.
   function lockInput(d){
-    var lock = d.lock, key = d.day;
+    var lock = d.lock, key = d.day + ':' + (d.stage ? d.stage.index : 1);
     if (lock.type === 'digits' || lock.type === 'word') {
       var digits = lock.type === 'digits', boxes = [];
       for (var i = 0; i < (lock.length | 0); i++) {
@@ -967,6 +1152,8 @@
         focusFirst: function(){ buttons[0].focus({ preventScroll: true }); }
       };
     }
+    if (lock.type === 'sequence') return sequenceInput(lock, key);
+    if (lock.type === 'cells' || lock.type === 'path') return multiCellInput(lock, key);
     if (lock.type === 'choice') {
       var opts = (lock.options || []).map(String);
       if (!opts.length) return null;
@@ -985,6 +1172,81 @@
       };
     }
     return null;
+  }
+
+  // Symbollås (B6): välj symboler ur paletten i rätt ordning.
+  function symbolNode(p){ return p.svg ? [el('img', { src: svgDataUri(p.svg), alt: p.label || p.id }), p.label ? el('span', { text: p.label }) : null] : [el('span', { text: p.label || p.id })]; }
+  function sequenceInput(lock, key){
+    var n = Math.max(1, lock.length | 0), pal = lock.palette || [];
+    if (!Array.isArray(lockPick[key])) lockPick[key] = [];
+    var slots = el('div', { class: 'seq-slots', id: 'lock-boxes' }), palette = el('div', { class: 'palette', role: 'group', 'aria-label': 'Symboler' });
+    function byId(id){ return pal.filter(function(p){ return p.id === id; })[0]; }
+    function sync(){
+      var picked = lockPick[key];
+      slots.textContent = ''; palette.textContent = '';
+      for (var i = 0; i < n; i++) (function(i){
+        var p = picked[i] && byId(picked[i]);
+        add(slots, el('button', { type: 'button', class: 'seq-slot' + (p ? ' filled' : ''), 'aria-label': 'Plats ' + (i + 1) + (p ? ': ' + (p.label || p.id) + ', tryck för att ta bort' : ', tom'),
+          onclick: function(){ if (picked[i]) { picked.splice(i, 1); sync(); } } }, p ? symbolNode(p) : String(i + 1)));
+      })(i);
+      pal.forEach(function(p){
+        var used = picked.indexOf(p.id) >= 0;
+        add(palette, el('button', { type: 'button', disabled: picked.length >= n || (!lock.repeat && used), 'aria-label': p.label || p.id,
+          onclick: function(){ if (picked.length < n) { picked.push(p.id); sync(); } } }, symbolNode(p)));
+      });
+    }
+    sync();
+    return {
+      node: el('div', null, slots, palette),
+      read: function(){ return lockPick[key].length === n ? lockPick[key].join(',') : null; },
+      clear: function(){ lockPick[key] = []; sync(); },
+      focusFirst: function(){ var b = palette.querySelector('button:not([disabled])'); if (b) b.focus({ preventScroll: true }); }
+    };
+  }
+  // Rutlås (B7): cells = välj ett antal rutor i valfri ordning; path = tryck rutorna i ordning.
+  function multiCellInput(lock, key){
+    var cols = Math.max(1, Math.min(26, lock.cols | 0)), rows = Math.max(1, Math.min(30, lock.rows | 0)), count = Math.max(1, lock.count | 0), isPath = lock.type === 'path';
+    if (!Array.isArray(lockPick[key])) lockPick[key] = [];
+    var picked = el('p', { class: 'coord-picked', 'aria-live': 'polite' });
+    var grid = el('div', { class: 'coord', id: 'lock-boxes', role: 'grid', style: 'grid-template-columns: 22px repeat(' + cols + ', 1fr)' });
+    var buttons = [];
+    function sync(){
+      var sel = lockPick[key];
+      buttons.forEach(function(b){
+        var i = sel.indexOf(b.dataset.v);
+        b.setAttribute('aria-pressed', i >= 0 ? 'true' : 'false');
+        b.textContent = i < 0 ? '' : isPath ? String(i + 1) : b.dataset.v;
+      });
+      picked.textContent = sel.length
+        ? (isPath ? 'Vägen: ' + sel.join(' → ') : 'Valda rutor: ' + sel.join(', ')) + ' (' + sel.length + ' av ' + count + ')'
+        : (isPath ? 'Tryck rutorna i ordning, ' + count + ' stycken.' : 'Tryck på ' + count + ' rutor.');
+    }
+    function tap(v){
+      var sel = lockPick[key], i = sel.indexOf(v);
+      if (isPath) {
+        if (i === sel.length - 1) sel.pop();          // tryck på sista rutan igen = ångra
+        else if (i < 0 && sel.length < count) sel.push(v);
+      } else if (i >= 0) sel.splice(i, 1);
+      else if (sel.length < count) sel.push(v);
+      sync();
+    }
+    add(grid, el('span', { class: 'lbl' }));
+    for (var c = 0; c < cols; c++) add(grid, el('span', { class: 'lbl', text: colName(c) }));
+    for (var r = 1; r <= rows; r++) {
+      add(grid, el('span', { class: 'lbl', text: r }));
+      for (var k = 0; k < cols; k++) {
+        var v = colName(k) + r;
+        var b = el('button', { type: 'button', 'aria-label': 'Ruta ' + v, onclick: function(){ tap(this.dataset.v); } });
+        b.dataset.v = v; buttons.push(b); add(grid, b);
+      }
+    }
+    sync();
+    return {
+      node: el('div', null, grid, picked, el('div', { class: 'grid-tools' }, el('button', { type: 'button', class: 'chip-btn', style: 'border-color:var(--border);color:var(--text);background:transparent', onclick: function(){ lockPick[key] = []; sync(); } }, 'Börja om'))),
+      read: function(){ return lockPick[key].length === count ? lockPick[key].join(' ') : null; },
+      clear: function(){ lockPick[key] = []; sync(); },
+      focusFirst: function(){ buttons[0].focus({ preventScroll: true }); }
+    };
   }
 
   function wireBoxes(boxes, filter){
@@ -1033,6 +1295,7 @@
       d.status === 'archive' ? archiveFragmentsSection(d) : myFragmentSection(d),
       boardSection(d),
       noteSection(),
+      interludeSection(d),
       lockSection(d),
       hintSection(d)
     ]);
@@ -1068,14 +1331,14 @@
       el('p', { class: 'solved-meta', text: doorName(d.day) + ' · löst ' + s.time + ' · ' + (s.mode === 'together' ? 'alla fem' : 'i efterhand') }),
       el('header', { class: 'solved-head' },
         el('h1', { text: d.title }),
-        el('div', { class: 'lock-boxes', 'aria-label': 'Svaret: ' + d.solution },
-          d.lock.type === 'choice' ? el('div', { class: 'lock-box static wide', style: '--i:0', text: d.solution })
-            : answer.map(function(ch, i){ return el('div', { class: 'lock-box static', style: '--i:' + i, text: ch }); }))),
+        d.solutions ? el('ul', { class: 'solutions' }, d.solutions.slice(0, -1).map(function(sol, i){ return el('li', { text: 'Lås ' + (i + 1) + ': ' + sol }); })) : null,
+        el('div', { class: 'lock-boxes', 'aria-label': 'Svaret: ' + answerLabel(d, d.solution) }, solutionBoxes(d))),
       el('section', null, el('p', { class: 'intro', text: d.intro })),
       el('section', null, el('h2', { class: 'section-title', text: 'Ni löste uppgiften' }), el('p', { class: 'epilogue', text: d.epilogue.text })),
-      d.epilogue.item ? el('section', null, el('h2', { class: 'section-title', text: 'Nytt föremål' }), itemCard(d.epilogue.item, true)) : null,
+      d.epilogue.item ? el('section', null, el('h2', { class: 'section-title', text: 'Nytt föremål' }), itemCard(d.epilogue.item, true, d.backpack)) : null,
       el('section', null, el('h2', { class: 'section-title', text: 'Så här gick det till' }),
         el('ul', { class: 'story' }, d.story.map(function(line){ return el('li', { text: line }); }))),
+      interludeSection(d),
       solvedFragmentsSection(d),
       boardSection(d),
       solvedHintsSection(d),
@@ -1091,6 +1354,13 @@
     if (!d.next || d.next.open) return null;
     var nd = new Date(Date.parse(d.date + 'T12:00:00Z') + 86400000);
     return el('p', { class: 'next-hint', text: doorName(d.next.day) + ' öppnas ' + nd.getUTCDate() + ' ' + MONTHS[nd.getUTCMonth()] + '.' });
+  }
+  // Svaret som låsrutor, efter låstyp.
+  function solutionBoxes(d){
+    var t = d.lock.type, sol = String(d.solution || '');
+    if (t === 'choice') return el('div', { class: 'lock-box static wide', style: '--i:0', text: sol });
+    var parts = t === 'sequence' ? answerLabel(d, sol).split(' · ') : (t === 'cells' || t === 'path') ? sol.split(' ') : Array.from(sol);
+    return parts.map(function(p, i){ return el('div', { class: 'lock-box static' + (p.length > 1 ? ' wide' : ''), style: '--i:' + i, text: p }); });
   }
   function solvedFragmentsSection(d){
     return el('section', null,
@@ -1169,11 +1439,27 @@
     });
   }
   function submitLock(answer, input){
-    act('/solve', { answer: answer }).then(function(res){
+    var d0 = view.data;
+    act('/solve', { answer: answer, stage: d0 && d0.stage ? d0.stage.index : undefined }).then(function(res){
       if (!res) return;
       var b = res.body || {};
+      // Ett mellansteg öppnat (B5): låset öppnas, mellanspelet visas och nästa lås tar vid.
+      if (res.status === 200 && b.correct && b.stage && b.day && b.day.status !== 'solved') {
+        Object.keys(lockPick).forEach(function(k){ if (k.indexOf(view.day + ':') === 0) delete lockPick[k]; });
+        var lk = document.getElementById('lock');
+        var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (lk && !still) lk.classList.add('unlocking');
+        setTimeout(function(){
+          view.data = b.day; renderDay(view.data);
+          toast('Lås ' + b.stage + ' är öppet!');
+          var il = document.getElementById('interlude-' + b.stage);
+          if (il) { il.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' }); il.classList.add('enter'); }
+        }, lk && !still ? 900 : 0);
+        return;
+      }
+      if (b.error === 'stage_already_open') { view.data = b.day; renderDay(view.data); toast('Någon i laget hann öppna låset före dig.'); return; }
       if (res.status === 200 && b.correct) {
-        delete lockPick[view.day];
+        Object.keys(lockPick).forEach(function(k){ if (k.indexOf(view.day + ':') === 0) delete lockPick[k]; });
         var lock = document.getElementById('lock');
         var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (lock && !calm) lock.classList.add('unlocking');
@@ -1196,7 +1482,7 @@
         return;
       }
       if (b.error === 'already_solved') { view.data = b.day; renderDay(view.data); return; }
-      if (b.error === 'too_many_attempts') toast('Du har använt dina tio försök idag.');
+      if (b.error === 'too_many_attempts') toast(b.team ? 'Laget har använt dagens försök på det här låset.' : 'Du har använt dina tio försök idag.');
       else if (b.error === 'lock_closed') toast('Låset är inte öppet än.');
       else if (b.error === 'missing_items') toast('Laget saknar något för att öppna låset.');
       else if (!handleError(res)) toast('Något gick fel. Försök igen.');

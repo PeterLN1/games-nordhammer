@@ -27,6 +27,8 @@ Den här filen beskriver spelmotorn. Det riktiga innehållet (berättelse, gåto
 - När låset är öppet kan **vem som helst** slå in svaret.
 - Varje felaktigt försök visas på tavlan (”Simon provade 1397”). Det är en del av känslan av att spela tillsammans.
 - Löses luckan samma dag med alla fem lyktor tända blir den löst **tillsammans** (`mode: "together"`). Annars, alltså i en arkivlucka, blir den löst **i efterhand** (`mode: "archive"`).
+- **Gissningsskydd:** varje spelare har högst 10 försök per dag och lucka, och laget har högst en fjärdedel av låsets möjliga svar per dag och lås (minst 1, högst 50). Ett koordinatlås på 9 × 9 ger alltså laget 20 försök om dagen; ett vallås med fyra alternativ 1. `lock.max_attempts` kan sänka gränsen. Försöken räknas per dag (svensk tid), så en lucka kan aldrig låsas för gott — nästa dag finns nya försök. `/admin/check` varnar för lås med färre än fyra möjliga svar.
+- **Flera lås (B5):** en lucka kan ha flera lås i följd (`stages`). När ett lås öppnas visas ett mellanspel för alla (text och/eller bild) och nästa lås tar vid, som när man öppnar en låda i EXIT och hittar nya kort. Stjärnor och ”tillsammans” avgörs när sista låset öppnas. Ledtrådarna gäller hela luckan.
 
 ### Arkivluckor
 - En lucka som inte lösts före midnatt blir en **arkivlucka**.
@@ -43,7 +45,9 @@ Den här filen beskriver spelmotorn. Det riktiga innehållet (berättelse, gåto
   - Stjärnorna kan inte bli negativa. De räknas som summan av alla poster ovan, och blir summan negativ visas 0. Ledtrådar som tas när laget har 0 stjärnor blir alltså en skuld som dras av från stjärnor som laget får senare.
 
 ### Föremål
-- En lucka kan ge ett föremål (`epilogue.item`) när den löses. Föremålet hamnar i lagets packning.
+- En lucka kan ge ett föremål (`epilogue.item`) när den löses. Föremålet hamnar i lagets **ryggsäck**, som nås från kalendern och från en knapp i varje luckas toppfält.
+- **Föremål med innehåll (B1):** ett föremål kan ha `content` (text och/eller svg), till exempel en chiffertabell eller en karta, som laget öppnar i ryggsäcken och använder igen i senare luckor.
+- **Det genomskinliga kortet (B2):** ett föremål med `content.overlay: true` och en svg med genomskinlig bakgrund. Under varje bild på lapparna (och i mellanspel och ryggsäcken) finns knappen ”Lägg över …”, som lägger kortet ovanpå bilden. Kortet kan vridas 90° åt gången och spegelvändas. Kortet och bilden ska ha samma `viewBox`.
 - En lucka kan kräva föremål (`requires_items`). Den kan då inte lösas förrän föremålen finns, och visar vilka som saknas.
 - Lucka 24 är finalen och kräver normalt föremål från flera tidigare dagar.
 
@@ -159,6 +163,11 @@ En löst lucka är facit: hela gåtan visas. Uppifrån och ned:
 | `word` | `lock.length` rutor, bokstäver A–Ö | versaler, mellanslag bort |
 | `coordinate` | rutnät `lock.cols` × `lock.rows`, tryck på en ruta; kolumner A, B, C …, rader 1, 2, 3 … | t.ex. `C5` |
 | `choice` | knappar med `lock.options`; tryck för att välja, sedan ”Öppna låset” | exakt alternativ (bara mellanslag runt om tas bort) |
+| `sequence` (B6) | `lock.length` platser och en palett `lock.palette` (`[{id, label?, svg?}]`); tryck symbolerna i ordning, tryck på en plats för att ta bort. `lock.repeat: false` = varje symbol högst en gång | id:n med komma, t.ex. `rod,gul,gron,bla` |
+| `cells` (B7) | rutnät `cols` × `rows`; tryck på `lock.count` rutor i valfri ordning | rutorna sorterade, t.ex. `B2 D5 E3` |
+| `path` (B7) | rutnät `cols` × `rows`; tryck `lock.count` rutor i ordning (tryck på sista igen för att ångra) | rutorna i ordning, t.ex. `A1 A2 B2` |
+
+`lock.feedback: true` (B8, bara `digits` och `word`): varje felförsök visas på tavlan med hur många tecken som står på rätt plats och hur många som finns men står fel.
 
 Svaret jämförs efter normalisering på servern.
 
@@ -170,7 +179,22 @@ Svaret jämförs efter normalisering på servern.
 | `grid_map` | `text` (valfri), `cols`, `rows`, `cells` (`{"B3": "△", …}`). Ritas som ett rutnät med symbolerna, kolumner A– och rader 1– |
 | `photo_task` | `text` (uppgiften) och `reveal` (visas efter uppladdning). Knappen ”Ta foto” öppnar kameran; klienten skalar ned bilden (längsta sidan högst 1280 px) och sparar som JPEG under 600 kB. Fotot visas på tavlan |
 
+**Hemlig del (B3):** en lapp kan ha `private` (text och/eller svg). Den visas bara för ägaren — inte på tavlan när lappen läggs ut — så ägaren måste beskriva den för de andra. I arkivläge och när luckan är löst ser alla den.
+
 Ingen lapp får renderas som rå HTML.
+
+### Flera lås i en lucka (B5)
+```json
+"stages": [
+  { "lock": { "type": "word", "length": 5 }, "answer": "LARMA",
+    "after": { "text": "Skåpet glider upp …", "svg": "<svg …>" } },
+  { "lock": { "type": "sequence", "length": 4, "palette": [ … ] }, "answer": "rod,gul,gron,bla" }
+]
+```
+`stages` ersätter `lock` och `answer` (minst två steg). `after` visas när steget är löst. Ett löst mellansteg sparas som händelsen `stage`. Servern skickar bara låset som gäller nu, och mellanspel och svar för de lås som redan är öppnade (`stage: {index, total}`, `interludes`). En löst lucka skickar alla svar (`solutions`). Felförsök på tavlan visar vilket lås de gällde. Sidan skickar med vilket lås den svarar på, så att ett svar på ett lås som någon annan just öppnat inte räknas som ett felförsök (409 `stage_already_open`).
+
+### Testkalendrar
+`server/kalender/sample.json` (id `prov`) är grundtestet. `server/kalender/sample-verktyg.json` (id `prov-verktyg`) provar ryggsäcken, det genomskinliga kortet, flera lås, symbollås, rutlås, hemlig del och återkoppling. Den väljs med `KALENDER_CONTENT=sample-verktyg` (lokalt: startkonfigurationen `kalender-verktyg`).
 
 ---
 
@@ -302,7 +326,7 @@ Alla anrop skickar `profile` (profil-id). Okänd profil → 403.
 | GET | `/photo/:id?profile=` | Hämtar ett foto (rätt `Content-Type`, cachas privat i ett dygn). Bara för kopplade spelare (annars 403) och bara från öppnade luckor (annars 404) |
 | POST | `/day/:n/note` | `{profile, text}`, högst 280 tecken. Radbrytningar och kontrolltecken blir mellanslag. Svarar `{ok, day}` |
 | POST | `/day/:n/hint` | `{profile, n}` där `n` är numret på ledtråden spelaren vill ta (nästa i tur). Om någon hann före svarar servern 409 `hint_already_taken` med den nya vyn, så att två samtidiga tryck bara kostar en stjärna. Inga fler → 409 `no_more_hints`. Löst lucka → 409 `already_solved`. Går i dagens lucka och i arkivluckor. Svarar `{ok, day}` |
-| POST | `/day/:n/solve` | `{profile, answer}` → `{correct: bool, day}`. Felaktigt försök sparas som `attempt`. Högst 10 försök per spelare och dag (429). Stängt lås → 409 `lock_closed`, saknade föremål → 409 `missing_items`, redan löst → 409 `already_solved` |
+| POST | `/day/:n/solve` | `{profile, answer}` → `{correct: bool, day}`. Felaktigt försök sparas som `attempt`. Högst 10 försök per spelare och dag, och lagets gräns per lås och dag (429, `team: true` när det är lagets gräns som nåtts). Stängt lås → 409 `lock_closed`, saknade föremål → 409 `missing_items`, redan löst → 409 `already_solved` |
 | POST | `/admin/players` | `{secret, players: {peter: "<id>", …}}`. Kopplar platserna i den aktiva kalendern. Skyddas av `KALENDER_ADMIN_SECRET` |
 | POST | `/admin/check` | `{secret}`. Kontrollerar den aktiva innehållsfilen och svarar `{ok: true, calendar, days, message: "OK"}` eller `{ok: false, errors: [...]}`. Felen säger bara *var* något är fel, aldrig *vad* som står i filen (inga texter, svar, föremål eller id:n ur innehållet), till exempel ”dag 4: lapp för simon saknas”. Kontrollerar: id, titel, startdatum, prolog, tema, 1–24 dagar numrerade i ordning, titel och intro per dag, giltig låstyp med rätt parametrar, att svaret passar låstypen (antal siffror eller bokstäver A–Ö, en ruta inom rutnätet, ett av alternativen), fem lappar med giltig typ och det typen behöver, exakt tre ledtrådar, epilog, unika föremål och att varje `requires_items` ges av en tidigare lucka. Saknas innehållet säger svaret varför (t.ex. att `KALENDER_ACTIVE` saknas). Samma kontroll körs vid start och felen loggas. Svarar aldrig med innehåll, så den får anropas även när en riktig kalender är aktiv |
 | POST | `/admin/reset` | `{secret}`. Tömmer den aktiva kalenderns händelser, foton och lösningar, men inte spelarna och inget från andra kalendrar. Bara för test |
