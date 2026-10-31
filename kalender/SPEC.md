@@ -180,6 +180,9 @@ Svaret jämförs efter normalisering på servern.
 | `grid_map` | `text` (valfri), `cols`, `rows`, `cells` (`{"B3": "△", …}`). Ritas som ett rutnät med symbolerna, kolumner A– och rader 1– |
 | `photo_task` | `text` (uppgiften) och `reveal` (visas efter uppladdning). Knappen ”Ta foto” öppnar kameran; klienten skalar ned bilden (längsta sidan högst 1280 px) och sparar som JPEG under 600 kB. Fotot visas på tavlan |
 | `fold` (B9) | `text` (valfri), `svg` och `axis` (`vertical` standard, eller `horizontal`). Knappen ”Vik” lägger bildens högra (eller nedre) halva spegelvänd över den vänstra (övre), så att linjerna på de två halvorna bildar något tillsammans. ”Veckla ut” visar hela bilden igen. Rita med genomskinlig bakgrund |
+| `scene` (C2) | `text` (valfri), `svg` och `spots` (klickytor). Se *Utforskningsscen* nedan |
+
+**Utforskningsscen (C2):** lapptypen `scene` med `svg` och `spots: [{x, y, w, h, label?, text?, svg?}]` i bildens `viewBox`-koordinater. Klickytorna är osynliga knappar ovanpå bilden; ett tryck visar ytans text (och bild) under bilden och markerar ytan som hittad (minns per enhet). Sidan visar ”Hittat N av M” och efter 30 s knappen ”Visa var man kan trycka”. Texterna följer lappens vanliga regler för vem som får se den. `/admin/check` kräver `viewBox`, 1–20 ytor inom bilden, minst 8 % av bildens bredd åt båda hållen, och text eller svg.
 
 **Förstoring (B10):** varje bild (svg, vikbar lapp, foto) har en förstoringsknapp som öppnar bilden i helskärm: nyp för att zooma (upp till 8×), dra för att flytta, dubbeltryck för 1× eller 3×, knappar för + och −. Ett pålagt genomskinligt kort följer med.
 

@@ -1055,7 +1055,7 @@ describe('punkt 7: /admin/check', () => {
   test('varje sorts fel hittas, med plats men utan innehåll', () => {
     const cases = [
       [c => { delete c.days[1].fragments.simon; }, 'dag 2: lapp för simon saknas'],
-      [c => { c.days[0].fragments.maria.kind = 'video'; }, 'dag 1: lapp för maria har ogiltig typ (ska vara text, svg, grid_map, photo_task, fold)'],
+      [c => { c.days[0].fragments.maria.kind = 'video'; }, 'dag 1: lapp för maria har ogiltig typ (ska vara text, svg, grid_map, photo_task, fold, scene)'],
       [c => { c.days[0].fragments.sara.text = ''; }, 'dag 1: lapp för sara saknar text'],
       [c => { delete c.days[2].fragments.vilma.reveal; }, 'dag 3: lapp för vilma behöver text och reveal'],
       [c => { c.days[1].fragments.simon.cells.F9 = 'x'; }, 'dag 2: lapp för simon har rutor utanför kartan'],

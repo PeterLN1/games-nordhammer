@@ -312,6 +312,24 @@
   .fold-clip.horizontal img.mirror { transform: scaleY(-1); }
   .fold-flat img { display: block; width: 100%; height: auto; }
 
+  /* ---------- Utforskningsscen (C2) ---------- */
+  .scene-fig { max-width: 420px; margin: 0 auto; }
+  .scene { position: relative; }
+  .scene > img { display: block; width: 100%; height: auto; }
+  .scene .spot {
+    position: absolute; border: 0; padding: 0; background: transparent; cursor: pointer; border-radius: 8px;
+    -webkit-tap-highlight-color: rgba(42,33,24,.15);
+  }
+  .scene .spot:focus-visible { outline: 3px solid #2A2118; outline-offset: 1px; }
+  .scene .spot.found { box-shadow: inset 0 0 0 2px rgba(42,33,24,.55); }
+  .scene .spot.active { box-shadow: inset 0 0 0 3px #2A2118; background: rgba(255,255,255,.18); }
+  .scene.show-all .spot:not(.found) { box-shadow: inset 0 0 0 2px rgba(42,33,24,.4); background: rgba(255,255,255,.25); }
+  .scene-panel { margin-top: 10px; padding: 10px 12px; border-radius: 6px; background: rgba(42,33,24,.08); min-height: 44px; }
+  .scene-panel .lbl { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; opacity: .7; }
+  .scene-panel .txt { white-space: pre-wrap; margin-top: 2px; }
+  .scene-panel .svg-stack { margin-top: 8px; }
+  .scene-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; opacity: .8; }
+
   /* ---------- Förstoring (B10) ---------- */
   .zoom-btn {
     position: absolute; top: 6px; right: 6px; z-index: 2; width: 36px; height: 36px; border-radius: 10px; border: 0; cursor: pointer;
@@ -907,6 +925,56 @@
     return fig;
   }
 
+  /* ---------- Utforskningsscen (C2) ----------
+     Bilden har osynliga klickytor. Ett tryck visar ytans text (och ev.
+     bild) under bilden och markerar ytan som hittad. Vilka ytor man hittat
+     minns per enhet. Efter en halv minut går det att visa alla ytor. */
+  var sceneOpen = {}, sceneSince = {};
+  function sceneFoundKey(){ return 'kalender:scene:' + ((view.data && view.data.calendar) || ''); }
+  function sceneFound(){ try { return JSON.parse(localStorage.getItem(sceneFoundKey())) || {}; } catch(e){ return {}; } }
+  function markSceneFound(id){ var f = sceneFound(); f[id] = 1; try { localStorage.setItem(sceneFoundKey(), JSON.stringify(f)); } catch(e){} }
+  function sceneFigure(f){
+    var key = svgKey(f.svg), m = /viewBox\s*=\s*["']([^"']+)["']/i.exec(f.svg);
+    var v = m ? m[1].trim().split(/[\s,]+/).map(Number) : [0, 0, 100, 100];
+    var spots = f.spots || [];
+    if (!sceneSince[key]) sceneSince[key] = Date.now();
+    var scene = el('div', { class: 'scene' }), panel = el('div', { class: 'scene-panel', 'aria-live': 'polite' }), meta = el('div', { class: 'scene-meta' });
+    var fig = el('div', { class: 'scene-fig' }, el('div', { class: 'zoom-wrap' }, scene), panel, meta);
+    var showAll = false;
+    function draw(){
+      var found = sceneFound(), active = sceneOpen[key];
+      scene.textContent = '';
+      scene.classList.toggle('show-all', showAll);
+      add(scene, el('img', { src: svgDataUri(f.svg), alt: 'Scen – tryck på saker i bilden' }));
+      spots.forEach(function(sp, i){
+        var id = key + ':' + i;
+        add(scene, el('button', { type: 'button', class: 'spot' + (found[id] ? ' found' : '') + (active === i ? ' active' : ''),
+          'aria-label': sp.label || ('Ställe ' + (i + 1)),
+          style: 'left:' + ((sp.x - v[0]) / v[2] * 100) + '%;top:' + ((sp.y - v[1]) / v[3] * 100) + '%;width:' + (sp.w / v[2] * 100) + '%;height:' + (sp.h / v[3] * 100) + '%',
+          onclick: function(){ sceneOpen[key] = i; markSceneFound(id); draw(); } }));
+      });
+      add(scene, el('button', { type: 'button', class: 'zoom-btn', 'aria-label': 'Förstora bilden', onclick: function(){ openZoom([{ src: svgDataUri(f.svg), alt: 'Scen' }]); } }, icon('zoom')));
+      panel.textContent = '';
+      var sp = active != null ? spots[active] : null;
+      if (sp) {
+        if (sp.label) add(panel, el('div', { class: 'lbl', text: sp.label }));
+        if (sp.text) add(panel, el('div', { class: 'txt', text: sp.text }));
+        if (sp.svg) add(panel, svgFigure(sp.svg, sp.label || 'Bild'));
+      } else add(panel, el('div', { class: 'txt', text: 'Tryck på saker i bilden för att undersöka dem.' }));
+      meta.textContent = '';
+      var n = spots.filter(function(_, i){ return found[key + ':' + i]; }).length;
+      add(meta, el('span', { text: 'Hittat ' + n + ' av ' + spots.length }));
+      if (Date.now() - sceneSince[key] > 30000 || n === spots.length) {
+        add(meta, el('button', { type: 'button', class: 'chip-btn', 'aria-pressed': String(showAll), onclick: function(){ showAll = !showAll; draw(); } }, showAll ? 'Dölj ytorna' : 'Visa var man kan trycka'));
+      }
+    }
+    draw();
+    // Knappen "Visa var man kan trycka" dyker upp efter en halv minut.
+    var wait = 30000 - (Date.now() - sceneSince[key]);
+    if (wait > 0) setTimeout(function(){ if (document.body.contains(fig)) draw(); }, wait + 50);
+    return fig;
+  }
+
   /* ---------- Förstoring (B10) ----------
      Bilden i helskärm: nyp för att zooma, dra för att flytta, dubbeltryck
      för att växla mellan 1× och 3×. Ett pålagt genomskinligt kort följer med. */
@@ -988,6 +1056,7 @@
     if (f.text) out.push(el('div', { class: 'frag-text', text: f.text }));
     if (f.kind === 'svg' && f.svg) out.push(svgFigure(f.svg, 'Bild på lappen'));
     if (f.kind === 'fold' && f.svg) out.push(foldFigure(f.svg, f.axis));
+    if (f.kind === 'scene' && f.svg) out.push(sceneFigure(f));
     if (f.kind === 'grid_map') out.push(gridMap(f));
     if (f.reveal) out.push(el('div', { class: 'reveal', text: f.reveal }));
     // Hemlig del (B3): servern skickar den bara till ägaren — och till alla i arkivet eller när luckan är löst.

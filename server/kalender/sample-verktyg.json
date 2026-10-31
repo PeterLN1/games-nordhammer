@@ -2,7 +2,7 @@
   "version": 1,
   "id": "prov-verktyg",
   "title": "Verktygslådan (test)",
-  "subtitle": "Testkalender för föremål, kombinationer, genomskinligt kort, vikbara lappar, flera lås och nya låstyper.",
+  "subtitle": "Testkalender för föremål, kombinationer, genomskinligt kort, vikbara lappar, scener, flera lås och nya låstyper.",
   "start_date": "2026-12-01",
   "timezone": "Europe/Stockholm",
   "prologue": "TESTINNEHÅLL. Fyra luckor som provar ryggsäcken, det genomskinliga kortet, dubbla lås, symbollås, rutlås, hemlig del och återkoppling.",
@@ -344,7 +344,223 @@
         "A1 A2 B2 C2 C3."
       ],
       "epilogue": {
-        "text": "Ni är över isen. Testkalendern är slut."
+        "text": "Ni är över isen. En gång till: hytterna väntar."
+      }
+    },
+    {
+      "day": 7,
+      "title": "Hytterna",
+      "intro": "TESTINNEHÅLL. Fem hytter, en var. Någonstans i varje hytt gömmer sig en siffra.",
+      "lock": {
+        "type": "digits",
+        "length": 5
+      },
+      "answer": "72958",
+      "requires_items": [],
+      "fragments": {
+        "peter": {
+          "kind": "scene",
+          "text": "Hytt nr 1. Undersök den.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#E9DFCC\"/><rect y=\"75\" width=\"100\" height=\"25\" fill=\"#C9B79A\"/><rect x=\"14\" y=\"14\" width=\"30\" height=\"22\" fill=\"#F4EBDD\" stroke=\"#2A2118\" stroke-width=\"2\"/><path d=\"M18 32 L26 22 L32 28 L36 24 L40 32Z\" fill=\"#7A8F6B\"/><line x1=\"80\" y1=\"10\" x2=\"80\" y2=\"22\" stroke=\"#2A2118\" stroke-width=\"2\"/><path d=\"M71 22 H89 L84 34 H76Z\" fill=\"#E3C77A\" stroke=\"#2A2118\" stroke-width=\"2\"/><rect x=\"8\" y=\"58\" width=\"44\" height=\"22\" rx=\"3\" fill=\"#B7C4D6\" stroke=\"#2A2118\" stroke-width=\"2\"/><rect x=\"10\" y=\"54\" width=\"14\" height=\"8\" rx=\"3\" fill=\"#F4EBDD\" stroke=\"#2A2118\" stroke-width=\"1.5\"/><rect x=\"60\" y=\"62\" width=\"32\" height=\"20\" fill=\"#8B5E3C\" stroke=\"#2A2118\" stroke-width=\"2\"/><line x1=\"60\" y1=\"68\" x2=\"92\" y2=\"68\" stroke=\"#2A2118\" stroke-width=\"1.5\"/></svg>",
+          "spots": [
+            {
+              "label": "Tavlan",
+              "x": 14,
+              "y": 14,
+              "w": 30,
+              "h": 22,
+              "text": "Inget märkvärdigt."
+            },
+            {
+              "label": "Lampan",
+              "x": 70,
+              "y": 8,
+              "w": 20,
+              "h": 28,
+              "text": "Bara damm."
+            },
+            {
+              "label": "Sängen",
+              "x": 8,
+              "y": 54,
+              "w": 44,
+              "h": 26,
+              "text": "Det knarrar, men inget mer."
+            },
+            {
+              "label": "Kistan",
+              "x": 60,
+              "y": 60,
+              "w": 32,
+              "h": 24,
+              "text": "En lapp: ”Siffra nr 1 är 7.”"
+            }
+          ]
+        },
+        "maria": {
+          "kind": "scene",
+          "text": "Hytt nr 2. Undersök den.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#E9DFCC\"/><rect y=\"75\" width=\"100\" height=\"25\" fill=\"#C9B79A\"/><rect x=\"14\" y=\"14\" width=\"30\" height=\"22\" fill=\"#F4EBDD\" stroke=\"#2A2118\" stroke-width=\"2\"/><path d=\"M18 32 L26 22 L32 28 L36 24 L40 32Z\" fill=\"#7A8F6B\"/><line x1=\"80\" y1=\"10\" x2=\"80\" y2=\"22\" stroke=\"#2A2118\" stroke-width=\"2\"/><path d=\"M71 22 H89 L84 34 H76Z\" fill=\"#E3C77A\" stroke=\"#2A2118\" stroke-width=\"2\"/><rect x=\"8\" y=\"58\" width=\"44\" height=\"22\" rx=\"3\" fill=\"#B7C4D6\" stroke=\"#2A2118\" stroke-width=\"2\"/><rect x=\"10\" y=\"54\" width=\"14\" height=\"8\" rx=\"3\" fill=\"#F4EBDD\" stroke=\"#2A2118\" stroke-width=\"1.5\"/><rect x=\"60\" y=\"62\" width=\"32\" height=\"20\" fill=\"#8B5E3C\" stroke=\"#2A2118\" stroke-width=\"2\"/><line x1=\"60\" y1=\"68\" x2=\"92\" y2=\"68\" stroke=\"#2A2118\" stroke-width=\"1.5\"/></svg>",
+          "spots": [
+            {
+              "label": "Tavlan",
+              "x": 14,
+              "y": 14,
+              "w": 30,
+              "h": 22,
+              "text": "Bara damm."
+            },
+            {
+              "label": "Lampan",
+              "x": 70,
+              "y": 8,
+              "w": 20,
+              "h": 28,
+              "text": "Det knarrar, men inget mer."
+            },
+            {
+              "label": "Sängen",
+              "x": 8,
+              "y": 54,
+              "w": 44,
+              "h": 26,
+              "text": "En lapp: ”Siffra nr 2 är 2.”"
+            },
+            {
+              "label": "Kistan",
+              "x": 60,
+              "y": 60,
+              "w": 32,
+              "h": 24,
+              "text": "Inget märkvärdigt."
+            }
+          ]
+        },
+        "sara": {
+          "kind": "scene",
+          "text": "Hytt nr 3. Undersök den.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#E9DFCC\"/><rect y=\"75\" width=\"100\" height=\"25\" fill=\"#C9B79A\"/><rect x=\"14\" y=\"14\" width=\"30\" height=\"22\" fill=\"#F4EBDD\" stroke=\"#2A2118\" stroke-width=\"2\"/><path d=\"M18 32 L26 22 L32 28 L36 24 L40 32Z\" fill=\"#7A8F6B\"/><line x1=\"80\" y1=\"10\" x2=\"80\" y2=\"22\" stroke=\"#2A2118\" stroke-width=\"2\"/><path d=\"M71 22 H89 L84 34 H76Z\" fill=\"#E3C77A\" stroke=\"#2A2118\" stroke-width=\"2\"/><rect x=\"8\" y=\"58\" width=\"44\" height=\"22\" rx=\"3\" fill=\"#B7C4D6\" stroke=\"#2A2118\" stroke-width=\"2\"/><rect x=\"10\" y=\"54\" width=\"14\" height=\"8\" rx=\"3\" fill=\"#F4EBDD\" stroke=\"#2A2118\" stroke-width=\"1.5\"/><rect x=\"60\" y=\"62\" width=\"32\" height=\"20\" fill=\"#8B5E3C\" stroke=\"#2A2118\" stroke-width=\"2\"/><line x1=\"60\" y1=\"68\" x2=\"92\" y2=\"68\" stroke=\"#2A2118\" stroke-width=\"1.5\"/></svg>",
+          "spots": [
+            {
+              "label": "Tavlan",
+              "x": 14,
+              "y": 14,
+              "w": 30,
+              "h": 22,
+              "text": "En lapp: ”Siffra nr 3 är 9.”"
+            },
+            {
+              "label": "Lampan",
+              "x": 70,
+              "y": 8,
+              "w": 20,
+              "h": 28,
+              "text": "Tomt."
+            },
+            {
+              "label": "Sängen",
+              "x": 8,
+              "y": 54,
+              "w": 44,
+              "h": 26,
+              "text": "Inget märkvärdigt."
+            },
+            {
+              "label": "Kistan",
+              "x": 60,
+              "y": 60,
+              "w": 32,
+              "h": 24,
+              "text": "Bara damm."
+            }
+          ]
+        },
+        "vilma": {
+          "kind": "scene",
+          "text": "Hytt nr 4. Undersök den.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#E9DFCC\"/><rect y=\"75\" width=\"100\" height=\"25\" fill=\"#C9B79A\"/><rect x=\"14\" y=\"14\" width=\"30\" height=\"22\" fill=\"#F4EBDD\" stroke=\"#2A2118\" stroke-width=\"2\"/><path d=\"M18 32 L26 22 L32 28 L36 24 L40 32Z\" fill=\"#7A8F6B\"/><line x1=\"80\" y1=\"10\" x2=\"80\" y2=\"22\" stroke=\"#2A2118\" stroke-width=\"2\"/><path d=\"M71 22 H89 L84 34 H76Z\" fill=\"#E3C77A\" stroke=\"#2A2118\" stroke-width=\"2\"/><rect x=\"8\" y=\"58\" width=\"44\" height=\"22\" rx=\"3\" fill=\"#B7C4D6\" stroke=\"#2A2118\" stroke-width=\"2\"/><rect x=\"10\" y=\"54\" width=\"14\" height=\"8\" rx=\"3\" fill=\"#F4EBDD\" stroke=\"#2A2118\" stroke-width=\"1.5\"/><rect x=\"60\" y=\"62\" width=\"32\" height=\"20\" fill=\"#8B5E3C\" stroke=\"#2A2118\" stroke-width=\"2\"/><line x1=\"60\" y1=\"68\" x2=\"92\" y2=\"68\" stroke=\"#2A2118\" stroke-width=\"1.5\"/></svg>",
+          "spots": [
+            {
+              "label": "Tavlan",
+              "x": 14,
+              "y": 14,
+              "w": 30,
+              "h": 22,
+              "text": "Tomt."
+            },
+            {
+              "label": "Lampan",
+              "x": 70,
+              "y": 8,
+              "w": 20,
+              "h": 28,
+              "text": "En lapp: ”Siffra nr 4 är 5.”"
+            },
+            {
+              "label": "Sängen",
+              "x": 8,
+              "y": 54,
+              "w": 44,
+              "h": 26,
+              "text": "Bara damm."
+            },
+            {
+              "label": "Kistan",
+              "x": 60,
+              "y": 60,
+              "w": 32,
+              "h": 24,
+              "text": "Det knarrar, men inget mer."
+            }
+          ]
+        },
+        "simon": {
+          "kind": "scene",
+          "text": "Hytt nr 5. Undersök den.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#E9DFCC\"/><rect y=\"75\" width=\"100\" height=\"25\" fill=\"#C9B79A\"/><rect x=\"14\" y=\"14\" width=\"30\" height=\"22\" fill=\"#F4EBDD\" stroke=\"#2A2118\" stroke-width=\"2\"/><path d=\"M18 32 L26 22 L32 28 L36 24 L40 32Z\" fill=\"#7A8F6B\"/><line x1=\"80\" y1=\"10\" x2=\"80\" y2=\"22\" stroke=\"#2A2118\" stroke-width=\"2\"/><path d=\"M71 22 H89 L84 34 H76Z\" fill=\"#E3C77A\" stroke=\"#2A2118\" stroke-width=\"2\"/><rect x=\"8\" y=\"58\" width=\"44\" height=\"22\" rx=\"3\" fill=\"#B7C4D6\" stroke=\"#2A2118\" stroke-width=\"2\"/><rect x=\"10\" y=\"54\" width=\"14\" height=\"8\" rx=\"3\" fill=\"#F4EBDD\" stroke=\"#2A2118\" stroke-width=\"1.5\"/><rect x=\"60\" y=\"62\" width=\"32\" height=\"20\" fill=\"#8B5E3C\" stroke=\"#2A2118\" stroke-width=\"2\"/><line x1=\"60\" y1=\"68\" x2=\"92\" y2=\"68\" stroke=\"#2A2118\" stroke-width=\"1.5\"/></svg>",
+          "spots": [
+            {
+              "label": "Tavlan",
+              "x": 14,
+              "y": 14,
+              "w": 30,
+              "h": 22,
+              "text": "Inget märkvärdigt."
+            },
+            {
+              "label": "Lampan",
+              "x": 70,
+              "y": 8,
+              "w": 20,
+              "h": 28,
+              "text": "Bara damm."
+            },
+            {
+              "label": "Sängen",
+              "x": 8,
+              "y": 54,
+              "w": 44,
+              "h": 26,
+              "text": "Det knarrar, men inget mer."
+            },
+            {
+              "label": "Kistan",
+              "x": 60,
+              "y": 60,
+              "w": 32,
+              "h": 24,
+              "text": "En lapp: ”Siffra nr 5 är 8.”"
+            }
+          ]
+        }
+      },
+      "hints": [
+        "Tryck på föremålen i din hytt.",
+        "Varje hytt har en lapp med en siffra och dess plats.",
+        "De två första siffrorna är 7 och 2."
+      ],
+      "epilogue": {
+        "text": "Koden stämmer. Nu är testkalendern slut på riktigt."
       }
     }
   ],

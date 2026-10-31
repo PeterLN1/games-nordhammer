@@ -143,8 +143,23 @@ De tre ledtrådarna gäller hela luckan, inte varje lås. Lägg dessa luckor på
 | `grid_map` | `text` (valfri), `cols`, `rows`, `cells` (`{"B3": "△", …}`) | rutnät med symboler, kolumner A– och rader 1– |
 | `photo_task` | `text` (uppdraget), `reveal` | knappen ”Ta foto”; efter uppladdning visas `reveal` |
 | `fold` | `text` (valfri), `svg`, `axis` (`vertical` standard eller `horizontal`) | bild med knappen ”Vik”: högra (nedre) halvan läggs spegelvänd över den vänstra (övre) |
+| `scene` | `text` (valfri), `svg`, `spots` | en bild att utforska: osynliga klickytor visar en text (och ev. bild) när man trycker på dem |
 
 **Hemlig del:** varje lapp kan ha `"private": { "text": "…", "svg": "…" }`. Den syns bara för ägaren och följer inte med ut på tavlan, så ägaren måste beskriva den med egna ord. I arkivet och när luckan är löst ser alla den.
+
+**Utforskningsscen (`scene`):** en bild, t.ex. ett rum, där spelaren trycker på saker och hittar beskrivningar, siffror och ledtrådar.
+```json
+{ "kind": "scene", "text": "Hytt nr 1. Undersök den.", "svg": "<svg … viewBox=\"0 0 100 100\">…</svg>",
+  "spots": [
+    { "label": "Kistan", "x": 60, "y": 60, "w": 32, "h": 24, "text": "En lapp: ”Siffra nr 1 är 7.”" },
+    { "label": "Sängen", "x": 8, "y": 54, "w": 44, "h": 26, "text": "Det knarrar, men inget mer." }
+  ] }
+```
+- `x`, `y`, `w`, `h` är i bildens `viewBox`-koordinater. 1–20 ytor per scen, var och en med `text` och/eller `svg`, och `label` (valfri, det som står när man tryckt).
+- Ytorna måste vara minst 8 % av bildens bredd åt båda hållen (gärna 12 % eller mer), så att de går att träffa med ett finger.
+- Rita föremålen tydligt, så att spelaren förstår vad som går att undersöka. Lägg gärna falska spår (”Tomt.”), men inte så många att det blir pixeljakt.
+- Sidan visar ”Hittat 2 av 4” och efter en halv minut knappen ”Visa var man kan trycka”, som markerar alla ytor.
+- Texterna är bara dolda visuellt; de följer samma regler som lappen i övrigt (andras scener syns när de är utlagda, alla i arkivet).
 
 **Fotouppdrag** granskas inte; alla foton godtas och `reveal` visas. Uppdragen måste gå att göra var man än är: ”något runt”, inte ”något i köket”.
 
@@ -189,6 +204,7 @@ De tre ledtrådarna gäller hela luckan, inte varje lås. Lägg dessa luckor på
 
 - `id`, `title`, `start_date`, `prologue` finns och har rätt form; 1–24 luckor i ordning.
 - Varje lucka har `title`, `intro`, fem lappar med giltig typ och det typen behöver, exakt tre ledtrådar och `epilogue.text`.
+- En scen har `viewBox`, 1–20 klickytor inom bilden, stora nog för ett finger, med text eller bild.
 - Låset har giltig typ och rätt fält, och svaret passar låset (antal siffror, bokstäver A–Ö, en ruta inom rutnätet, ett av alternativen, symboler ur paletten, rätt antal rutor).
 - Låset har minst fyra möjliga svar.
 - `stages` har minst två lås, och `after` har text eller en giltig svg.
@@ -253,6 +269,7 @@ Dokumentet ”Uppgiftstyper för adventskalendern” (Claude, oktober 2026) besk
 | Mastermindlåset | `feedback` |
 | Vikbara lappen | `fold` |
 | Detaljjakten | `svg` (förstoring finns alltid) |
+| Utforskningsscenen | `scene` |
 | Kombinera i ryggsäcken | `combine` |
 
-**Finns inte än:** stafetten (en lapp som visar mer när en annan spelare lagt ut sin), ljudlappar, klickbara scener, sidospår över flera dagar, delad spelplan och val som förgrenar berättelsen. Be om dem i god tid om du vill använda dem.
+**Finns inte än:** stafetten (en lapp som visar mer när en annan spelare lagt ut sin), ljudlappar, sidospår över flera dagar, delad spelplan och val som förgrenar berättelsen. Be om dem i god tid om du vill använda dem.

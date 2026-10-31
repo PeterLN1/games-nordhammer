@@ -26,7 +26,7 @@ describe('skrivverktygen', () => {
   test('kontroll: OK och en översikt utan innehåll', () => {
     const r = run('kalender-kontroll.js', [write('ok.json', V)]);
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /Kalender: prov-verktyg · 6 luckor/);
+    assert.match(r.stdout, /Kalender: prov-verktyg · 7 luckor/);
     assert.match(r.stdout, /dag 2: word \(5 bokstäver, laget 50 försök\/dag\) → sequence/);
     assert.match(r.stdout, /\nOK\n$/);
     noSecrets(r.stdout + r.stderr);

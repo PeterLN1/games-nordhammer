@@ -345,3 +345,40 @@ describe('/admin/check: kombinationer, vikbara lappar och kortets viewBox', () =
     assert.ok(checkContent(c).includes('dag 4: föremål nr 1 i requires_items ges inte av någon tidigare lucka'));
   });
 });
+
+describe('C2 utforskningsscen (lucka 7)', () => {
+  test('scenens klickytor skickas med lappen, bara enligt vanliga regler', async () => {
+    const g = await startGame(at('2026-12-07', '09:00'));
+    try {
+      for (let day = 1; day <= 6; day++) await g.store.insertSolve({ day, profileId: IDS.peter, mode: 'archive' });
+      const own = await g.get('/day/7', 'peter');
+      const f = own.body.fragments.peter;
+      assert.equal(f.kind, 'scene');
+      assert.equal(f.spots.length, 4);
+      assert.deepEqual(Object.keys(f.spots[0]).sort(), ['h', 'label', 'text', 'w', 'x', 'y']);
+      // Marias scen (och dess texter) syns inte för Peter förrän hon lagt ut den.
+      assert.equal(own.body.fragments.maria, undefined);
+      assert.ok(!own.text.includes('Siffra nr 2'));
+      await g.post('/day/7/fragment', 'maria');
+      assert.equal((await g.get('/day/7', 'peter')).body.fragments.maria.spots.length, 4);
+    } finally { await g.close(); }
+  });
+
+  test('/admin/check: scenens fel hittas utan innehåll', () => {
+    const clone = () => JSON.parse(JSON.stringify(V));
+    const cases = [
+      [c => { c.days[6].fragments.sara.spots[0].w = 3; }, 'dag 7: lapp för sara: klickyta 1 är för liten för ett finger (minst 8 % av bildens bredd)'],
+      [c => { c.days[6].fragments.sara.spots[1].x = 95; }, 'dag 7: lapp för sara: klickyta 2 ligger utanför bilden'],
+      [c => { delete c.days[6].fragments.sara.spots[2].text; }, 'dag 7: lapp för sara: klickyta 3 behöver text eller en giltig svg'],
+      [c => { c.days[6].fragments.sara.spots = []; }, 'dag 7: lapp för sara: scenen behöver 1–20 klickytor (spots)'],
+      [c => { c.days[6].fragments.sara.svg = c.days[6].fragments.sara.svg.replace(/ viewBox="[^"]*"/, ''); }, 'dag 7: lapp för sara: scenen behöver en viewBox'],
+      [c => { delete c.days[6].fragments.sara.spots[0].h; }, 'dag 7: lapp för sara: klickyta 1 behöver x, y, w och h']
+    ];
+    for (const [mutate, expected] of cases) {
+      const c = clone(); mutate(c);
+      const errors = checkContent(c);
+      assert.ok(errors.includes(expected), 'väntade "' + expected + '", fick ' + JSON.stringify(errors));
+      for (const e of errors) assert.ok(!e.includes('Siffra nr') && !e.includes('Kistan') && !e.includes('72958'), e);
+    }
+  });
+});

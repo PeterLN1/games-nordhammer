@@ -175,7 +175,7 @@ export function loadContent({ mode, key, sampleStart, active, encPath, samplePat
    aldrig VAD som står i filen — inga texter, svar, föremålsnamn eller id:n
    ur innehållet. Så kan den köras mot det riktiga innehållet utan spoilers. */
 const LOCK_TYPES = ['digits', 'word', 'coordinate', 'choice', 'sequence', 'cells', 'path'];
-const FRAGMENT_KINDS = ['text', 'svg', 'grid_map', 'photo_task', 'fold'];
+const FRAGMENT_KINDS = ['text', 'svg', 'grid_map', 'photo_task', 'fold', 'scene'];
 const nonEmpty = v => typeof v === 'string' && v.trim().length > 0;
 const intIn = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 const COORD = /^([A-Z])([1-9][0-9]?)$/;
@@ -185,6 +185,26 @@ function coordInside(key, cols, rows) {
 }
 const pieceOk = x => !!x && typeof x === 'object' && (nonEmpty(x.text) || svgOk(x.svg)) && (x.svg === undefined || svgOk(x.svg));
 const svgOk = v => typeof v === 'string' && /^\s*<svg[\s>]/i.test(v);
+// Utforskningsscen: 1–20 klickytor inom bilden, stora nog att träffa med
+// ett finger (minst 8 % av bildens bredd), var och en med text eller bild.
+function checkScene(fr, w, err) {
+  const m = /viewBox\s*=\s*["']([^"']+)["']/i.exec(fr.svg);
+  const v = m ? m[1].trim().split(/[\s,]+/).map(Number) : null;
+  if (!v || v.length !== 4 || !(v[2] > 0 && v[3] > 0)) { err('', w + ': scenen behöver en viewBox'); return; }
+  const spots = fr.spots;
+  if (!Array.isArray(spots) || spots.length < 1 || spots.length > 20) { err('', w + ': scenen behöver 1–20 klickytor (spots)'); return; }
+  const min = v[2] * 0.08;
+  spots.forEach((sp, i) => {
+    const sw = w + ': klickyta ' + (i + 1);
+    const nums = sp && ['x', 'y', 'w', 'h'].every(k => typeof sp[k] === 'number' && isFinite(sp[k]));
+    if (!nums) { err('', sw + ' behöver x, y, w och h'); return; }
+    if (sp.x < v[0] || sp.y < v[1] || sp.x + sp.w > v[0] + v[2] || sp.y + sp.h > v[1] + v[3]) err('', sw + ' ligger utanför bilden');
+    if (sp.w < min || sp.h < min) err('', sw + ' är för liten för ett finger (minst 8 % av bildens bredd)');
+    if (!(nonEmpty(sp.text) || svgOk(sp.svg))) err('', sw + ' behöver text eller en giltig svg');
+    if (sp.svg !== undefined && !svgOk(sp.svg)) err('', sw + ' har en ogiltig svg');
+  });
+}
+
 // Ett lås och dess svar. Felen nämner bara låstyp och form, aldrig svaret.
 function checkLock(lock, answer, where, err) {
   if (!lock || !LOCK_TYPES.includes(lock.type)) { err(where, 'ogiltig låstyp (ska vara ' + LOCK_TYPES.join(', ') + ')'); return; }
@@ -277,7 +297,8 @@ export function checkContent(c) {
         if (!fr || typeof fr !== 'object') { err('', w + ' saknas'); continue; }
         if (!FRAGMENT_KINDS.includes(fr.kind)) { err('', w + ' har ogiltig typ (ska vara ' + FRAGMENT_KINDS.join(', ') + ')'); continue; }
         if (fr.kind === 'text' && !nonEmpty(fr.text)) err('', w + ' saknar text');
-        if ((fr.kind === 'svg' || fr.kind === 'fold') && !(typeof fr.svg === 'string' && /^\s*<svg[\s>]/i.test(fr.svg))) err('', w + ' saknar en giltig svg');
+        if ((fr.kind === 'svg' || fr.kind === 'fold' || fr.kind === 'scene') && !(typeof fr.svg === 'string' && /^\s*<svg[\s>]/i.test(fr.svg))) err('', w + ' saknar en giltig svg');
+        if (fr.kind === 'scene' && svgOk(fr.svg)) checkScene(fr, w, err);
         if (fr.kind === 'fold' && fr.axis !== undefined && !['vertical', 'horizontal'].includes(fr.axis)) err('', w + ': axis ska vara vertical eller horizontal');
         if (fr.kind === 'photo_task' && !(nonEmpty(fr.text) && nonEmpty(fr.reveal))) err('', w + ' behöver text och reveal');
         if (fr.kind === 'grid_map') {
@@ -512,7 +533,19 @@ function publicPiece(x) {
 function publicFragment(f, { withReveal, withPrivate }) {
   const out = { kind: f.kind };
   if (typeof f.text === 'string') out.text = f.text;
-  if ((f.kind === 'svg' || f.kind === 'fold') && typeof f.svg === 'string') out.svg = f.svg;
+  if ((f.kind === 'svg' || f.kind === 'fold' || f.kind === 'scene') && typeof f.svg === 'string') out.svg = f.svg;
+  // Utforskningsscen (C2): klickytor i bildens koordinater (viewBox). Texten
+  // syns först när spelaren trycker — en visuell effekt, som frosten; den
+  // följer samma regler för vem som får se lappen.
+  if (f.kind === 'scene') {
+    out.spots = (Array.isArray(f.spots) ? f.spots : []).map(sp => {
+      const o = { x: Number(sp.x), y: Number(sp.y), w: Number(sp.w), h: Number(sp.h) };
+      if (typeof sp.label === 'string') o.label = sp.label;
+      if (typeof sp.text === 'string') o.text = sp.text;
+      if (typeof sp.svg === 'string') o.svg = sp.svg;
+      return o;
+    });
+  }
   // Vikbar lapp (B9): bilden viks längs mitten, lodrätt (standard) eller vågrätt.
   if (f.kind === 'fold') out.axis = f.axis === 'horizontal' ? 'horizontal' : 'vertical';
   if (f.kind === 'grid_map') {
