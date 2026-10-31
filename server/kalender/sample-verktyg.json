@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "id": "prov-verktyg",
+  "title": "Verktygslådan (test)",
+  "subtitle": "Testkalender för föremål, genomskinligt kort, flera lås och nya låstyper.",
+  "start_date": "2026-12-01",
+  "timezone": "Europe/Stockholm",
+  "prologue": "TESTINNEHÅLL. Fyra luckor som provar ryggsäcken, det genomskinliga kortet, dubbla lås, symbollås, rutlås, hemlig del och återkoppling.",
+  "days": [
+    {
+      "day": 1,
+      "title": "Signalskåpet",
+      "intro": "TESTINNEHÅLL. Ett låst skåp med fyra jämna siffror. Varje försök får ett klick som svar.",
+      "lock": {
+        "type": "digits",
+        "length": 4,
+        "feedback": true
+      },
+      "answer": "2468",
+      "requires_items": [],
+      "fragments": {
+        "peter": {
+          "kind": "text",
+          "text": "Alla siffror är jämna.",
+          "private": {
+            "text": "Bara du ser det här: den första siffran är 2. Berätta det för de andra."
+          }
+        },
+        "maria": {
+          "kind": "text",
+          "text": "Siffrorna blir större från vänster till höger."
+        },
+        "sara": {
+          "kind": "text",
+          "text": "Ingen siffra upprepas."
+        },
+        "vilma": {
+          "kind": "text",
+          "text": "Den sista siffran är 8."
+        },
+        "simon": {
+          "kind": "text",
+          "text": "Summan av siffrorna är 20."
+        }
+      },
+      "hints": [
+        "Skriv upp vilka jämna siffror som finns.",
+        "Den sista är 8 och summan 20 – de tre första ska bli 12.",
+        "Koden börjar 24."
+      ],
+      "epilogue": {
+        "text": "I skåpet ligger en signaltabell. Den kommer att behövas igen.",
+        "item": {
+          "id": "signaltabell",
+          "name": "Signaltabellen",
+          "description": "Symboler och deras bokstäver.",
+          "content": {
+            "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect x=\"4\" y=\"4\" width=\"92\" height=\"92\" rx=\"6\" fill=\"#F4EBDD\" stroke=\"#2A2118\" stroke-width=\"1.5\"/><text x=\"50\" y=\"12\" font-size=\"7\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">SIGNALTABELL</text><text x=\"18\" y=\"22\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">▲</text><text x=\"40\" y=\"22\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">= L</text><text x=\"18\" y=\"36\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">●</text><text x=\"40\" y=\"36\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">= A</text><text x=\"18\" y=\"50\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">■</text><text x=\"40\" y=\"50\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">= R</text><text x=\"18\" y=\"64\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">◆</text><text x=\"40\" y=\"64\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">= M</text><text x=\"18\" y=\"78\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">✚</text><text x=\"40\" y=\"78\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">= E</text><text x=\"18\" y=\"92\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">★</text><text x=\"40\" y=\"92\" font-size=\"12\" font-family=\"sans-serif\" fill=\"#2A2118\">= S</text></svg>"
+          }
+        }
+      }
+    },
+    {
+      "day": 2,
+      "title": "Larmskåpet",
+      "intro": "TESTINNEHÅLL. Fem symboler är målade på skåpet. Innanför väntar ett lås till.",
+      "requires_items": [
+        "signaltabell"
+      ],
+      "stages": [
+        {
+          "lock": {
+            "type": "word",
+            "length": 5
+          },
+          "answer": "LARMA",
+          "after": {
+            "text": "Skåpet glider upp. Fyra lampor sitter i rad, och en lapp säger: ”Tänd dem i regnbågens ordning.”",
+            "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><circle cx=\"14\" cy=\"50\" r=\"12\" fill=\"#d33\" stroke=\"#2A2118\" stroke-width=\"2\"/><circle cx=\"38\" cy=\"50\" r=\"12\" fill=\"#2a6\" stroke=\"#2A2118\" stroke-width=\"2\"/><circle cx=\"62\" cy=\"50\" r=\"12\" fill=\"#36c\" stroke=\"#2A2118\" stroke-width=\"2\"/><circle cx=\"86\" cy=\"50\" r=\"12\" fill=\"#ec3\" stroke=\"#2A2118\" stroke-width=\"2\"/></svg>"
+          }
+        },
+        {
+          "lock": {
+            "type": "sequence",
+            "length": 4,
+            "repeat": false,
+            "palette": [
+              {
+                "id": "rod",
+                "label": "Röd"
+              },
+              {
+                "id": "gron",
+                "label": "Grön"
+              },
+              {
+                "id": "bla",
+                "label": "Blå"
+              },
+              {
+                "id": "gul",
+                "label": "Gul"
+              }
+            ]
+          },
+          "answer": "rod,gul,gron,bla"
+        }
+      ],
+      "fragments": {
+        "peter": {
+          "kind": "text",
+          "text": "Symbol nr 1 på skåpet: ▲"
+        },
+        "maria": {
+          "kind": "text",
+          "text": "Symbol nr 2 på skåpet: ●"
+        },
+        "sara": {
+          "kind": "text",
+          "text": "Symbol nr 3 på skåpet: ■"
+        },
+        "vilma": {
+          "kind": "text",
+          "text": "Symbol nr 4 på skåpet: ◆"
+        },
+        "simon": {
+          "kind": "text",
+          "text": "Symbol nr 5 på skåpet: ●"
+        }
+      },
+      "hints": [
+        "Ni har redan något som översätter symboler.",
+        "Öppna ryggsäcken och läs signaltabellen.",
+        "Regnbågen: rött, orange, gult, grönt, blått."
+      ],
+      "epilogue": {
+        "text": "Bakom lamporna sitter ett genomskinligt kort fastklämt.",
+        "item": {
+          "id": "kortet",
+          "name": "Det genomskinliga kortet",
+          "description": "Ett mörkt kort med ett litet fönster.",
+          "content": {
+            "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><path fill-rule=\"evenodd\" fill=\"#1b1b1b\" fill-opacity=\"0.93\" d=\"M0 0H100V100H0Z M60 20H80V40H60Z\"/><rect x=\"60\" y=\"20\" width=\"20\" height=\"20\" fill=\"none\" stroke=\"#F2B544\" stroke-width=\"1.5\"/></svg>",
+            "overlay": true
+          }
+        }
+      }
+    },
+    {
+      "day": 3,
+      "title": "Fem sifferplåtar",
+      "intro": "TESTINNEHÅLL. Fem plåtar fulla av siffror. Bara en siffra på varje plåt betyder något.",
+      "lock": {
+        "type": "digits",
+        "length": 5
+      },
+      "answer": "31415",
+      "requires_items": [
+        "kortet"
+      ],
+      "fragments": {
+        "peter": {
+          "kind": "svg",
+          "text": "Plåt nr 1.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#F4EBDD\"/><text x=\"10\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"30\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">2</text><text x=\"50\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">6</text><text x=\"70\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"90\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"10\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">8</text><text x=\"30\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"50\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"70\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">3</text><text x=\"90\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"10\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"30\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">8</text><text x=\"50\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">3</text><text x=\"70\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"90\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"10\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">6</text><text x=\"30\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">6</text><text x=\"50\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"70\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">3</text><text x=\"90\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"10\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">8</text><text x=\"30\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">6</text><text x=\"50\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"70\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"90\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text></svg>"
+        },
+        "maria": {
+          "kind": "svg",
+          "text": "Plåt nr 2.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#F4EBDD\"/><text x=\"10\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">3</text><text x=\"30\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"50\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"70\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"90\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"10\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">6</text><text x=\"30\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"50\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">3</text><text x=\"70\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"90\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"10\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">8</text><text x=\"30\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">2</text><text x=\"50\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">4</text><text x=\"70\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">6</text><text x=\"90\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">2</text><text x=\"10\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">8</text><text x=\"30\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"50\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"70\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">4</text><text x=\"90\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">8</text><text x=\"10\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">2</text><text x=\"30\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"50\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"70\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"90\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">3</text></svg>"
+        },
+        "sara": {
+          "kind": "svg",
+          "text": "Plåt nr 3.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#F4EBDD\"/><text x=\"10\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"30\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"50\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">8</text><text x=\"70\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"90\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"10\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"30\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"50\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">3</text><text x=\"70\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">4</text><text x=\"90\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"10\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">8</text><text x=\"30\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">6</text><text x=\"50\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"70\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"90\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"10\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"30\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"50\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">4</text><text x=\"70\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">3</text><text x=\"90\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">2</text><text x=\"10\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">3</text><text x=\"30\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"50\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"70\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">4</text><text x=\"90\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">8</text></svg>"
+        },
+        "vilma": {
+          "kind": "svg",
+          "text": "Plåt nr 4.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#F4EBDD\"/><text x=\"10\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"30\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"50\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"70\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">4</text><text x=\"90\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"10\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"30\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"50\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">8</text><text x=\"70\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"90\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">6</text><text x=\"10\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">2</text><text x=\"30\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"50\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">2</text><text x=\"70\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"90\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">6</text><text x=\"10\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"30\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"50\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">8</text><text x=\"70\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"90\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"10\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"30\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"50\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"70\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"90\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text></svg>"
+        },
+        "simon": {
+          "kind": "svg",
+          "text": "Plåt nr 5.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#F4EBDD\"/><text x=\"10\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"30\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"50\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"70\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">4</text><text x=\"90\" y=\"15\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"10\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"30\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"50\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">4</text><text x=\"70\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"90\" y=\"35\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"10\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"30\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">4</text><text x=\"50\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">6</text><text x=\"70\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"90\" y=\"55\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"10\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"30\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">5</text><text x=\"50\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">2</text><text x=\"70\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">9</text><text x=\"90\" y=\"75\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">1</text><text x=\"10\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">7</text><text x=\"30\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">0</text><text x=\"50\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">3</text><text x=\"70\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">4</text><text x=\"90\" y=\"95\" font-size=\"13\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">2</text></svg>"
+        }
+      },
+      "hints": [
+        "Något ni har är genomskinligt.",
+        "Lägg kortet över varje plåt.",
+        "De två första siffrorna är 3 och 1."
+      ],
+      "epilogue": {
+        "text": "Plåtarna klickar på plats och golvluckan öppnas."
+      }
+    },
+    {
+      "day": 4,
+      "title": "Lastrummet",
+      "intro": "TESTINNEHÅLL. Tre lådor står gömda i ett rutnät på 6 × 6. Tryck på alla tre.",
+      "lock": {
+        "type": "cells",
+        "cols": 6,
+        "rows": 6,
+        "count": 3
+      },
+      "answer": "B2 D5 E3",
+      "requires_items": [],
+      "fragments": {
+        "peter": {
+          "kind": "text",
+          "text": "Antal lådor i kolumn A, B, C: 0, 1, 0. Lådan i kolumn B står högst upp av de tre."
+        },
+        "maria": {
+          "kind": "text",
+          "text": "Antal lådor i kolumn D, E, F: 1, 1, 0. Lådan i kolumn E står ovanför lådan i kolumn D."
+        },
+        "sara": {
+          "kind": "text",
+          "text": "Antal lådor i rad 1, 2, 3: 0, 1, 1."
+        },
+        "vilma": {
+          "kind": "text",
+          "text": "Antal lådor i rad 4, 5, 6: 0, 1, 0."
+        },
+        "simon": {
+          "kind": "grid_map",
+          "text": "Lastrummet. Ingen låda står bredvid en annan, inte ens snett.",
+          "cols": 6,
+          "rows": 6,
+          "cells": {}
+        }
+      },
+      "hints": [
+        "Kolumnerna B, D och E och raderna 2, 3 och 5 har en låda var.",
+        "Lådan i B står högst upp: B2.",
+        "E står ovanför D: E3 och D5."
+      ],
+      "epilogue": {
+        "text": "Alla tre lådor hittade. Testkalendern är slut."
+      }
+    }
+  ]
+}

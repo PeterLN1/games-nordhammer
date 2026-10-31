@@ -1061,7 +1061,7 @@ describe('punkt 7: /admin/check', () => {
       [c => { c.days[1].fragments.simon.cells.F9 = 'x'; }, 'dag 2: lapp för simon har rutor utanför kartan'],
       [c => { c.days[0].fragments.peter = { kind: 'svg', svg: '<script>' }; }, 'dag 1: lapp för peter saknar en giltig svg'],
       [c => { c.days[0].hints.pop(); }, 'dag 1: ska ha exakt 3 ledtrådar'],
-      [c => { c.days[0].lock.type = 'safe'; }, 'dag 1: ogiltig låstyp (ska vara digits, word, coordinate, choice)'],
+      [c => { c.days[0].lock.type = 'safe'; }, 'dag 1: ogiltig låstyp (ska vara digits, word, coordinate, choice, sequence, cells, path)'],
       [c => { c.days[0].answer = '91370'; }, 'dag 1: svaret passar inte låstypen digits (4 siffror)'],
       [c => { c.days[0].answer = '91a7'; }, 'dag 1: svaret passar inte låstypen digits (4 siffror)'],
       [c => { c.days[2].answer = 'LYKT4'; }, 'dag 3: svaret passar inte låstypen word (5 bokstäver A–Ö)'],

@@ -82,8 +82,10 @@ function validateContent(c) {
   if (!Array.isArray(c.days) || c.days.length < 1 || c.days.length > MAX_DAYS) fail('days måste ha 1–' + MAX_DAYS + ' luckor');
   c.days.forEach((d, i) => {
     if (!d || d.day !== i + 1) fail('dagarna är inte numrerade 1, 2, 3 …');
-    if (!d.lock || typeof d.lock.type !== 'string') fail('dag ' + (i + 1) + ': lock saknas');
-    if (typeof d.answer !== 'string' || !d.answer) fail('dag ' + (i + 1) + ': svar saknas');
+    for (const st of dayStages(d)) {
+      if (!st || !st.lock || typeof st.lock.type !== 'string') fail('dag ' + (i + 1) + ': lock saknas');
+      if (typeof st.answer !== 'string' || !st.answer) fail('dag ' + (i + 1) + ': svar saknas');
+    }
     if (!d.fragments || SLOTS.some(s => !d.fragments[s])) fail('dag ' + (i + 1) + ': lappar saknas');
   });
   return c;
@@ -146,6 +148,8 @@ export function loadContent({ mode, key, sampleStart, active, encPath, samplePat
     return { content: c, source: 'encrypted' };
   }
   if (mode === 'sample') return readSample(samplePath, sampleStart);
+  // Fler testkalendrar: KALENDER_CONTENT=sample-verktyg → server/kalender/sample-verktyg.json.
+  if (typeof mode === 'string' && /^sample-[a-z0-9-]{1,40}$/.test(mode)) return readSample(path.join(CONTENT_DIR, mode + '.json'), sampleStart);
   let error;
   if (key && !validActive) error = 'CONTENT_KEY är satt men KALENDER_ACTIVE saknas';
   else if (key) error = 'CONTENT_KEY är satt men den krypterade filen för den aktiva kalendern saknas';
@@ -159,7 +163,7 @@ export function loadContent({ mode, key, sampleStart, active, encPath, samplePat
    är OK. Felen säger bara VAR något är fel (dag, plats, fält, låstyp),
    aldrig VAD som står i filen — inga texter, svar, föremålsnamn eller id:n
    ur innehållet. Så kan den köras mot det riktiga innehållet utan spoilers. */
-const LOCK_TYPES = ['digits', 'word', 'coordinate', 'choice'];
+const LOCK_TYPES = ['digits', 'word', 'coordinate', 'choice', 'sequence', 'cells', 'path'];
 const FRAGMENT_KINDS = ['text', 'svg', 'grid_map', 'photo_task'];
 const nonEmpty = v => typeof v === 'string' && v.trim().length > 0;
 const intIn = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -168,6 +172,45 @@ function coordInside(key, cols, rows) {
   const m = COORD.exec(key);
   return !!m && m[1].charCodeAt(0) - 64 <= cols && Number(m[2]) <= rows;
 }
+const pieceOk = x => !!x && typeof x === 'object' && (nonEmpty(x.text) || svgOk(x.svg)) && (x.svg === undefined || svgOk(x.svg));
+const svgOk = v => typeof v === 'string' && /^\s*<svg[\s>]/i.test(v);
+// Ett lås och dess svar. Felen nämner bara låstyp och form, aldrig svaret.
+function checkLock(lock, answer, where, err) {
+  if (!lock || !LOCK_TYPES.includes(lock.type)) { err(where, 'ogiltig låstyp (ska vara ' + LOCK_TYPES.join(', ') + ')'); return; }
+  const t = lock.type;
+  let ok = true;
+  if ((t === 'digits' || t === 'word') && !intIn(lock.length, 1, 12)) { err(where, 'låset ' + t + ' behöver length 1–12'); ok = false; }
+  if (['coordinate', 'cells', 'path'].includes(t) && !(intIn(lock.cols, 1, 26) && intIn(lock.rows, 1, 30))) { err(where, 'låset ' + t + ' behöver cols 1–26 och rows 1–30'); ok = false; }
+  if ((t === 'cells' || t === 'path') && ok && !intIn(lock.count, 1, lock.cols * lock.rows)) { err(where, 'låset ' + t + ' behöver count (antal rutor)'); ok = false; }
+  if (t === 'choice' && !(Array.isArray(lock.options) && lock.options.length >= 2 && lock.options.every(nonEmpty) && new Set(lock.options.map(o => o.trim())).size === lock.options.length)) { err(where, 'vallåset behöver minst två olika alternativ'); ok = false; }
+  if (t === 'sequence') {
+    const pal = Array.isArray(lock.palette) ? lock.palette : [];
+    const ids = pal.map(p => p && String(p.id || '').toLowerCase());
+    if (!intIn(lock.length, 1, 12)) { err(where, 'symbollåset behöver length 1–12'); ok = false; }
+    if (pal.length < 2 || ids.some(id => !/^[a-z0-9-]+$/.test(id)) || new Set(ids).size !== ids.length) { err(where, 'symbollåset behöver minst två symboler med unika id (a–z, 0–9, -)'); ok = false; }
+    else if (pal.some(p => !(nonEmpty(p.label) || svgOk(p.svg)))) { err(where, 'varje symbol behöver label eller svg'); ok = false; }
+  }
+  if (lock.feedback !== undefined && !(lock.feedback === true && (t === 'digits' || t === 'word'))) err(where, 'feedback finns bara för digits och word');
+  if (lock.max_attempts !== undefined && !intIn(lock.max_attempts, 1, 50)) err(where, 'max_attempts ska vara 1–50');
+  if (ok && answerSpace(lock) < 4) err(where, 'låset har färre än fyra möjliga svar och är lätt att gissa');
+  if (!nonEmpty(answer)) { err(where, 'svar saknas'); return; }
+  if (!ok) return;
+  const a = normalizeAnswer(lock, answer);
+  if (t === 'digits' && !(/^\d+$/.test(a) && a.length === lock.length && a === answer.trim())) err(where, 'svaret passar inte låstypen digits (' + lock.length + ' siffror)');
+  if (t === 'word' && !(/^[A-ZÅÄÖ]+$/.test(a) && a.length === lock.length)) err(where, 'svaret passar inte låstypen word (' + lock.length + ' bokstäver A–Ö)');
+  if (t === 'coordinate' && !coordInside(a, lock.cols, lock.rows)) err(where, 'svaret passar inte koordinatlåset (en ruta inom ' + lock.cols + ' × ' + lock.rows + ')');
+  if (t === 'choice' && !lock.options.map(o => String(o).trim()).includes(a)) err(where, 'svaret är inte ett av alternativen');
+  if (t === 'sequence') {
+    const tokens = a.split(','), ids = lock.palette.map(p => String(p.id).toLowerCase());
+    if (tokens.length !== lock.length || tokens.some(x => !ids.includes(x))) err(where, 'svaret passar inte symbollåset (' + lock.length + ' symboler ur paletten)');
+    else if (lock.repeat === false && new Set(tokens).size !== tokens.length) err(where, 'svaret upprepar en symbol fast repeat är false');
+  }
+  if (t === 'cells' || t === 'path') {
+    const tokens = a.split(' ');
+    if (tokens.length !== lock.count || tokens.some(x => !coordInside(x, lock.cols, lock.rows)) || (t === 'cells' && new Set(tokens).size !== tokens.length)) err(where, 'svaret passar inte låset ' + t + ' (' + lock.count + ' rutor inom ' + lock.cols + ' × ' + lock.rows + ')');
+  }
+}
+
 export function checkContent(c) {
   const errors = [];
   const err = (where, msg) => errors.push(where ? where + ': ' + msg : msg);
@@ -202,20 +245,14 @@ export function checkContent(c) {
     if (!nonEmpty(d.title)) err(where, 'title saknas');
     if (!nonEmpty(d.intro)) err(where, 'intro saknas');
 
-    // Låset och svaret
-    const lock = d.lock;
-    if (!lock || !LOCK_TYPES.includes(lock.type)) err(where, 'ogiltig låstyp (ska vara ' + LOCK_TYPES.join(', ') + ')');
-    else if ((lock.type === 'digits' || lock.type === 'word') && !intIn(lock.length, 1, 12)) err(where, 'låset ' + lock.type + ' behöver length 1–12');
-    else if (lock.type === 'coordinate' && !(intIn(lock.cols, 1, 26) && intIn(lock.rows, 1, 30))) err(where, 'koordinatlåset behöver cols 1–26 och rows 1–30');
-    else if (lock.type === 'choice' && !(Array.isArray(lock.options) && lock.options.length >= 2 && lock.options.every(nonEmpty) && new Set(lock.options.map(o => o.trim())).size === lock.options.length)) err(where, 'vallåset behöver minst två olika alternativ');
-    if (!nonEmpty(d.answer)) err(where, 'svar saknas');
-    else if (lock && LOCK_TYPES.includes(lock.type)) {
-      const a = normalizeAnswer(lock, d.answer);
-      if (lock.type === 'digits' && !(/^\d+$/.test(a) && a.length === lock.length && a === d.answer.trim())) err(where, 'svaret passar inte låstypen digits (' + lock.length + ' siffror)');
-      if (lock.type === 'word' && !(/^[A-ZÅÄÖ]+$/.test(a) && a.length === lock.length)) err(where, 'svaret passar inte låstypen word (' + lock.length + ' bokstäver A–Ö)');
-      if (lock.type === 'coordinate' && !coordInside(a, lock.cols, lock.rows)) err(where, 'svaret passar inte koordinatlåset (en ruta inom ' + lock.cols + ' × ' + lock.rows + ')');
-      if (lock.type === 'choice' && Array.isArray(lock.options) && !lock.options.map(o => String(o).trim()).includes(a)) err(where, 'svaret är inte ett av alternativen');
-    }
+    // Låsen och svaren — ett, eller flera steg (B5)
+    if (d.stages !== undefined && !(Array.isArray(d.stages) && d.stages.length >= 2)) err(where, 'stages ska vara en lista med minst två lås');
+    const stages = Array.isArray(d.stages) && d.stages.length ? d.stages : [{ lock: d.lock, answer: d.answer }];
+    stages.forEach((st, si) => {
+      const w = stages.length > 1 ? where + ', lås ' + (si + 1) : where;
+      checkLock(st && st.lock, st && st.answer, w, err);
+      if (si < stages.length - 1 && st && st.after !== undefined && !pieceOk(st.after)) err(w, 'after behöver text eller en giltig svg');
+    });
 
     // Lapparna
     const f = d.fragments;
@@ -232,6 +269,7 @@ export function checkContent(c) {
           if (!(intIn(fr.cols, 1, 26) && intIn(fr.rows, 1, 30))) err('', w + ' behöver cols 1–26 och rows 1–30');
           else if (!fr.cells || typeof fr.cells !== 'object' || Object.keys(fr.cells).some(k => !coordInside(k, fr.cols, fr.rows))) err('', w + ' har rutor utanför kartan');
         }
+        if (fr.private !== undefined && !pieceOk(fr.private)) err('', w + ': den hemliga delen behöver text eller en giltig svg');
       }
       for (const slot of Object.keys(f)) if (!SLOTS.includes(slot)) err(where, 'okänd plats i fragments');
     }
@@ -252,6 +290,10 @@ export function checkContent(c) {
       if (!item || !nonEmpty(item.id) || !nonEmpty(item.name)) err(where, 'föremålet i epilogue behöver id och name');
       else if (givenBy.has(item.id)) err(where, 'föremålet i epilogue har samma id som dag ' + givenBy.get(item.id));
       else givenBy.set(item.id, n);
+      if (item && item.content !== undefined) {
+        if (!pieceOk(item.content)) err(where, 'föremålets innehåll behöver text eller en giltig svg');
+        else if (item.content.overlay !== undefined && !(item.content.overlay === true && svgOk(item.content.svg))) err(where, 'ett genomskinligt föremål (overlay) behöver en svg');
+      }
     }
   });
   return errors;
@@ -314,25 +356,111 @@ export function makeNow({ fakeNow, nodeEnv } = {}) {
 }
 
 /* ---------- Normalisering av svar (SPEC 4) ---------- */
+const coordTokens = s => s.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+const coordOrder = (a, b) => a.charCodeAt(0) - b.charCodeAt(0) || Number(a.slice(1)) - Number(b.slice(1));
 export function normalizeAnswer(lock, raw) {
   const s = String(raw == null ? '' : raw);
   switch (lock && lock.type) {
     case 'digits': return s.replace(/\D/g, '');
     case 'word': return s.toUpperCase().replace(/\s+/g, '');
     case 'coordinate': return s.toUpperCase().replace(/\s+/g, '');
+    // Symboler: palettens id:n i ordning, t.ex. "sol,mane,stjarna".
+    case 'sequence': return s.toLowerCase().split(/[\s,;]+/).filter(Boolean).join(',');
+    // Flera rutor: en mängd, ordningen spelar ingen roll ("B3 C4").
+    case 'cells': return [...new Set(coordTokens(s))].sort(coordOrder).join(' ');
+    // En väg: rutorna i ordning ("A1 A2 B2").
+    case 'path': return coordTokens(s).join(' ');
     default: return s.trim();
   }
+}
+
+/* ---------- Lås i flera steg (B5) ----------
+   En lucka har antingen ett lås (lock + answer) eller flera steg:
+   stages: [{ lock, answer, after: { text?, svg? } }, …]. När ett steg är
+   löst visas dess "after" (mellanspelet) för alla och nästa lås öppnas.
+   Ett löst mellansteg sparas som händelsen 'stage' (body = stegets nummer). */
+export function dayStages(d) {
+  if (Array.isArray(d.stages) && d.stages.length) return d.stages;
+  return [{ lock: d.lock, answer: d.answer }];
+}
+const ORDINALS = ['första', 'andra', 'tredje', 'fjärde', 'femte'];
+// Felaktiga försök: vanlig text för en lucka med ett lås, {"s":steg,"a":svar} med flera.
+function parseAttempt(e) {
+  const b = e.body || '';
+  if (b.charAt(0) === '{') { try { const o = JSON.parse(b); return { stage: o.s | 0, text: String(o.a || '') }; } catch (err) { /* vanlig text */ } }
+  return { stage: 0, text: b };
+}
+
+/* ---------- Gissningsskydd ----------
+   Hur många svar ett lås har, och hur många försök laget får per dag:
+   högst en fjärdedel av alla svar (minst 1, högst 5 × 10). Innehållet kan
+   sänka gränsen med lock.max_attempts. Försöken räknas per dag, så en
+   lucka kan aldrig låsas för gott. */
+function binom(n, k) { let r = 1; for (let i = 1; i <= k; i++) r = r * (n - k + i) / i; return Math.round(r); }
+export function answerSpace(lock) {
+  const len = lock.length | 0, cells = (lock.cols | 0) * (lock.rows | 0), count = lock.count | 0;
+  switch (lock.type) {
+    case 'digits': return Math.pow(10, len);
+    case 'word': return Math.pow(29, len);
+    case 'coordinate': return cells;
+    case 'choice': return Array.isArray(lock.options) ? lock.options.length : 0;
+    case 'sequence': {
+      const p = Array.isArray(lock.palette) ? lock.palette.length : 0;
+      if (lock.repeat === false) { let r = 1; for (let i = 0; i < len; i++) r *= Math.max(0, p - i); return r; }
+      return Math.pow(p, len);
+    }
+    case 'cells': return binom(cells, count);
+    case 'path': return Math.pow(cells, count);
+    default: return 0;
+  }
+}
+export function teamAttemptLimit(lock) {
+  const max = SLOTS.length * MAX_ATTEMPTS_PER_DAY;
+  const byShape = Math.max(1, Math.min(max, Math.floor(answerSpace(lock) / 4)));
+  return Number.isInteger(lock.max_attempts) && lock.max_attempts >= 1 ? Math.min(byShape, lock.max_attempts) : byShape;
+}
+
+// Återkoppling på felförsök (B8, lock.feedback för digits och word):
+// hur många tecken som står rätt, och hur många som finns men står fel.
+export function attemptFeedback(answer, guess) {
+  const a = Array.from(answer), g = Array.from(guess);
+  let exact = 0; const restA = {}, restG = {};
+  for (let i = 0; i < Math.max(a.length, g.length); i++) {
+    if (a[i] !== undefined && a[i] === g[i]) exact++;
+    else { if (a[i] !== undefined) restA[a[i]] = (restA[a[i]] || 0) + 1; if (g[i] !== undefined) restG[g[i]] = (restG[g[i]] || 0) + 1; }
+  }
+  let near = 0;
+  for (const ch of Object.keys(restG)) near += Math.min(restG[ch], restA[ch] || 0);
+  return { exact, near };
 }
 
 /* ---------- Vad servern får skicka (SPEC 6) ---------- */
 // Whitelistor — inga okända fält ur innehållsfilen följer med av misstag.
 function publicLock(lock) {
   const out = { type: lock.type };
-  ['length', 'cols', 'rows'].forEach(k => { if (Number.isInteger(lock[k])) out[k] = lock[k]; });
+  ['length', 'cols', 'rows', 'count'].forEach(k => { if (Number.isInteger(lock[k])) out[k] = lock[k]; });
   if (Array.isArray(lock.options)) out.options = lock.options.map(String);
+  if (lock.type === 'sequence') {
+    out.palette = (Array.isArray(lock.palette) ? lock.palette : []).map(p => {
+      const o = { id: String(p.id).toLowerCase() };
+      if (typeof p.label === 'string') o.label = p.label;
+      if (typeof p.svg === 'string') o.svg = p.svg;
+      return o;
+    });
+    out.repeat = lock.repeat !== false;
+  }
+  if (lock.feedback === true && (lock.type === 'digits' || lock.type === 'word')) out.feedback = true;
   return out;
 }
-function publicFragment(f, { withReveal }) {
+// Text eller bild — samma form för lappens hemliga del och föremålens innehåll.
+function publicPiece(x) {
+  if (!x || typeof x !== 'object') return null;
+  const out = {};
+  if (typeof x.text === 'string') out.text = x.text;
+  if (typeof x.svg === 'string') out.svg = x.svg;
+  return Object.keys(out).length ? out : null;
+}
+function publicFragment(f, { withReveal, withPrivate }) {
   const out = { kind: f.kind };
   if (typeof f.text === 'string') out.text = f.text;
   if (f.kind === 'svg' && typeof f.svg === 'string') out.svg = f.svg;
@@ -341,6 +469,9 @@ function publicFragment(f, { withReveal }) {
     out.cells = Object.assign({}, f.cells || {});
   }
   if (f.kind === 'photo_task' && withReveal && typeof f.reveal === 'string') out.reveal = f.reveal;
+  // Hemlig del (B3): bara ägaren ser den — tills luckan är i arkivet eller löst.
+  const priv = publicPiece(f.private);
+  if (priv && withPrivate) out.private = priv;
   return out;
 }
 
@@ -352,7 +483,17 @@ function itemIndex(content) {
   });
   return byId;
 }
-function publicItem(it) { return { id: it.id, name: it.name, description: it.description || '' }; }
+// Föremål (B1): namn, beskrivning och eventuellt innehåll (text eller svg).
+// overlay: true = ett genomskinligt kort (B2) som kan läggas över bilder.
+function publicItem(it) {
+  const out = { id: it.id, name: it.name, description: it.description || '' };
+  const c = it.content && publicPiece(it.content);
+  if (c) {
+    if (it.content.overlay === true && c.svg) c.overlay = true;
+    out.content = c;
+  }
+  return out;
+}
 
 // Föremål laget har: de som lösta luckor gav, i ordning efter lucka.
 function ownedItems(content, solves) {
@@ -416,7 +557,12 @@ export function buildStory(dayContent, events, solve, nameOf) {
   const wrong = events.filter(e => e.kind === 'attempt').length;
   if (wrong === 1) lines.push('Laget provade ett felaktigt svar.');
   else if (wrong > 1) lines.push('Laget provade ' + wrong + ' felaktiga svar.');
-  lines.push(nameOf(solve.profile_id) + (dayContent.lock.type === 'digits' ? ' slog in koden.' : ' slog in svaret.'));
+  const stages = dayStages(dayContent);
+  events.filter(e => e.kind === 'stage').forEach(e => {
+    lines.push(nameOf(e.profile_id) + ' öppnade det ' + (ORDINALS[(Number(e.body) || 1) - 1] || Number(e.body) + ':e') + ' låset.');
+  });
+  const last = stages[stages.length - 1].lock;
+  lines.push(nameOf(solve.profile_id) + (stages.length > 1 ? ' öppnade det sista låset.' : last.type === 'digits' ? ' slog in koden.' : ' slog in svaret.'));
   const hints = events.filter(e => e.kind === 'hint').length;
   lines.push(hints === 0 ? 'Inga ledtrådar behövdes.' : 'Laget behövde ' + hints + (hints === 1 ? ' ledtråd.' : ' ledtrådar.'));
   lines.push(solve.mode === 'together' ? 'Löst med alla fem.' : 'Löst i efterhand.');
@@ -460,7 +606,7 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
     const f = d.fragments[slot];
     const mine = slot === me;
     if (!(mine || showAll || posted.has(slot))) return;
-    const pf = publicFragment(f, { withReveal: showAll || photoed.has(slot) });
+    const pf = publicFragment(f, { withReveal: showAll || photoed.has(slot), withPrivate: mine || showAll });
     pf.posted = posted.has(slot);
     fragments[slot] = pf;
   });
@@ -474,11 +620,25 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
     n: i + 1, text, taken: i < hintsUsed, by: i < hintsUsed ? (slotByProfile.get(hintEvents[i].profile_id) || null) : null
   }));
 
+  // Steg (B5): hur många lås som är öppnade, och vilket som gäller nu.
+  const stages = dayStages(d);
+  const stagesDone = solve ? stages.length : Math.min(stages.length - 1, new Set(dayEvents.filter(e => e.kind === 'stage').map(e => e.body)).size);
+  const current = Math.min(stagesDone, stages.length - 1);
+  const curLock = stages[current].lock;
+
   const board = dayEvents
     .filter(e => e.kind !== 'solve' || solve)
     .map(e => {
       const item = { id: e.id, kind: e.kind, slot: slotByProfile.get(e.profile_id) || null, name: nameOf(e.profile_id), color: colorOf(e.profile_id), at: new Date(e.created_at).toISOString() };
-      if (e.kind === 'note' || e.kind === 'attempt') item.text = e.body || '';
+      if (e.kind === 'note') item.text = e.body || '';
+      if (e.kind === 'attempt') {
+        const a = parseAttempt(e);
+        item.text = a.text;
+        if (stages.length > 1) item.stage = a.stage + 1;
+        const st = stages[a.stage];
+        if (st && st.lock.feedback === true && (st.lock.type === 'digits' || st.lock.type === 'word')) item.feedback = attemptFeedback(normalizeAnswer(st.lock, st.answer), a.text);
+      }
+      if (e.kind === 'stage') item.stage = Number(e.body) || 1;
       if (e.kind === 'photo') item.photoId = e.body;
       if (e.kind === 'hint') item.hint = hintEvents.indexOf(e) + 1;
       return item;
@@ -497,13 +657,18 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
 
   const allLit = SLOTS.every(s => lit.has(s));
   const myProfile = profileBySlot.get(me);
-  const myAttempts = dayEvents.filter(e => e.kind === 'attempt' && e.profile_id === myProfile).length;
+  // Försök räknas per dag (svensk tid): spelarens alla försök i luckan, och
+  // lagets försök på låset som gäller nu.
+  const todaysAttempts = dayEvents.filter(e => e.kind === 'attempt' && stockholmDate(e.created_at) === today);
+  const myAttempts = todaysAttempts.filter(e => e.profile_id === myProfile).length;
+  const teamAttempts = todaysAttempts.filter(e => parseAttempt(e).stage === current).length;
+  const teamAttemptsLeft = Math.max(0, teamAttemptLimit(curLock) - teamAttempts);
 
   const view = {
     calendar: content.id, theme: publicTheme(content.theme),
     day: n, date, status,
     title: d.title || '', intro: d.intro || '',
-    lock: publicLock(d.lock),
+    lock: publicLock(curLock),
     requiresItems, missingItems,
     me,
     players: SLOTS.map(slot => {
@@ -518,15 +683,29 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
     // Nästa lucka, om den finns: öppen när den här är löst och dess dag har kommit.
     next: n < content.days.length ? { day: n + 1, open: !lockReason(content, n + 1, today, solvedDays) } : null,
     stars: computeStars(solves, events),
-    attemptsLeft: Math.max(0, MAX_ATTEMPTS_PER_DAY - myAttempts)
+    attemptsLeft: Math.min(Math.max(0, MAX_ATTEMPTS_PER_DAY - myAttempts), teamAttemptsLeft),
+    teamAttemptsLeft,
+    // Ryggsäcken (B1): lagets föremål med innehåll.
+    backpack: ownedItems(content, solves)
   };
+  if (stages.length > 1) {
+    view.stage = { index: current + 1, total: stages.length };
+    // Mellanspelen för de lås som redan är öppnade (aldrig för nästa).
+    view.interludes = stages.slice(0, Math.min(stagesDone, stages.length - 1)).map((st, i) => {
+      const o = { stage: i + 1, solution: normalizeAnswer(st.lock, st.answer) };
+      const after = publicPiece(st.after);
+      if (after) Object.assign(o, after);
+      return o;
+    });
+  }
   if (solve) {
     view.solved = {
       at: new Date(solve.solved_at).toISOString(), time: stockholmTime(solve.solved_at),
       by: slotByProfile.get(solve.profile_id) || null, name: nameOf(solve.profile_id), mode: solve.mode
     };
     // Svaret visas som låsrutor i den lösta vyn (SPEC 3.4) — bara här.
-    view.solution = normalizeAnswer(d.lock, d.answer);
+    view.solution = normalizeAnswer(curLock, stages[stages.length - 1].answer);
+    if (stages.length > 1) view.solutions = stages.map(st => normalizeAnswer(st.lock, st.answer));
     view.epilogue = { text: (d.epilogue && d.epilogue.text) || '' };
     if (d.epilogue && d.epilogue.item) view.epilogue.item = publicItem(d.epilogue.item);
     view.story = buildStory(d, dayEvents, solve, nameOf);
@@ -953,10 +1132,24 @@ function createRouter({ store, content, now, adminSecret, listProfiles, loadErro
     if (view.status === 'solved') return res.status(409).json({ error: 'already_solved', day: view });
     if (!view.lockOpen) return res.status(409).json({ error: 'lock_closed' });
     if (view.missingItems.length) return res.status(409).json({ error: 'missing_items', missingItems: view.missingItems });
-    if (view.attemptsLeft <= 0) return res.status(429).json({ error: 'too_many_attempts' });
-    const given = normalizeAnswer(d.lock, (req.body || {}).answer).slice(0, 40);
+    if (view.attemptsLeft <= 0) return res.status(429).json({ error: 'too_many_attempts', team: view.teamAttemptsLeft <= 0 });
+    const stages = dayStages(d);
+    const k = view.stage ? view.stage.index - 1 : 0;
+    // Sidan skickar vilket lås den svarar på. Har någon annan hunnit öppna
+    // det räknas svaret inte som ett felförsök på nästa lås.
+    const forStage = Number((req.body || {}).stage);
+    if (Number.isInteger(forStage) && forStage >= 1 && forStage - 1 < k) return res.status(409).json({ error: 'stage_already_open', day: view });
+    const stage = stages[k];
+    const given = normalizeAnswer(stage.lock, (req.body || {}).answer).slice(0, 200);
     if (!given) return res.status(400).json({ error: 'tomt svar' });
-    if (given === normalizeAnswer(d.lock, d.answer)) {
+    const correct = given === normalizeAnswer(stage.lock, stage.answer);
+    // Ett mellansteg (B5): nästa lås öppnas och mellanspelet visas. Spärren
+    // gör att två som svarar rätt samtidigt bara öppnar steget en gång.
+    if (correct && k < stages.length - 1) {
+      await store.insertEventIfCount({ day: n, profileId: p.profileId, kind: 'stage', body: String(k + 1), createdAt: now() }, { kind: 'stage', count: k });
+      return res.json({ correct: true, stage: k + 1, day: await dayView(n, p) });
+    }
+    if (correct) {
       // Samma dag med alla fem = tillsammans; annars i efterhand.
       const mode = view.status === 'today' && view.allLit ? 'together' : 'archive';
       const at = now();
@@ -965,7 +1158,8 @@ function createRouter({ store, content, now, adminSecret, listProfiles, loadErro
       }
       return res.json({ correct: true, day: await dayView(n, p) });
     }
-    await store.insertEvent({ day: n, profileId: p.profileId, kind: 'attempt', body: given, createdAt: now() });
+    const body = stages.length > 1 ? JSON.stringify({ s: k, a: given }) : given;
+    await store.insertEvent({ day: n, profileId: p.profileId, kind: 'attempt', body, createdAt: now() });
     res.json({ correct: false, day: await dayView(n, p) });
   }));
 
