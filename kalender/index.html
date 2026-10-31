@@ -289,7 +289,7 @@
 
   /* ---------- Genomskinligt kort över en bild ---------- */
   .svg-stack { position: relative; width: 100%; max-width: 420px; margin: 0 auto; }
-  .svg-stack > img:first-child { display: block; width: 100%; height: auto; }
+  .svg-stack > img:not(.overlay-img) { display: block; width: 100%; height: auto; }
   .svg-stack .overlay-img { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; transition: transform .25s; }
   .overlay-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .chip-btn {
@@ -299,6 +299,40 @@
   .chip-btn[aria-pressed="true"] { background: #2A2118; color: #F4EBDD; }
   .sheet .chip-btn, .interlude .chip-btn { border-color: var(--border); background: transparent; color: var(--text); }
   .sheet .chip-btn[aria-pressed="true"], .interlude .chip-btn[aria-pressed="true"] { background: var(--glow); color: var(--on-glow); border-color: var(--glow); }
+
+  /* ---------- Vikbar lapp (B9) ---------- */
+  .fold-fig { max-width: 420px; margin: 0 auto; }
+  .fold-clip { position: relative; overflow: hidden; margin: 0 auto; }
+  .fold-clip img { position: absolute; left: 0; top: 0; }
+  .fold-clip.vertical { width: 50%; }
+  .fold-clip.vertical img { width: 200%; height: 100%; }
+  .fold-clip.vertical img.mirror { transform: scaleX(-1); }
+  .fold-clip.horizontal { width: 100%; }
+  .fold-clip.horizontal img { width: 100%; height: 200%; }
+  .fold-clip.horizontal img.mirror { transform: scaleY(-1); }
+  .fold-flat img { display: block; width: 100%; height: auto; }
+
+  /* ---------- Förstoring (B10) ---------- */
+  .zoom-btn {
+    position: absolute; top: 6px; right: 6px; z-index: 2; width: 36px; height: 36px; border-radius: 10px; border: 0; cursor: pointer;
+    background: rgba(15,15,20,.55); color: #fff; display: flex; align-items: center; justify-content: center;
+  }
+  .zoom-wrap { position: relative; }
+  .zoom-view { position: fixed; inset: 0; z-index: 70; background: #050608; display: flex; flex-direction: column; }
+  .zoom-area { flex: 1; overflow: hidden; touch-action: none; display: flex; align-items: center; justify-content: center; cursor: grab; }
+  .zoom-stage { position: relative; width: min(100vw, 100vh); transform-origin: 0 0; background: var(--paper); }
+  .zoom-stage img { display: block; width: 100%; height: auto; }
+  .zoom-stage img.overlay-img { position: absolute; inset: 0; height: 100%; }
+  .zoom-bar { display: flex; gap: 10px; justify-content: center; align-items: center; padding: 10px 16px calc(env(safe-area-inset-bottom) + 12px); background: rgba(0,0,0,.6); }
+  .zoom-bar .icon-btn { color: #fff; border-color: rgba(255,255,255,.35); }
+  .zoom-bar .pct { color: #ccc; font-size: 14px; min-width: 52px; text-align: center; }
+  img.photo { cursor: zoom-in; }
+
+  /* ---------- Kombinera i ryggsäcken (B11) ---------- */
+  .combine-bar { display: flex; gap: 8px; margin-top: 14px; }
+  .combine-bar .btn { flex: 1; }
+  button.item.selected { box-shadow: inset 0 0 0 2px var(--glow); }
+  .combine-hint { color: var(--muted); font-size: 14px; margin: 4px 0 10px; }
 
   /* ---------- Hemlig del på lappen ---------- */
   .private { margin-top: 10px; padding: 8px 10px; border: 1.5px dashed rgba(42,33,24,.45); border-radius: 6px; }
@@ -451,6 +485,9 @@
     unlock: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 017.6-1.7"/></svg>',
     check: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
     camera: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+    zoom: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20M10.5 7.5v6M7.5 10.5h6"/></svg>',
+    plus: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    minus: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
     close: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     bag: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1.2 12H6.2z"/><path d="M9 8V6a3 3 0 016 0v2"/></svg>',
     train: '<svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14M9 21l-2 0M15 21h2M8 17l-2 4M16 17l2 4"/><circle cx="9" cy="14" r=".8" fill="currentColor"/><circle cx="15" cy="14" r=".8" fill="currentColor"/></svg>',
@@ -681,17 +718,40 @@
   function openBackpack(items, openId){
     closeBackpack();
     var shown = openId || null;
+    var combining = null; // valda föremål när laget kombinerar (B11)
     var list = el('div');
+    function combine(){
+      var pair = combining.slice();
+      api('POST', '/combine', { a: pair[0], b: pair[1] }).then(function(res){
+        var b = res.body || {};
+        if (res.status === 200 && b.ok) {
+          items = b.items; combining = null; shown = b.item.id;
+          if (view.data) { if (view.data.backpack) view.data.backpack = b.items; if (view.data.items) view.data.items = b.items; }
+          toast('Ni fick: ' + b.item.name);
+          draw(); refresh();
+        } else if (res.status === 200) { toast(b.message || 'Inget händer.'); combining = []; draw(); }
+        else if (res.status === 400) toast('Laget har inte de föremålen.');
+        else if (!handleError(res)) toast('Kunde inte kombinera just nu.');
+      }, function(){ toast('Ingen kontakt med servern. Försök igen.'); });
+    }
     function draw(){
       list.textContent = '';
       if (!items.length) add(list, el('p', { class: 'empty', text: 'Ryggsäcken är tom. Föremål hittar ni när luckor löses.' }));
+      if (combining) add(list, el('p', { class: 'combine-hint', text: 'Välj två föremål att kombinera (' + combining.length + ' av 2).' }));
       items.forEach(function(it){
-        var open = shown === it.id;
-        add(list, el('button', { type: 'button', class: 'item' + (open ? ' new-item' : ''), 'aria-expanded': it.content ? String(open) : null,
-          onclick: function(){ if (it.content) { shown = open ? null : it.id; draw(); } } },
+        var open = !combining && shown === it.id, sel = combining && combining.indexOf(it.id) >= 0;
+        add(list, el('button', { type: 'button', class: 'item' + (open ? ' new-item' : '') + (sel ? ' selected' : ''), 'aria-expanded': !combining && it.content ? String(open) : null, 'aria-pressed': combining ? String(!!sel) : null,
+          onclick: function(){
+            if (combining) {
+              var i = combining.indexOf(it.id);
+              if (i >= 0) combining.splice(i, 1); else if (combining.length < 2) combining.push(it.id);
+              draw(); return;
+            }
+            if (it.content) { shown = open ? null : it.id; draw(); }
+          } },
           icon('bag'), el('div', null, el('div', { class: 'name', text: it.name }), it.description ? el('div', { class: 'desc', text: it.description }) : null,
             it.content && it.content.overlay ? el('span', { class: 'item-tag', text: 'Genomskinligt kort' }) : null),
-          it.content ? el('span', { class: 'more', text: open ? 'Dölj' : 'Visa' }) : null));
+          !combining && it.content ? el('span', { class: 'more', text: open ? 'Dölj' : 'Visa' }) : null));
         if (open && it.content) {
           add(list, el('div', { class: 'item-detail' },
             it.content.overlay ? el('p', { class: 'desc', text: 'Kortet är genomskinligt. Under bilderna på lapparna finns knappen ”Lägg över”, så att ni kan lägga kortet över dem, vrida det och spegelvända det.' }) : null,
@@ -699,6 +759,10 @@
               it.content.svg ? svgFigure(it.content.svg, it.name, 'frag-svg', it.id) : null)));
         }
       });
+      if (items.length >= 2) add(list, el('div', { class: 'combine-bar' }, combining
+        ? [el('button', { type: 'button', class: 'btn btn-secondary', text: 'Avbryt', onclick: function(){ combining = null; draw(); } }),
+           el('button', { type: 'button', class: 'btn btn-primary', text: 'Kombinera', disabled: combining.length !== 2, onclick: combine })]
+        : el('button', { type: 'button', class: 'btn btn-secondary', text: 'Kombinera två föremål', onclick: function(){ combining = []; shown = null; draw(); } })));
     }
     draw();
     sheet = el('div', { class: 'sheet-backdrop', onclick: function(e){ if (e.target === sheet) closeBackpack(); } },
@@ -786,6 +850,9 @@
     var fig = el('div', null, wrap);
     function draw(){
       wrap.textContent = '';
+      add(wrap, el('button', { type: 'button', class: 'zoom-btn', 'aria-label': 'Förstora bilden', onclick: function(){
+        openZoom(Array.prototype.map.call(wrap.querySelectorAll('img'), function(im){ return { src: im.src, alt: im.alt, cls: im.className, style: im.getAttribute('style') || '' }; }));
+      } }, icon('zoom')));
       add(wrap, el('img', { class: cls || 'frag-svg', src: svgDataUri(svg), alt: alt }));
       if (st) {
         var card = cards.filter(function(c){ return c.id === st.id; })[0];
@@ -808,6 +875,107 @@
     draw();
     return fig;
   }
+  // Vikbar lapp (B9): "Vik" lägger bildens ena halva över den andra
+  // (spegelvänd), som när man viker ett papper på mitten.
+  var foldState = {};
+  function viewBoxRatio(svg){
+    var m = /viewBox\s*=\s*["']([^"']+)["']/i.exec(svg || '');
+    var v = m ? m[1].trim().split(/[\s,]+/).map(Number) : null;
+    return v && v[2] > 0 && v[3] > 0 ? v[2] / v[3] : 1;
+  }
+  function foldFigure(svg, axis){
+    var key = svgKey(svg), vertical = axis !== 'horizontal', ratio = viewBoxRatio(svg), src = svgDataUri(svg);
+    var box = el('div', { class: 'zoom-wrap' }), btn = el('button', { type: 'button', class: 'chip-btn' });
+    var fig = el('div', { class: 'fold-fig' }, box, el('div', { class: 'overlay-bar' }, btn));
+    function draw(){
+      var folded = !!foldState[key];
+      box.textContent = '';
+      var imgs;
+      if (folded) {
+        var clip = el('div', { class: 'fold-clip ' + (vertical ? 'vertical' : 'horizontal'), style: 'aspect-ratio: ' + (vertical ? ratio / 2 : ratio * 2) });
+        add(clip, el('img', { src: src, alt: 'Lappen, vikt' }));
+        add(clip, el('img', { src: src, alt: '', class: 'mirror' }));
+        add(box, clip);
+        clip.classList.add('enter');
+      } else add(box, el('div', { class: 'fold-flat' }, el('img', { src: src, alt: 'Lappen, utvikt' })));
+      add(box, el('button', { type: 'button', class: 'zoom-btn', 'aria-label': 'Förstora bilden', onclick: function(){ openZoom([{ src: src, alt: 'Lappen' }]); } }, icon('zoom')));
+      btn.textContent = folded ? 'Veckla ut' : 'Vik';
+      btn.setAttribute('aria-pressed', folded ? 'true' : 'false');
+    }
+    btn.addEventListener('click', function(){ foldState[key] = !foldState[key]; draw(); });
+    draw();
+    return fig;
+  }
+
+  /* ---------- Förstoring (B10) ----------
+     Bilden i helskärm: nyp för att zooma, dra för att flytta, dubbeltryck
+     för att växla mellan 1× och 3×. Ett pålagt genomskinligt kort följer med. */
+  var zoomView = null;
+  function closeZoom(){ if (zoomView) { zoomView.remove(); zoomView = null; document.body.style.overflow = ''; } }
+  function openZoom(images){
+    closeZoom();
+    var scale = 1, tx = 0, ty = 0, pointers = {}, pinch = null, drag = null, lastTap = 0;
+    var stage = el('div', { class: 'zoom-stage' });
+    images.forEach(function(im){ add(stage, el('img', { src: im.src, alt: im.alt || '', class: /overlay-img/.test(im.cls || '') ? 'overlay-img' : '', style: im.style || '' })); });
+    var pct = el('span', { class: 'pct' });
+    var area = el('div', { class: 'zoom-area' }, stage);
+    function apply(){
+      scale = Math.max(1, Math.min(8, scale));
+      if (scale === 1) { tx = 0; ty = 0; }
+      stage.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
+      pct.textContent = Math.round(scale * 100) + ' %';
+    }
+    // Zooma kring en punkt (skärmkoordinater), så att den punkten står still.
+    function zoomAt(newScale, cx, cy){
+      var r = stage.getBoundingClientRect(), ox = r.left - tx, oy = r.top - ty;
+      var px = (cx - ox - tx) / scale, py = (cy - oy - ty) / scale;
+      scale = Math.max(1, Math.min(8, newScale));
+      tx = cx - ox - px * scale; ty = cy - oy - py * scale;
+      apply();
+    }
+    function center(){ var r = area.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }
+    area.addEventListener('pointerdown', function(e){
+      area.setPointerCapture(e.pointerId);
+      pointers[e.pointerId] = [e.clientX, e.clientY];
+      var ids = Object.keys(pointers);
+      if (ids.length === 2) {
+        var a = pointers[ids[0]], b = pointers[ids[1]];
+        pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: scale }; drag = null;
+      } else if (ids.length === 1) {
+        drag = { x: e.clientX, y: e.clientY, tx: tx, ty: ty };
+        var now = Date.now();
+        if (now - lastTap < 300) { zoomAt(scale > 1.5 ? 1 : 3, e.clientX, e.clientY); drag = null; }
+        lastTap = now;
+      }
+    });
+    area.addEventListener('pointermove', function(e){
+      if (!pointers[e.pointerId]) return;
+      pointers[e.pointerId] = [e.clientX, e.clientY];
+      var ids = Object.keys(pointers);
+      if (pinch && ids.length >= 2) {
+        var a = pointers[ids[0]], b = pointers[ids[1]];
+        zoomAt(pinch.s * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      } else if (drag && scale > 1) {
+        tx = drag.tx + e.clientX - drag.x; ty = drag.ty + e.clientY - drag.y; apply();
+      }
+    });
+    function up(e){ delete pointers[e.pointerId]; if (Object.keys(pointers).length < 2) pinch = null; if (!Object.keys(pointers).length) drag = null; }
+    area.addEventListener('pointerup', up);
+    area.addEventListener('pointercancel', up);
+    area.addEventListener('wheel', function(e){ e.preventDefault(); zoomAt(scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY); }, { passive: false });
+    zoomView = el('div', { class: 'zoom-view', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Förstorad bild' }, area,
+      el('div', { class: 'zoom-bar' },
+        el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zooma ut', onclick: function(){ var c = center(); zoomAt(scale / 1.5, c[0], c[1]); } }, icon('minus')),
+        pct,
+        el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zooma in', onclick: function(){ var c = center(); zoomAt(scale * 1.5, c[0], c[1]); } }, icon('plus')),
+        el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Stäng', onclick: closeZoom }, icon('close'))));
+    document.body.appendChild(zoomView);
+    document.body.style.overflow = 'hidden';
+    apply();
+  }
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeZoom(); });
+  window.addEventListener('hashchange', closeZoom);
+
   // Text och/eller bild, t.ex. en lapps hemliga del eller ett mellanspel.
   function pieceContent(x, alt){
     var out = [];
@@ -819,6 +987,7 @@
     var out = [];
     if (f.text) out.push(el('div', { class: 'frag-text', text: f.text }));
     if (f.kind === 'svg' && f.svg) out.push(svgFigure(f.svg, 'Bild på lappen'));
+    if (f.kind === 'fold' && f.svg) out.push(foldFigure(f.svg, f.axis));
     if (f.kind === 'grid_map') out.push(gridMap(f));
     if (f.reveal) out.push(el('div', { class: 'reveal', text: f.reveal }));
     // Hemlig del (B3): servern skickar den bara till ägaren — och till alla i arkivet eller när luckan är löst.
@@ -1007,7 +1176,7 @@
         var f = d.fragments[b.slot];
         return el('div', { class: 'post' }, head,
           el('div', { class: 'body', text: b.kind === 'photo' ? 'lade ut ett foto' : 'lade ut sin lapp' }),
-          b.kind === 'photo' && b.photoId ? el('img', { class: 'photo', src: photoUrl(b.photoId), alt: 'Foto från ' + b.name, loading: 'lazy' }) : null,
+          b.kind === 'photo' && b.photoId ? el('img', { class: 'photo', src: photoUrl(b.photoId), alt: 'Foto från ' + b.name, loading: 'lazy', onclick: function(){ openZoom([{ src: photoUrl(b.photoId), alt: 'Foto från ' + b.name }]); } }) : null,
           f ? el('div', { class: 'fragment' }, fragmentContent(f)) : null);
       }
       if (b.kind === 'note') return el('div', { class: 'post' }, head, el('div', { class: 'body', text: b.text }));
@@ -1224,7 +1393,7 @@
     function tap(v){
       var sel = lockPick[key], i = sel.indexOf(v);
       if (isPath) {
-        if (i === sel.length - 1) sel.pop();          // tryck på sista rutan igen = ångra
+        if (i >= 0 && i === sel.length - 1) sel.pop(); // tryck på sista rutan igen = ångra
         else if (i < 0 && sel.length < count) sel.push(v);
       } else if (i >= 0) sel.splice(i, 1);
       else if (sel.length < count) sel.push(v);

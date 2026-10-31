@@ -164,7 +164,7 @@ export function loadContent({ mode, key, sampleStart, active, encPath, samplePat
    aldrig VAD som står i filen — inga texter, svar, föremålsnamn eller id:n
    ur innehållet. Så kan den köras mot det riktiga innehållet utan spoilers. */
 const LOCK_TYPES = ['digits', 'word', 'coordinate', 'choice', 'sequence', 'cells', 'path'];
-const FRAGMENT_KINDS = ['text', 'svg', 'grid_map', 'photo_task'];
+const FRAGMENT_KINDS = ['text', 'svg', 'grid_map', 'photo_task', 'fold'];
 const nonEmpty = v => typeof v === 'string' && v.trim().length > 0;
 const intIn = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 const COORD = /^([A-Z])([1-9][0-9]?)$/;
@@ -238,6 +238,9 @@ export function checkContent(c) {
   if (c.days.length < 1 || c.days.length > MAX_DAYS) err('', 'antalet dagar är ' + c.days.length + ', ska vara 1–' + MAX_DAYS);
 
   const givenBy = new Map(); // föremålets id → dagen som ger det
+  // Ett kombinerat föremål (B11) finns när båda delarna finns.
+  const recs = Array.isArray(c.combine) ? c.combine : [];
+  const available = (id, depth = 0) => givenBy.has(id) || (depth < 5 && recs.some(r => r && r.result && r.result.id === id && available(r.a, depth + 1) && available(r.b, depth + 1)));
   c.days.forEach((d, i) => {
     const n = i + 1, where = 'dag ' + n;
     if (!d || typeof d !== 'object') { err(where, 'saknas'); return; }
@@ -263,7 +266,8 @@ export function checkContent(c) {
         if (!fr || typeof fr !== 'object') { err('', w + ' saknas'); continue; }
         if (!FRAGMENT_KINDS.includes(fr.kind)) { err('', w + ' har ogiltig typ (ska vara ' + FRAGMENT_KINDS.join(', ') + ')'); continue; }
         if (fr.kind === 'text' && !nonEmpty(fr.text)) err('', w + ' saknar text');
-        if (fr.kind === 'svg' && !(typeof fr.svg === 'string' && /^\s*<svg[\s>]/i.test(fr.svg))) err('', w + ' saknar en giltig svg');
+        if ((fr.kind === 'svg' || fr.kind === 'fold') && !(typeof fr.svg === 'string' && /^\s*<svg[\s>]/i.test(fr.svg))) err('', w + ' saknar en giltig svg');
+        if (fr.kind === 'fold' && fr.axis !== undefined && !['vertical', 'horizontal'].includes(fr.axis)) err('', w + ': axis ska vara vertical eller horizontal');
         if (fr.kind === 'photo_task' && !(nonEmpty(fr.text) && nonEmpty(fr.reveal))) err('', w + ' behöver text och reveal');
         if (fr.kind === 'grid_map') {
           if (!(intIn(fr.cols, 1, 26) && intIn(fr.rows, 1, 30))) err('', w + ' behöver cols 1–26 och rows 1–30');
@@ -280,7 +284,7 @@ export function checkContent(c) {
     // Föremål som krävs måste ges av en tidigare lucka
     if (d.requires_items !== undefined && !Array.isArray(d.requires_items)) err(where, 'requires_items är ingen lista');
     (Array.isArray(d.requires_items) ? d.requires_items : []).forEach((id, k) => {
-      if (!givenBy.has(id)) err(where, 'föremål nr ' + (k + 1) + ' i requires_items ges inte av någon tidigare lucka');
+      if (!available(id)) err(where, 'föremål nr ' + (k + 1) + ' i requires_items ges inte av någon tidigare lucka');
     });
 
     // Epilog och föremål
@@ -293,6 +297,40 @@ export function checkContent(c) {
       if (item && item.content !== undefined) {
         if (!pieceOk(item.content)) err(where, 'föremålets innehåll behöver text eller en giltig svg');
         else if (item.content.overlay !== undefined && !(item.content.overlay === true && svgOk(item.content.svg))) err(where, 'ett genomskinligt föremål (overlay) behöver en svg');
+      }
+    }
+  });
+  // Recepten: delarna ska finnas, och resultatet ska ha ett eget id.
+  if (c.combine !== undefined && !Array.isArray(c.combine)) err('combine', 'är ingen lista');
+  const doorItems = new Set(givenBy.keys());
+  const resultIds = new Set();
+  recs.forEach((r, i) => {
+    const w = 'combine ' + (i + 1);
+    if (!r || !nonEmpty(r.a) || !nonEmpty(r.b) || !r.result || !nonEmpty(r.result.id) || !nonEmpty(r.result.name)) { err(w, 'behöver a, b och result med id och name'); return; }
+    if (doorItems.has(r.result.id) || resultIds.has(r.result.id)) err(w, 'resultatet har samma id som ett annat föremål');
+    resultIds.add(r.result.id);
+    if (r.result.content !== undefined && !pieceOk(r.result.content)) err(w, 'resultatets innehåll behöver text eller en giltig svg');
+  });
+  recs.forEach((r, i) => {
+    if (!r || !r.result) return;
+    for (const part of [r.a, r.b]) if (!doorItems.has(part) && !resultIds.has(part)) err('combine ' + (i + 1), 'en av delarna finns inte som föremål');
+  });
+
+  // Det genomskinliga kortet (B2) måste ha samma viewBox som bilderna i de
+  // luckor som kräver det, annars hamnar kortets fönster fel.
+  const vb = svg => { const m = /viewBox\s*=\s*["']([^"']+)["']/i.exec(svg || ''); return m ? m[1].trim().split(/[\s,]+/).map(Number).join(' ') : null; };
+  const overlays = new Map();
+  c.days.forEach(d => { const it = d && d.epilogue && d.epilogue.item; if (it && it.content && it.content.overlay === true && svgOk(it.content.svg)) overlays.set(it.id, { day: d.day, vb: vb(it.content.svg) }); });
+  recs.forEach(r => { if (r && r.result && r.result.content && r.result.content.overlay === true && svgOk(r.result.content.svg)) overlays.set(r.result.id, { day: null, vb: vb(r.result.content.svg) }); });
+  for (const [id, o] of overlays) if (!o.vb) err(o.day ? 'dag ' + o.day : 'combine', 'det genomskinliga kortet saknar viewBox');
+  c.days.forEach((d, i) => {
+    if (!d || !Array.isArray(d.requires_items)) return;
+    for (const id of d.requires_items) {
+      const o = overlays.get(id);
+      if (!o || !o.vb) continue;
+      for (const slot of SLOTS) {
+        const fr = d.fragments && d.fragments[slot];
+        if (fr && (fr.kind === 'svg' || fr.kind === 'fold') && svgOk(fr.svg) && vb(fr.svg) !== o.vb) err('dag ' + (i + 1), 'lapp för ' + slot + ' har en annan viewBox än det genomskinliga kortet');
       }
     }
   });
@@ -463,7 +501,9 @@ function publicPiece(x) {
 function publicFragment(f, { withReveal, withPrivate }) {
   const out = { kind: f.kind };
   if (typeof f.text === 'string') out.text = f.text;
-  if (f.kind === 'svg' && typeof f.svg === 'string') out.svg = f.svg;
+  if ((f.kind === 'svg' || f.kind === 'fold') && typeof f.svg === 'string') out.svg = f.svg;
+  // Vikbar lapp (B9): bilden viks längs mitten, lodrätt (standard) eller vågrätt.
+  if (f.kind === 'fold') out.axis = f.axis === 'horizontal' ? 'horizontal' : 'vertical';
   if (f.kind === 'grid_map') {
     out.cols = f.cols; out.rows = f.rows;
     out.cells = Object.assign({}, f.cells || {});
@@ -496,11 +536,22 @@ function publicItem(it) {
 }
 
 // Föremål laget har: de som lösta luckor gav, i ordning efter lucka.
-function ownedItems(content, solves) {
+// Recept (B11): två föremål i ryggsäcken blir ett nytt. combine: [{a, b, result}].
+function recipes(content) { return Array.isArray(content.combine) ? content.combine.filter(r => r && r.a && r.b && r.result && r.result.id) : []; }
+function findRecipe(content, a, b) { return recipes(content).find(r => (r.a === a && r.b === b) || (r.a === b && r.b === a)) || null; }
+// Föremål laget har: de som lösta luckor gav (i ordning efter lucka) och de
+// som laget har kombinerat fram (händelsen 'combine', i den ordning de gjordes).
+function ownedItems(content, solves, events = []) {
   const solved = new Set(solves.map(s => s.day));
-  return content.days
+  const out = content.days
     .filter(d => solved.has(d.day) && d.epilogue && d.epilogue.item)
     .map(d => publicItem(d.epilogue.item));
+  const byResult = new Map(recipes(content).map(r => [r.result.id, r.result]));
+  for (const e of events) {
+    if (e.kind !== 'combine' || !byResult.has(e.body) || out.some(i => i.id === e.body)) continue;
+    out.push(publicItem(byResult.get(e.body)));
+  }
+  return out;
 }
 
 // Stjärnor räknas fram, lagras inte: +3 löst tillsammans, +1 arkiv,
@@ -645,12 +696,15 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
     });
 
   const items = itemIndex(content);
-  const owned = new Set(ownedItems(content, solves).map(i => i.id));
+  const owned = new Set(ownedItems(content, solves, events).map(i => i.id));
   const todayN = Math.floor((Date.parse(today) - Date.parse(content.start_date)) / 86400000) + 1;
   const reqItem = id => {
     const src = items.get(id);
     // Namnet på ett föremål från en framtida lucka avslöjas inte.
-    return src && src.day <= todayN ? { id, name: src.item.name } : { id, name: null };
+    if (src) return src.day <= todayN ? { id, name: src.item.name } : { id, name: null };
+    // Ett kombinerat föremål heter något först när laget har det.
+    const r = recipes(content).find(x => x.result.id === id);
+    return { id, name: r && owned.has(id) ? r.result.name : null };
   };
   const requiresItems = (d.requires_items || []).map(reqItem);
   const missingItems = requiresItems.filter(i => !owned.has(i.id));
@@ -686,7 +740,7 @@ export function buildDayView({ content, n, today, me, players, profiles, events,
     attemptsLeft: Math.min(Math.max(0, MAX_ATTEMPTS_PER_DAY - myAttempts), teamAttemptsLeft),
     teamAttemptsLeft,
     // Ryggsäcken (B1): lagets föremål med innehåll.
-    backpack: ownedItems(content, solves)
+    backpack: ownedItems(content, solves, events)
   };
   if (stages.length > 1) {
     view.stage = { index: current + 1, total: stages.length };
@@ -743,7 +797,7 @@ export function buildStateView({ content, today, now = new Date(), me, players, 
     openedCount: days.filter(d => d.status !== 'locked').length,
     days,
     stars: computeStars(solves, events),
-    items: ownedItems(content, solves),
+    items: ownedItems(content, solves, events),
     me,
     players: SLOTS.map(slot => {
       const p = players.find(x => x.slot === slot);
@@ -1162,6 +1216,27 @@ function createRouter({ store, content, now, adminSecret, listProfiles, loadErro
     await store.insertEvent({ day: n, profileId: p.profileId, kind: 'attempt', body, createdAt: now() });
     res.json({ correct: false, day: await dayView(n, p) });
   }));
+
+  // Kombinera två föremål i ryggsäcken (B11). Fel par ger "Inget händer"
+  // och sparas inte. Resultatet hamnar i ryggsäcken för hela laget.
+  router.post('/combine', async (req, res) => {
+    try {
+      const p = await player(req, res); if (!p) return;
+      const { a, b } = req.body || {};
+      const [events, solves] = await Promise.all([store.listEvents(), store.listSolves()]);
+      const owned = ownedItems(content, solves, events);
+      const has = id => owned.some(i => i.id === id);
+      if (typeof a !== 'string' || typeof b !== 'string' || a === b || !has(a) || !has(b)) return res.status(400).json({ error: 'not_owned' });
+      const r = findRecipe(content, a, b);
+      if (!r) return res.json({ ok: false, message: 'Inget händer.' });
+      if (!has(r.result.id)) {
+        const count = events.filter(e => e.kind === 'combine').length;
+        await store.insertEventIfCount({ day: 0, profileId: p.profileId, kind: 'combine', body: r.result.id, createdAt: now() }, { kind: 'combine', count });
+      }
+      const after = await Promise.all([store.listEvents(), store.listSolves()]);
+      res.json({ ok: true, item: publicItem(r.result), items: ownedItems(content, after[1], after[0]) });
+    } catch (e) { console.error('Kalendern: fel i /combine:', e.message); res.status(500).json({ error: 'serverfel' }); }
+  });
 
   router.post('/admin/players', async (req, res) => {
     const b = req.body || {};

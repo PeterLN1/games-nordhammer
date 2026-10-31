@@ -256,3 +256,92 @@ describe('/admin/check känner igen de nya formerna', () => {
     }
   });
 });
+
+describe('B11 kombinera i ryggsäcken', () => {
+  let g;
+  before(async () => {
+    g = await startGame(at('2026-12-05', '09:00'));
+    for (const day of [1, 2, 3]) await g.store.insertSolve({ day, profileId: IDS.peter, mode: 'archive' });
+  });
+  after(() => g.close());
+
+  test('man kan bara kombinera föremål som laget har', async () => {
+    const r = await g.post('/combine', 'peter', { a: 'kartbit-v', b: 'kartbit-h' });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error, 'not_owned');
+  });
+
+  test('ett kombinerat föremål heter ingenting förrän laget har det', async () => {
+    await g.store.insertSolve({ day: 4, profileId: IDS.peter, mode: 'archive' });
+    const d5 = await g.get('/day/5');
+    assert.deepEqual(d5.body.missingItems, [{ id: 'hela-kartan', name: null }]);
+    assert.ok(!d5.text.includes('Hela kartan'));
+  });
+
+  test('fel par: inget händer, och inget sparas', async () => {
+    const r = await g.post('/combine', 'maria', { a: 'kartbit-v', b: 'kortet' });
+    assert.deepEqual(r.body, { ok: false, message: 'Inget händer.' });
+    assert.equal((await g.store.listEvents()).filter(e => e.kind === 'combine').length, 0);
+  });
+
+  test('rätt par ger det nya föremålet till hela laget, en gång', async () => {
+    const r = await g.post('/combine', 'maria', { a: 'kartbit-h', b: 'kartbit-v' });
+    assert.equal(r.body.ok, true);
+    assert.equal(r.body.item.id, 'hela-kartan');
+    assert.ok(r.body.item.content.svg.startsWith('<svg'));
+    assert.ok(r.body.items.some(i => i.id === 'hela-kartan'));
+    const again = await g.post('/combine', 'simon', { a: 'kartbit-v', b: 'kartbit-h' });
+    assert.equal(again.body.ok, true);
+    assert.equal((await g.store.listEvents()).filter(e => e.kind === 'combine').length, 1);
+    const st = await g.get('/state', 'vilma');
+    assert.ok(st.body.items.some(i => i.id === 'hela-kartan'));
+  });
+
+  test('luckan som kräver det kombinerade föremålet saknar inget längre', async () => {
+    const d5 = await g.get('/day/5');
+    assert.deepEqual(d5.body.missingItems, []);
+    assert.deepEqual(d5.body.requiresItems, [{ id: 'hela-kartan', name: 'Hela kartan' }]);
+  });
+
+  test('B9: vikbara lappar skickas med bild och axel', async () => {
+    const d5 = await g.get('/day/5');
+    const f = d5.body.fragments.peter;
+    assert.equal(f.kind, 'fold');
+    assert.equal(f.axis, 'vertical');
+    assert.ok(f.svg.startsWith('<svg'));
+  });
+
+  test('väglåset: ordningen spelar roll', async () => {
+    await g.store.insertSolve({ day: 5, profileId: IDS.peter, mode: 'archive' });
+    g.setNow(at('2026-12-07', '09:00'));
+    assert.equal((await g.post('/day/6/solve', 'peter', { answer: 'C3 C2 B2 A2 A1' })).body.correct, false);
+    assert.equal((await g.post('/day/6/solve', 'peter', { answer: 'a1 a2 b2 c2 c3' })).body.correct, true);
+  });
+});
+
+describe('/admin/check: kombinationer, vikbara lappar och kortets viewBox', () => {
+  const clone = () => JSON.parse(JSON.stringify(V));
+  test('felen hittas', () => {
+    const cases = [
+      [c => { c.days[2].fragments.sara.svg = c.days[2].fragments.sara.svg.replace('viewBox="0 0 100 100"', 'viewBox="0 0 120 100"'); }, 'dag 3: lapp för sara har en annan viewBox än det genomskinliga kortet'],
+      [c => { c.days[1].epilogue.item.content.svg = c.days[1].epilogue.item.content.svg.replace(/ viewBox="[^"]*"/, ''); }, 'dag 2: det genomskinliga kortet saknar viewBox'],
+      [c => { c.combine[0].b = 'finns-inte'; }, 'combine 1: en av delarna finns inte som föremål'],
+      [c => { c.combine[0].result.id = 'kortet'; }, 'combine 1: resultatet har samma id som ett annat föremål'],
+      [c => { c.days[4].fragments.maria.axis = 'diagonal'; }, 'dag 5: lapp för maria: axis ska vara vertical eller horizontal'],
+      [c => { c.days[3].epilogue.item.id = 'annan-bit'; }, 'combine 1: en av delarna finns inte som föremål'],
+      [c => { c.days[3].epilogue.item.id = 'annan-bit'; }, 'dag 5: föremål nr 1 i requires_items ges inte av någon tidigare lucka']
+    ];
+    for (const [mutate, expected] of cases) {
+      const c = clone(); mutate(c);
+      const errors = checkContent(c);
+      assert.ok(errors.includes(expected), 'väntade "' + expected + '", fick ' + JSON.stringify(errors));
+      for (const e of errors) for (const secret of ['KARTA', 'Hela kartan', 'A1 A2 B2 C2 C3']) assert.ok(!e.includes(secret), e);
+    }
+  });
+
+  test('ett kombinerat föremål räknas först när båda delarna finns i tidigare luckor', () => {
+    const c = clone();
+    c.days[3].requires_items = ['hela-kartan']; // dag 4 ger själv ena biten
+    assert.ok(checkContent(c).includes('dag 4: föremål nr 1 i requires_items ges inte av någon tidigare lucka'));
+  });
+});

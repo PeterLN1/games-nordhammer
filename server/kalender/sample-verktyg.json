@@ -2,7 +2,7 @@
   "version": 1,
   "id": "prov-verktyg",
   "title": "Verktygslådan (test)",
-  "subtitle": "Testkalender för föremål, genomskinligt kort, flera lås och nya låstyper.",
+  "subtitle": "Testkalender för föremål, kombinationer, genomskinligt kort, vikbara lappar, flera lås och nya låstyper.",
   "start_date": "2026-12-01",
   "timezone": "Europe/Stockholm",
   "prologue": "TESTINNEHÅLL. Fyra luckor som provar ryggsäcken, det genomskinliga kortet, dubbla lås, symbollås, rutlås, hemlig del och återkoppling.",
@@ -191,7 +191,15 @@
         "De två första siffrorna är 3 och 1."
       ],
       "epilogue": {
-        "text": "Plåtarna klickar på plats och golvluckan öppnas."
+        "text": "Plåtarna klickar på plats och golvluckan öppnas.",
+        "item": {
+          "id": "kartbit-v",
+          "name": "Kartbit (vänster)",
+          "description": "Vänstra halvan av en karta.",
+          "content": {
+            "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#F4EBDD\"/><path d=\"M10 80 Q40 20 90 50\" stroke=\"#2A2118\" stroke-width=\"3\" fill=\"none\"/><text x=\"50\" y=\"92\" font-size=\"9\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">Vänstra halva</text></svg>"
+          }
+        }
       }
     },
     {
@@ -237,7 +245,120 @@
         "E står ovanför D: E3 och D5."
       ],
       "epilogue": {
-        "text": "Alla tre lådor hittade. Testkalendern är slut."
+        "text": "Under den sista lådan ligger en kartbit. Den passar ihop med en annan.",
+        "item": {
+          "id": "kartbit-h",
+          "name": "Kartbit (höger)",
+          "description": "Högra halvan av en karta.",
+          "content": {
+            "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect width=\"100\" height=\"100\" fill=\"#F4EBDD\"/><path d=\"M10 80 Q40 20 90 50\" stroke=\"#2A2118\" stroke-width=\"3\" fill=\"none\"/><text x=\"50\" y=\"92\" font-size=\"9\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">Högra halva</text></svg>"
+          }
+        }
+      }
+    },
+    {
+      "day": 5,
+      "title": "Den vikta kartan",
+      "intro": "TESTINNEHÅLL. Fem lappar med konstiga streck. Kartan i ryggsäcken säger: ”Vik allt på mitten.”",
+      "lock": {
+        "type": "word",
+        "length": 5
+      },
+      "answer": "KARTA",
+      "requires_items": [
+        "hela-kartan"
+      ],
+      "fragments": {
+        "peter": {
+          "kind": "fold",
+          "text": "Lapp nr 1. Vik den längs den streckade linjen.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><line x1=\"50\" y1=\"4\" x2=\"50\" y2=\"96\" stroke=\"#2A2118\" stroke-opacity=\"0.35\" stroke-dasharray=\"3 3\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"14,15 14,85\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"86,50 60,15\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"14,50 40,85\"/></svg>"
+        },
+        "maria": {
+          "kind": "fold",
+          "text": "Lapp nr 2. Vik den längs den streckade linjen.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><line x1=\"50\" y1=\"4\" x2=\"50\" y2=\"96\" stroke=\"#2A2118\" stroke-opacity=\"0.35\" stroke-dasharray=\"3 3\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"12,85 27,15\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"73,15 58,85\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"18,58 36,58\"/></svg>"
+        },
+        "sara": {
+          "kind": "fold",
+          "text": "Lapp nr 3. Vik den längs den streckade linjen.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><line x1=\"50\" y1=\"4\" x2=\"50\" y2=\"96\" stroke=\"#2A2118\" stroke-opacity=\"0.35\" stroke-dasharray=\"3 3\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"14,85 14,15\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"86,15 66,15 60,25 60,40 66,50 86,50\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"22,50 40,85\"/></svg>"
+        },
+        "vilma": {
+          "kind": "fold",
+          "text": "Lapp nr 4. Vik den längs den streckade linjen.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><line x1=\"50\" y1=\"4\" x2=\"50\" y2=\"96\" stroke=\"#2A2118\" stroke-opacity=\"0.35\" stroke-dasharray=\"3 3\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"10,15 42,15\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"74,15 74,85\"/></svg>"
+        },
+        "simon": {
+          "kind": "fold",
+          "text": "Lapp nr 5. Vik den längs den streckade linjen.",
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><line x1=\"50\" y1=\"4\" x2=\"50\" y2=\"96\" stroke=\"#2A2118\" stroke-opacity=\"0.35\" stroke-dasharray=\"3 3\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"12,85 27,15\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"73,15 58,85\"/><polyline fill=\"none\" stroke=\"#2A2118\" stroke-width=\"6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" points=\"18,58 36,58\"/></svg>"
+        }
+      },
+      "hints": [
+        "Lapparna har en vikningslinje.",
+        "Tryck på ”Vik” och läs bokstaven.",
+        "Ordet börjar med KA."
+      ],
+      "epilogue": {
+        "text": "Bokstäverna bildar ordet. Kartan visar vägen ut."
+      }
+    },
+    {
+      "day": 6,
+      "title": "Vägen över isen",
+      "intro": "TESTINNEHÅLL. Isen bär bara på vissa rutor. Tryck vägen ruta för ruta, fem rutor.",
+      "lock": {
+        "type": "path",
+        "cols": 4,
+        "rows": 4,
+        "count": 5
+      },
+      "answer": "A1 A2 B2 C2 C3",
+      "requires_items": [],
+      "fragments": {
+        "peter": {
+          "kind": "text",
+          "text": "Börja i A1."
+        },
+        "maria": {
+          "kind": "text",
+          "text": "Steg 1: en ruta neråt."
+        },
+        "sara": {
+          "kind": "text",
+          "text": "Steg 2: en ruta åt höger."
+        },
+        "vilma": {
+          "kind": "text",
+          "text": "Steg 3: en ruta åt höger."
+        },
+        "simon": {
+          "kind": "text",
+          "text": "Steg 4: en ruta neråt. Rad 1 är högst upp."
+        }
+      },
+      "hints": [
+        "Följ stegen i ordning.",
+        "A1, sedan A2.",
+        "A1 A2 B2 C2 C3."
+      ],
+      "epilogue": {
+        "text": "Ni är över isen. Testkalendern är slut."
+      }
+    }
+  ],
+  "combine": [
+    {
+      "a": "kartbit-v",
+      "b": "kartbit-h",
+      "result": {
+        "id": "hela-kartan",
+        "name": "Hela kartan",
+        "description": "De två kartbitarna, hoplagda.",
+        "content": {
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 100\"><rect width=\"200\" height=\"100\" fill=\"#F4EBDD\"/><path d=\"M10 80 Q60 10 110 50 T190 30\" stroke=\"#2A2118\" stroke-width=\"3\" fill=\"none\"/><text x=\"100\" y=\"94\" font-size=\"9\" text-anchor=\"middle\" font-family=\"sans-serif\" fill=\"#2A2118\">HELA KARTAN</text></svg>"
+        }
       }
     }
   ]

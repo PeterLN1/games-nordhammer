@@ -28,7 +28,7 @@
       "runtimeArgs": [
         "KALENDER_CONTENT=sample-verktyg",
         "KALENDER_ADMIN_SECRET=lokal",
-        "KALENDER_FAKE_NOW=2026-12-04T09:00:00+01:00",
+        "KALENDER_FAKE_NOW=2026-12-06T09:00:00+01:00",
         "PORT=3917",
         "node",
         "server/index.js"

@@ -47,7 +47,8 @@ Den här filen beskriver spelmotorn. Det riktiga innehållet (berättelse, gåto
 ### Föremål
 - En lucka kan ge ett föremål (`epilogue.item`) när den löses. Föremålet hamnar i lagets **ryggsäck**, som nås från kalendern och från en knapp i varje luckas toppfält.
 - **Föremål med innehåll (B1):** ett föremål kan ha `content` (text och/eller svg), till exempel en chiffertabell eller en karta, som laget öppnar i ryggsäcken och använder igen i senare luckor.
-- **Det genomskinliga kortet (B2):** ett föremål med `content.overlay: true` och en svg med genomskinlig bakgrund. Under varje bild på lapparna (och i mellanspel och ryggsäcken) finns knappen ”Lägg över …”, som lägger kortet ovanpå bilden. Kortet kan vridas 90° åt gången och spegelvändas. Kortet och bilden ska ha samma `viewBox`.
+- **Det genomskinliga kortet (B2):** ett föremål med `content.overlay: true` och en svg med genomskinlig bakgrund. Under varje bild på lapparna (och i mellanspel och ryggsäcken) finns knappen ”Lägg över …”, som lägger kortet ovanpå bilden. Kortet kan vridas 90° åt gången och spegelvändas. Kortet och bilden ska ha samma `viewBox`; `/admin/check` kontrollerar det för bilderna i varje lucka som kräver kortet.
+- **Kombinera i ryggsäcken (B11):** recept på innehållsfilens toppnivå, `"combine": [{ "a": "kartbit-v", "b": "kartbit-h", "result": { "id", "name", "description", "content"? } }]`. I ryggsäcken väljer laget ”Kombinera två föremål”, trycker på två föremål och sedan ”Kombinera”. Rätt par ger det nya föremålet till hela laget (händelsen `combine`, `day` 0); fel par ger ”Inget händer” och sparas inte. Delarna finns kvar. En lucka kan kräva det kombinerade föremålet; det räknas som givet när båda delarna ges av tidigare luckor. Ett kombinerat föremåls namn visas först när laget har det. Endpoint: `POST /combine` med `{profile, a, b}` → `{ok, item, items}` eller `{ok: false, message}` (400 `not_owned` om laget inte har båda).
 - En lucka kan kräva föremål (`requires_items`). Den kan då inte lösas förrän föremålen finns, och visar vilka som saknas.
 - Lucka 24 är finalen och kräver normalt föremål från flera tidigare dagar.
 
@@ -178,6 +179,9 @@ Svaret jämförs efter normalisering på servern.
 | `svg` | `text` (valfri) och `svg` (en SVG-sträng). Visas med `<img src="data:image/svg+xml;base64,…">`, aldrig som inline-HTML |
 | `grid_map` | `text` (valfri), `cols`, `rows`, `cells` (`{"B3": "△", …}`). Ritas som ett rutnät med symbolerna, kolumner A– och rader 1– |
 | `photo_task` | `text` (uppgiften) och `reveal` (visas efter uppladdning). Knappen ”Ta foto” öppnar kameran; klienten skalar ned bilden (längsta sidan högst 1280 px) och sparar som JPEG under 600 kB. Fotot visas på tavlan |
+| `fold` (B9) | `text` (valfri), `svg` och `axis` (`vertical` standard, eller `horizontal`). Knappen ”Vik” lägger bildens högra (eller nedre) halva spegelvänd över den vänstra (övre), så att linjerna på de två halvorna bildar något tillsammans. ”Veckla ut” visar hela bilden igen. Rita med genomskinlig bakgrund |
+
+**Förstoring (B10):** varje bild (svg, vikbar lapp, foto) har en förstoringsknapp som öppnar bilden i helskärm: nyp för att zooma (upp till 8×), dra för att flytta, dubbeltryck för 1× eller 3×, knappar för + och −. Ett pålagt genomskinligt kort följer med.
 
 **Hemlig del (B3):** en lapp kan ha `private` (text och/eller svg). Den visas bara för ägaren — inte på tavlan när lappen läggs ut — så ägaren måste beskriva den för de andra. I arkivläge och när luckan är löst ser alla den.
 
